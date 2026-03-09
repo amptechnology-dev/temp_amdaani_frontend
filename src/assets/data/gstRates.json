@@ -1,0 +1,74 @@
+{
+  "taxRates": [
+    {
+      "id": "gst_0",
+      "rate": 0,
+      "label": "0% GST",
+      "description": "Exempt items",
+      "category": "Exempt"
+    },
+    {
+      "id": "gst_5",
+      "rate": 5,
+      "label": "5% GST",
+      "description": "Essential items",
+      "category": "Low Rate"
+    },
+    {
+      "id": "gst_12",
+      "rate": 12,
+      "label": "12% GST", 
+      "description": "Standard items",
+      "category": "Standard Rate"
+    },
+    {
+      "id": "gst_18",
+      "rate": 18,
+      "label": "18% GST",
+      "description": "Most goods & services",
+      "category": "Standard Rate"
+    },
+    {
+      "id": "gst_28",
+      "rate": 28,
+      "label": "28% GST",
+      "description": "Luxury items",
+      "category": "High Rate"
+    },
+    {
+      "id": "igst_0",
+      "rate": 0,
+      "label": "0% IGST",
+      "description": "Interstate - Exempt",
+      "category": "Interstate"
+    },
+    {
+      "id": "igst_5",
+      "rate": 5,
+      "label": "5% IGST",
+      "description": "Interstate - Essential",
+      "category": "Interstate"
+    },
+    {
+      "id": "igst_12",
+      "rate": 12,
+      "label": "12% IGST",
+      "description": "Interstate - Standard",
+      "category": "Interstate"
+    },
+    {
+      "id": "igst_18",
+      "rate": 18,
+      "label": "18% IGST",
+      "description": "Interstate - Most items",
+      "category": "Interstate"
+    },
+    {
+      "id": "igst_28",
+      "rate": 28,
+      "label": "28% IGST",
+      "description": "Interstate - Luxury",
+      "category": "Interstate"
+    }
+  ]
+}

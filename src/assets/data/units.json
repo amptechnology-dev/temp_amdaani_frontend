@@ -1,0 +1,315 @@
+{
+  "units": [
+    {
+      "id": 1,
+      "name": "Kilogram",
+      "symbol": "kg",
+      "category": "Weight",
+      "isCommon": true,
+      "description": "Standard unit of mass"
+    },
+    {
+      "id": 2,
+      "name": "Gram",
+      "symbol": "g",
+      "category": "Weight",
+      "isCommon": true,
+      "description": "Small unit of mass"
+    },
+    {
+      "id": 3,
+      "name": "Pound",
+      "symbol": "lb",
+      "category": "Weight",
+      "isCommon": false,
+      "description": "Imperial unit of mass"
+    },
+    {
+      "id": 4,
+      "name": "Ounce",
+      "symbol": "oz",
+      "category": "Weight",
+      "isCommon": false,
+      "description": "Small imperial unit of mass"
+    },
+    {
+      "id": 5,
+      "name": "Ton",
+      "symbol": "t",
+      "category": "Weight",
+      "isCommon": false,
+      "description": "Large unit of mass"
+    },
+    {
+      "id": 6,
+      "name": "Meter",
+      "symbol": "m",
+      "category": "Length",
+      "isCommon": true,
+      "description": "Standard unit of length"
+    },
+    {
+      "id": 7,
+      "name": "Centimeter",
+      "symbol": "cm",
+      "category": "Length",
+      "isCommon": true,
+      "description": "Small unit of length"
+    },
+    {
+      "id": 8,
+      "name": "Millimeter",
+      "symbol": "mm",
+      "category": "Length",
+      "isCommon": true,
+      "description": "Very small unit of length"
+    },
+    {
+      "id": 9,
+      "name": "Inch",
+      "symbol": "in",
+      "category": "Length",
+      "isCommon": false,
+      "description": "Imperial unit of length"
+    },
+    {
+      "id": 10,
+      "name": "Foot",
+      "symbol": "ft",
+      "category": "Length",
+      "isCommon": false,
+      "description": "Imperial unit of length"
+    },
+    {
+      "id": 11,
+      "name": "Yard",
+      "symbol": "yd",
+      "category": "Length",
+      "isCommon": false,
+      "description": "Imperial unit of length"
+    },
+    {
+      "id": 12,
+      "name": "Liter",
+      "symbol": "L",
+      "category": "Volume",
+      "isCommon": true,
+      "description": "Standard unit of volume"
+    },
+    {
+      "id": 13,
+      "name": "Milliliter",
+      "symbol": "mL",
+      "category": "Volume",
+      "isCommon": true,
+      "description": "Small unit of volume"
+    },
+    {
+      "id": 14,
+      "name": "Cubic Meter",
+      "symbol": "m³",
+      "category": "Volume",
+      "isCommon": false,
+      "description": "Large unit of volume"
+    },
+    {
+      "id": 15,
+      "name": "Cubic Centimeter",
+      "symbol": "cm³",
+      "category": "Volume",
+      "isCommon": false,
+      "description": "Small unit of volume"
+    },
+    {
+      "id": 16,
+      "name": "Gallon",
+      "symbol": "gal",
+      "category": "Volume",
+      "isCommon": false,
+      "description": "Imperial unit of volume"
+    },
+    {
+      "id": 17,
+      "name": "Quart",
+      "symbol": "qt",
+      "category": "Volume",
+      "isCommon": false,
+      "description": "Imperial unit of volume"
+    },
+    {
+      "id": 18,
+      "name": "Pint",
+      "symbol": "pt",
+      "category": "Volume",
+      "isCommon": false,
+      "description": "Imperial unit of volume"
+    },
+    {
+      "id": 19,
+      "name": "Square Meter",
+      "symbol": "m²",
+      "category": "Area",
+      "isCommon": true,
+      "description": "Standard unit of area"
+    },
+    {
+      "id": 20,
+      "name": "Square Foot",
+      "symbol": "ft²",
+      "category": "Area",
+      "isCommon": false,
+      "description": "Imperial unit of area"
+    },
+    {
+      "id": 21,
+      "name": "Square Inch",
+      "symbol": "in²",
+      "category": "Area",
+      "isCommon": false,
+      "description": "Small imperial unit of area"
+    },
+    {
+      "id": 22,
+      "name": "Hectare",
+      "symbol": "ha",
+      "category": "Area",
+      "isCommon": false,
+      "description": "Large unit of area"
+    },
+    {
+      "id": 23,
+      "name": "Acre",
+      "symbol": "ac",
+      "category": "Area",
+      "isCommon": false,
+      "description": "Imperial unit of area"
+    },
+    {
+      "id": 24,
+      "name": "Piece",
+      "symbol": "pcs",
+      "category": "Quantity",
+      "isCommon": true,
+      "description": "Individual items"
+    },
+    {
+      "id": 25,
+      "name": "Dozen",
+      "symbol": "dz",
+      "category": "Quantity",
+      "isCommon": true,
+      "description": "12 pieces"
+    },
+    {
+      "id": 26,
+      "name": "Pair",
+      "symbol": "pr",
+      "category": "Quantity",
+      "isCommon": true,
+      "description": "2 pieces"
+    },
+    {
+      "id": 27,
+      "name": "Set",
+      "symbol": "set",
+      "category": "Quantity",
+      "isCommon": false,
+      "description": "Collection of items"
+    },
+    {
+      "id": 28,
+      "name": "Box",
+      "symbol": "box",
+      "category": "Quantity",
+      "isCommon": false,
+      "description": "Container unit"
+    },
+    {
+      "id": 29,
+      "name": "Pack",
+      "symbol": "pack",
+      "category": "Quantity",
+      "isCommon": false,
+      "description": "Package unit"
+    },
+    {
+      "id": 30,
+      "name": "Carton",
+      "symbol": "ctn",
+      "category": "Quantity",
+      "isCommon": false,
+      "description": "Large container unit"
+    },
+    {
+      "id": 31,
+      "name": "Second",
+      "symbol": "s",
+      "category": "Time",
+      "isCommon": false,
+      "description": "Base unit of time"
+    },
+    {
+      "id": 32,
+      "name": "Minute",
+      "symbol": "min",
+      "category": "Time",
+      "isCommon": false,
+      "description": "60 seconds"
+    },
+    {
+      "id": 33,
+      "name": "Hour",
+      "symbol": "hr",
+      "category": "Time",
+      "isCommon": true,
+      "description": "60 minutes"
+    },
+    {
+      "id": 34,
+      "name": "Day",
+      "symbol": "day",
+      "category": "Time",
+      "isCommon": true,
+      "description": "24 hours"
+    },
+    {
+      "id": 35,
+      "name": "Week",
+      "symbol": "wk",
+      "category": "Time",
+      "isCommon": false,
+      "description": "7 days"
+    },
+    {
+      "id": 36,
+      "name": "Month",
+      "symbol": "mo",
+      "category": "Time",
+      "isCommon": false,
+      "description": "Calendar month"
+    },
+    {
+      "id": 37,
+      "name": "Full",
+      "symbol": "full",
+      "category": "Quantity",
+      "isCommon": false
+    },
+    {
+      "id": 38,
+      "name": "Half",
+      "symbol": "half",
+      "category": "Quantity",
+      "isCommon": false
+    }
+  ],
+  "categories": [
+    "All",
+    "Weight",
+    "Length",
+    "Volume",
+    "Area",
+    "Quantity",
+    "Time"
+  ]
+}

@@ -1,0 +1,207 @@
+{
+  "states": [
+    {
+      "id": 1,
+      "name": "Andhra Pradesh",
+      "code": "AP",
+      "capital": "Amaravati",
+      "region": "South"
+    },
+    {
+      "id": 2,
+      "name": "Arunachal Pradesh",
+      "code": "AR",
+      "capital": "Itanagar",
+      "region": "Northeast"
+    },
+    {
+      "id": 3,
+      "name": "Assam",
+      "code": "AS",
+      "capital": "Dispur",
+      "region": "Northeast"
+    },
+    {
+      "id": 4,
+      "name": "Bihar",
+      "code": "BR",
+      "capital": "Patna",
+      "region": "East"
+    },
+    {
+      "id": 5,
+      "name": "Chhattisgarh",
+      "code": "CG",
+      "capital": "Raipur",
+      "region": "Central"
+    },
+    {
+      "id": 29,
+      "name": "Delhi",
+      "code": "DL",
+      "capital": "New Delhi",
+      "region": "North"
+    },
+    {
+      "id": 6,
+      "name": "Goa",
+      "code": "GA",
+      "capital": "Panaji",
+      "region": "West"
+    },
+    {
+      "id": 7,
+      "name": "Gujarat",
+      "code": "GJ",
+      "capital": "Gandhinagar",
+      "region": "West"
+    },
+    {
+      "id": 8,
+      "name": "Haryana",
+      "code": "HR",
+      "capital": "Chandigarh",
+      "region": "North"
+    },
+    {
+      "id": 9,
+      "name": "Himachal Pradesh",
+      "code": "HP",
+      "capital": "Shimla",
+      "region": "North"
+    },
+    {
+      "id": 10,
+      "name": "Jharkhand",
+      "code": "JH",
+      "capital": "Ranchi",
+      "region": "East"
+    },
+    {
+      "id": 11,
+      "name": "Karnataka",
+      "code": "KA",
+      "capital": "Bengaluru",
+      "region": "South"
+    },
+    {
+      "id": 12,
+      "name": "Kerala",
+      "code": "KL",
+      "capital": "Thiruvananthapuram",
+      "region": "South"
+    },
+    {
+      "id": 13,
+      "name": "Madhya Pradesh",
+      "code": "MP",
+      "capital": "Bhopal",
+      "region": "Central"
+    },
+    {
+      "id": 14,
+      "name": "Maharashtra",
+      "code": "MH",
+      "capital": "Mumbai",
+      "region": "West"
+    },
+    {
+      "id": 15,
+      "name": "Manipur",
+      "code": "MN",
+      "capital": "Imphal",
+      "region": "Northeast"
+    },
+    {
+      "id": 16,
+      "name": "Meghalaya",
+      "code": "ML",
+      "capital": "Shillong",
+      "region": "Northeast"
+    },
+    {
+      "id": 17,
+      "name": "Mizoram",
+      "code": "MZ",
+      "capital": "Aizawl",
+      "region": "Northeast"
+    },
+    {
+      "id": 18,
+      "name": "Nagaland",
+      "code": "NL",
+      "capital": "Kohima",
+      "region": "Northeast"
+    },
+    {
+      "id": 19,
+      "name": "Odisha",
+      "code": "OR",
+      "capital": "Bhubaneswar",
+      "region": "East"
+    },
+    {
+      "id": 20,
+      "name": "Punjab",
+      "code": "PB",
+      "capital": "Chandigarh",
+      "region": "North"
+    },
+    {
+      "id": 21,
+      "name": "Rajasthan",
+      "code": "RJ",
+      "capital": "Jaipur",
+      "region": "North"
+    },
+    {
+      "id": 22,
+      "name": "Sikkim",
+      "code": "SK",
+      "capital": "Gangtok",
+      "region": "Northeast"
+    },
+    {
+      "id": 23,
+      "name": "Tamil Nadu",
+      "code": "TN",
+      "capital": "Chennai",
+      "region": "South"
+    },
+    {
+      "id": 24,
+      "name": "Telangana",
+      "code": "TS",
+      "capital": "Hyderabad",
+      "region": "South"
+    },
+    {
+      "id": 25,
+      "name": "Tripura",
+      "code": "TR",
+      "capital": "Agartala",
+      "region": "Northeast"
+    },
+    {
+      "id": 26,
+      "name": "Uttar Pradesh",
+      "code": "UP",
+      "capital": "Lucknow",
+      "region": "North"
+    },
+    {
+      "id": 27,
+      "name": "Uttarakhand",
+      "code": "UK",
+      "capital": "Dehradun",
+      "region": "North"
+    },
+    {
+      "id": 28,
+      "name": "West Bengal",
+      "code": "WB",
+      "capital": "Kolkata",
+      "region": "East"
+    }
+  ]
+}

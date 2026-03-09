@@ -1,0 +1,353 @@
+{
+  "lockfileVersion": 1,
+  "packages": {
+    "@babel/preset-env": {
+      "version": "^7.25.3",
+      "integrated": false
+    },
+    "@babel/runtime": {
+      "version": "^7.25.0",
+      "integrated": false
+    },
+    "@gorhom/bottom-sheet": {
+      "version": "^5.1.8",
+      "integrated": false
+    },
+    "@react-native-async-storage/async-storage": {
+      "version": "^2.2.0",
+      "integrated": false
+    },
+    "@react-native-clipboard/clipboard": {
+      "version": "^1.16.3",
+      "integrated": false
+    },
+    "@react-native-community/blur": {
+      "version": "^4.4.1",
+      "integrated": false
+    },
+    "@react-native-community/cli": {
+      "version": "19.1.1",
+      "integrated": false
+    },
+    "@react-native-community/cli-platform-android": {
+      "version": "19.1.1",
+      "integrated": false
+    },
+    "@react-native-community/cli-platform-ios": {
+      "version": "19.1.1",
+      "integrated": false
+    },
+    "@react-native-community/datetimepicker": {
+      "version": "^8.4.4",
+      "integrated": false
+    },
+    "@react-native-community/netinfo": {
+      "version": "^11.4.1",
+      "integrated": false
+    },
+    "@react-native-masked-view/masked-view": {
+      "version": "^0.3.2",
+      "integrated": false
+    },
+    "@react-native-vector-icons/material-design-icons": {
+      "version": "^12.3.0",
+      "integrated": false
+    },
+    "@react-native/babel-preset": {
+      "version": "0.80.2",
+      "integrated": false
+    },
+    "@react-native/eslint-config": {
+      "version": "0.80.2",
+      "integrated": false
+    },
+    "@react-native/metro-config": {
+      "version": "0.80.2",
+      "integrated": false
+    },
+    "@react-native/typescript-config": {
+      "version": "0.80.2",
+      "integrated": false
+    },
+    "@react-navigation/bottom-tabs": {
+      "version": "^7.4.5",
+      "integrated": false
+    },
+    "@react-navigation/native": {
+      "version": "^7.1.17",
+      "integrated": false
+    },
+    "@react-navigation/stack": {
+      "version": "^7.4.5",
+      "integrated": false
+    },
+    "@types/jest": {
+      "version": "^29.5.13",
+      "integrated": false
+    },
+    "@types/react": {
+      "version": "^19.1.0",
+      "integrated": false
+    },
+    "@types/react-test-renderer": {
+      "version": "^19.1.0",
+      "integrated": false
+    },
+    "axios": {
+      "version": "^1.11.0",
+      "integrated": false
+    },
+    "currency.js": {
+      "version": "^2.0.4",
+      "integrated": false
+    },
+    "date-fns": {
+      "version": "^4.1.0",
+      "integrated": false
+    },
+    "eslint": {
+      "version": "^8.19.0",
+      "integrated": false
+    },
+    "formik": {
+      "version": "^2.4.6",
+      "integrated": false
+    },
+    "fuse.js": {
+      "version": "^7.1.0",
+      "integrated": false
+    },
+    "jest": {
+      "version": "^29.6.3",
+      "integrated": false
+    },
+    "jwt-decode": {
+      "version": "^4.0.0",
+      "integrated": false
+    },
+    "lodash": {
+      "version": "^4.17.21",
+      "integrated": false
+    },
+    "lottie-react-native": {
+      "version": "^7.3.1",
+      "integrated": false
+    },
+    "number-to-words": {
+      "version": "^1.2.4",
+      "integrated": false
+    },
+    "prettier": {
+      "version": "2.8.8",
+      "integrated": false
+    },
+    "qrcode": {
+      "version": "^1.5.4",
+      "integrated": false
+    },
+    "react": {
+      "version": "19.1.0",
+      "integrated": false
+    },
+    "react-native": {
+      "version": "0.80.2",
+      "integrated": false
+    },
+    "react-native-android-location-enabler": {
+      "version": "^3.0.1",
+      "integrated": false
+    },
+    "react-native-biometrics": {
+      "version": "^3.0.1",
+      "integrated": false
+    },
+    "react-native-blob-util": {
+      "version": "^0.22.2",
+      "integrated": false
+    },
+    "react-native-config": {
+      "version": "^1.6.1",
+      "integrated": true
+    },
+    "react-native-device-info": {
+      "version": "^14.0.4",
+      "integrated": false
+    },
+    "react-native-element-dropdown": {
+      "version": "^2.12.4",
+      "integrated": false
+    },
+    "react-native-file-viewer": {
+      "version": "^2.1.5",
+      "integrated": false
+    },
+    "react-native-fs": {
+      "version": "^2.20.0",
+      "integrated": false
+    },
+    "react-native-gesture-handler": {
+      "version": "^2.28.0",
+      "integrated": false
+    },
+    "react-native-gifted-charts": {
+      "version": "^1.4.64",
+      "integrated": false
+    },
+    "react-native-html-to-pdf": {
+      "version": "^0.12.0",
+      "integrated": false
+    },
+    "react-native-image-crop-picker": {
+      "version": "^0.51.0",
+      "integrated": false
+    },
+    "react-native-image-picker": {
+      "version": "^8.2.1",
+      "integrated": false
+    },
+    "react-native-keyboard-aware-scroll-view": {
+      "version": "^0.9.5",
+      "integrated": false
+    },
+    "react-native-linear-gradient": {
+      "version": "^2.8.3",
+      "integrated": false
+    },
+    "react-native-modal-datetime-picker": {
+      "version": "^18.0.0",
+      "integrated": false
+    },
+    "react-native-onesignal": {
+      "version": "^5.2.13",
+      "integrated": false
+    },
+    "react-native-orientation-locker": {
+      "version": "^1.7.0",
+      "integrated": false
+    },
+    "react-native-otp-entry": {
+      "version": "^1.8.5",
+      "integrated": false
+    },
+    "react-native-otp-verify": {
+      "version": "^1.1.8",
+      "integrated": false
+    },
+    "react-native-pager-view": {
+      "version": "^6.9.1",
+      "integrated": false
+    },
+    "react-native-paper": {
+      "version": "^5.14.5",
+      "integrated": false
+    },
+    "react-native-paper-dropdown": {
+      "version": "^2.3.1",
+      "integrated": false
+    },
+    "react-native-pdf": {
+      "version": "^6.7.7",
+      "integrated": false
+    },
+    "react-native-pell-rich-editor": {
+      "version": "^1.10.0",
+      "integrated": false
+    },
+    "react-native-permissions": {
+      "version": "^5.4.2",
+      "integrated": false
+    },
+    "react-native-print": {
+      "version": "^0.11.0",
+      "integrated": false
+    },
+    "react-native-reanimated": {
+      "version": "^4.0.1",
+      "integrated": false
+    },
+    "react-native-reanimated-carousel": {
+      "version": "^4.0.3",
+      "integrated": false
+    },
+    "react-native-safe-area-context": {
+      "version": "^5.5.2",
+      "integrated": false
+    },
+    "react-native-screens": {
+      "version": "^4.13.1",
+      "integrated": false
+    },
+    "react-native-share": {
+      "version": "^12.2.0",
+      "integrated": false
+    },
+    "react-native-shimmer-placeholder": {
+      "version": "^2.0.9",
+      "integrated": false
+    },
+    "react-native-signature-canvas": {
+      "version": "^5.0.1",
+      "integrated": false
+    },
+    "react-native-sound": {
+      "version": "^0.12.0",
+      "integrated": false
+    },
+    "react-native-svg": {
+      "version": "^15.12.1",
+      "integrated": false
+    },
+    "react-native-tab-view": {
+      "version": "^4.1.2",
+      "integrated": false
+    },
+    "react-native-toast-message": {
+      "version": "^2.3.3",
+      "integrated": false
+    },
+    "react-native-vector-icons": {
+      "version": "^10.3.0",
+      "integrated": false
+    },
+    "react-native-view-shot": {
+      "version": "^4.0.3",
+      "integrated": false
+    },
+    "react-native-walkthrough-tooltip": {
+      "version": "^1.6.0",
+      "integrated": false
+    },
+    "react-native-webview": {
+      "version": "^13.15.0",
+      "integrated": false
+    },
+    "react-native-worklets": {
+      "version": "^0.4.1",
+      "integrated": false
+    },
+    "react-native-youtube": {
+      "version": "^2.0.2",
+      "integrated": false
+    },
+    "react-native-youtube-iframe": {
+      "version": "^2.3.0",
+      "integrated": false
+    },
+    "react-test-renderer": {
+      "version": "19.1.0",
+      "integrated": false
+    },
+    "typescript": {
+      "version": "5.0.4",
+      "integrated": false
+    },
+    "xlsx": {
+      "version": "^0.18.5",
+      "integrated": false
+    },
+    "yup": {
+      "version": "^1.7.0",
+      "integrated": false
+    }
+  }
+}

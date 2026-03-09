@@ -1,0 +1,39 @@
+{
+  "categories": [
+    {
+      "id": 1,
+      "name": "Electronics",
+      "description": "Electronic items and accessories"
+    },
+    {
+      "id": 2,
+      "name": "Mobile Phones",
+      "description": "Smartphones and mobile accessories"
+    },
+    {
+      "id": 3,
+      "name": "Computers",
+      "description": "Laptops, desktops, and computer accessories"
+    },
+    {
+      "id": 4,
+      "name": "Home Appliances",
+      "description": "Kitchen and home appliances"
+    },
+    {
+      "id": 5,
+      "name": "Books",
+      "description": "Physical and digital books"
+    },
+    {
+      "id": 6,
+      "name": "Clothing",
+      "description": "Apparel and fashion items"
+    },
+    {
+      "id": 7,
+      "name": "Sports Equipment",
+      "description": "Sports and fitness equipment"
+    }
+  ]
+}
