@@ -65,7 +65,6 @@
     "react-native-reanimated": "^4.2.2",
     "react-native-reanimated-carousel": "^4.0.3",
     "react-native-safe-area-context": "^5.5.2",
-    "react-native-screens": "^4.13.1",
     "react-native-share": "^12.2.0",
     "react-native-shimmer-placeholder": "^2.0.9",
     "react-native-signature-canvas": "^5.0.1",
