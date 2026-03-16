@@ -37,6 +37,7 @@ import { ensureNotificationPermission } from '../../utils/permissions';
 import { OneSignal } from 'react-native-onesignal';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import CarouselSlider from '../../components/CarouselSlider';
+import Config from 'react-native-config';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const chartWidth = screenWidth - 80; // Increased padding for better containment
@@ -66,6 +67,11 @@ const Dashboard = () => {
   //     askNotificationPermission();
   //   }, [])
   // );
+
+  const BASE_URL = Config.API_BASE_URL;
+
+  //'https://pos-dev.amptechnology.in/api'
+  console.log('BASE_URL:', BASE_URL);
 
   // Replace your current useEffect with useFocusEffect
   useFocusEffect(
@@ -170,6 +176,8 @@ const Dashboard = () => {
     }
   };
 
+  console.log();
+
   const onRefresh = () => {
     fetchDashboardData(true);
   };
@@ -200,8 +208,8 @@ const Dashboard = () => {
     return withSymbol
       ? currency(value, { symbol: '₹', precision: 2, separator: ',' }).format()
       : new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(
-        value,
-      );
+          value,
+        );
   };
 
   const calculateMetrics = () => {

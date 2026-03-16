@@ -8,8 +8,10 @@ import Config from 'react-native-config';
 
 let updateAuthState = null;
 let logoutFn = null;
-const BASE_URL = Config.API_BASE_URL || 'https://pos-dev.amptechnology.in/api';
-console.log('BASE_URL:', BASE_URL);
+const BASE_URL = Config.API_BASE_URL;
+
+//'https://pos-dev.amptechnology.in/api'
+console.log('CONFIG FULL:', Config);
 
 // 🔑 Allow AuthContext to register its handlers
 export const setAuthHandlers = (updateFn, logout) => {

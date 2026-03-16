@@ -323,6 +323,8 @@ const TabNavigator = () => {
     // Or any other custom logic
   };
 
+  console.log('-->', user);
+
   return (
     <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <Tab.Navigator
