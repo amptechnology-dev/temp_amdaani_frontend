@@ -22,7 +22,6 @@ const CustomTabBar = ({
   const theme = useTheme();
   const insets = useSafeAreaInsets();
 
-
   // Animated rotation value
   const rotation = useRef(new Animated.Value(0)).current;
 
@@ -50,8 +49,8 @@ const CustomTabBar = ({
           paddingBottom: insets.bottom > 0 ? insets.bottom : 8,
           height: 80 + insets.bottom,
         },
-      ]}>
-
+      ]}
+    >
       {state.routes.map((route, index) => {
         if (route.name === 'Add') {
           return (
@@ -77,8 +76,8 @@ const CustomTabBar = ({
           options.tabBarLabel !== undefined
             ? options.tabBarLabel
             : options.title !== undefined
-              ? options.title
-              : route.name;
+            ? options.title
+            : route.name;
         const isFocused = state.index === index;
 
         let iconName;

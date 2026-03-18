@@ -702,7 +702,7 @@ const PlansList = ({
           <PlanCard
             key={plan._id}
             plan={plan}
-            selectedPlan={selectedPlanName}
+            selectedPlan={selectedPlan}
             isExpiredLastPlan={
               !currentSubscription &&
               lastSubscription?.planName === plan.name &&

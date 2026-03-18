@@ -30,7 +30,10 @@ import {
 } from '@react-navigation/native';
 import CustomAlert from '../../components/CustomAlert';
 import Navbar from '../../components/Navbar';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import { TabView, TabBar, SceneMap } from 'react-native-tab-view';
 import { PartyListSkeleton } from '../../components/Skeletons';
 
@@ -463,15 +466,15 @@ const PartyList = ({ isNavbar = true }) => {
         {searchQuery
           ? 'No Customers Found'
           : isDue
-            ? 'All Clear! 🎉'
-            : 'No Customers Yet'}
+          ? 'All Clear! 🎉'
+          : 'No Customers Yet'}
       </Text>
       <Text variant="bodyLarge" style={styles.emptySubtitle}>
         {searchQuery
           ? `No customers match "${searchQuery}". Try searching by name or mobile number.`
           : isDue
-            ? 'Great job! All your customers have cleared their outstanding payments.'
-            : 'Start by adding your first customer to begin tracking sales and payments.'}
+          ? 'Great job! All your customers have cleared their outstanding payments.'
+          : 'Start by adding your first customer to begin tracking sales and payments.'}
       </Text>
       {!searchQuery && !isDue && (
         <TouchableOpacity
@@ -693,7 +696,7 @@ const PartyList = ({ isNavbar = true }) => {
         contentContainerStyle={[
           styles.listContainer,
           filteredCustomers.length === 0 && styles.emptyListContainer,
-          { paddingBottom: 100 + bottom }
+          { paddingBottom: 100 + bottom },
         ]}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -839,7 +842,7 @@ const PartyList = ({ isNavbar = true }) => {
           contentContainerStyle={[
             styles.listContainer,
             filteredDueCustomers.length === 0 && styles.emptyListContainer,
-            { paddingBottom: 100 + bottom }
+            { paddingBottom: 100 + bottom },
           ]}
           refreshControl={
             <RefreshControl
@@ -998,11 +1001,14 @@ const PartyList = ({ isNavbar = true }) => {
         />
         <FAB
           variant="primary"
-          style={[styles.fab, { backgroundColor: theme.colors.primary, marginBottom: bottom }]}
+          style={[
+            styles.fab,
+            { backgroundColor: theme.colors.primary, marginBottom: bottom },
+          ]}
           icon="account-plus"
           color="white"
           onPress={() => navigation.navigate('AddParty')} // Use your actual screen name here
-        // label="Create Item"
+          // label="Create Item"
         />
       </View>
     </>
@@ -1032,6 +1038,9 @@ const styles = StyleSheet.create({
   },
   emptyListContainer: {
     flexGrow: 1,
+  },
+  emptyActionButton: {
+    flexDirection: 'row',
   },
 
   // ===== NEW COMPACT CARD STYLES =====

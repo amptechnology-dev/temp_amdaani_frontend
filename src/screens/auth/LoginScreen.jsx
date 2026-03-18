@@ -123,7 +123,12 @@ const LoginScreen = ({ navigation }) => {
   }, [timer, timerActive]);
 
   const handlePhoneChange = text => {
-    setPhone(text);
+    const cleaned = text.replace(/[^0-9]/g, '');
+
+    if (cleaned.length <= 10) {
+      setPhone(cleaned);
+    }
+
     if (phoneError) setPhoneError('');
   };
 
@@ -305,7 +310,7 @@ const LoginScreen = ({ navigation }) => {
                         <TextInput
                           mode="outlined"
                           placeholder="Enter 10-digit number"
-                          keyboardType="phone-pad"
+                          keyboardType="numeric"
                           value={phone}
                           onChangeText={handlePhoneChange}
                           maxLength={10}
@@ -350,7 +355,10 @@ const LoginScreen = ({ navigation }) => {
                       <OtpInput
                         ref={otpRef}
                         numberOfDigits={6}
-                        onTextChange={text => setOtp(text)}
+                        onTextChange={text => {
+                          const cleaned = text.replace(/[^0-9]/g, '');
+                          setOtp(cleaned);
+                        }}
                         theme={{
                           containerStyle: styles.otpContainer,
                           pinCodeContainerStyle: [
@@ -423,7 +431,7 @@ const LoginScreen = ({ navigation }) => {
                         (loading ||
                           (showOtpInput && otp.length !== 6) ||
                           (!showOtpInput && phone.length !== 10)) &&
-                        styles.gradientButtonDisabled,
+                          styles.gradientButtonDisabled,
                       ]}
                     >
                       <Text
@@ -435,8 +443,8 @@ const LoginScreen = ({ navigation }) => {
                         {loading
                           ? 'Please wait...'
                           : showOtpInput
-                            ? 'Verify & Continue'
-                            : 'Send OTP'}
+                          ? 'Verify & Continue'
+                          : 'Send OTP'}
                       </Text>
                     </LinearGradient>
                   </TouchableOpacity>

@@ -30,20 +30,26 @@ const ReviewOrder = () => {
       setLoading(true);
       const res = await api.post('/subscription/initiate-payment', {
         planId: plan._id,
-        amount: calculateTotal(),
-        coupon: couponApplied ? couponCode : null,
+        amount: calculateTotal(), // already number now
+        gstin: gstin || null,
+        couponCode: couponApplied ? couponCode : null,
       });
 
       if (res.success) {
         const { paymentUrl, formData } = res.data;
         navigation.navigate('PaymentScreen', { paymentUrl, formData });
       }
+      console.log(res);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
   };
+
+  console.log('-->king', plan._id);
+  //console.log('-->', calculateTotal());
+  console.log('==<>', couponApplied ? couponCode : null);
 
   const applyCoupon = () => {
     if (couponCode.trim()) {
@@ -53,23 +59,24 @@ const ReviewOrder = () => {
 
   const calculateDiscount = () => {
     if (couponApplied) {
-      // Assuming a 10% discount for demonstration
-      const price = parseFloat(
+      const price = Number(
         plan.discountedPrice.replace('₹', '').replace(',', ''),
       );
-      return (price * 0.1).toFixed(2);
+      return price * 0.1;
     }
     return 0;
   };
 
   const calculateTotal = () => {
-    const price = parseFloat(
+    const price = Number(
       plan.discountedPrice.replace('₹', '').replace(',', ''),
     );
-    const discount = parseFloat(calculateDiscount());
+
+    const discount = calculateDiscount();
     const subtotal = price - discount;
-    const gst = subtotal * 0.18; // 18% GST
-    return (subtotal + gst).toFixed(2);
+    const gst = subtotal * 0.18;
+
+    return subtotal + gst; // ✅ number
   };
 
   const hexToRgba = (hex, alpha = 1) => {
@@ -80,13 +87,12 @@ const ReviewOrder = () => {
   };
 
   const calculateGST = () => {
-    const price = parseFloat(
+    const price = Number(
       plan.discountedPrice.replace('₹', '').replace(',', ''),
     );
+
     const discount = calculateDiscount();
-    const total = (price - discount).toFixed(2);
-    const gst = (total * 0.18).toFixed(2);
-    return gst;
+    return (price - discount) * 0.18;
   };
 
   return (

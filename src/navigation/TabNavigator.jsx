@@ -279,7 +279,6 @@ const TabNavigator = () => {
         } else {
           console.warn('Bottom sheet ref not ready yet');
         }
-        return;
       }
       onPress();
       setFabOpen(false);
@@ -423,6 +422,7 @@ const TabNavigator = () => {
             icon="package-variant-plus"
             label="Create Item"
             onPress={() => {
+              console.log('ta');
               if (hasPermission(permissions.CAN_MANAGE_PRODUCTS)) {
                 navigation.navigate('AddItem');
               } else {

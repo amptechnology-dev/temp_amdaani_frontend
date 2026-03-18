@@ -126,6 +126,8 @@ const AddUserBottomSheet = forwardRef(({ onSubmit }, ref) => {
     }
   };
 
+  console.log('role');
+
   const handleClose = () => {
     setForm({ name: '', phone: '', role: '' });
     setEmail('');
@@ -191,23 +193,66 @@ const AddUserBottomSheet = forwardRef(({ onSubmit }, ref) => {
             {rolesLoading ? (
               <ActivityIndicator style={{ alignSelf: 'center' }} />
             ) : (
-              <>
+              <View style={{ zIndex: 9999 }}>
                 <Dropdown
+                  mode="default"
                   style={[
                     styles.dropdown,
                     {
                       borderColor: isFocus
                         ? theme.colors.primary
                         : theme.colors.outline,
+                      backgroundColor: theme.colors.surface,
                     },
                   ]}
+                  containerStyle={[
+                    styles.dropdownContainer,
+                    {
+                      backgroundColor: theme.colors.surface,
+                      borderColor: theme.colors.outline,
+                    },
+                  ]}
+                  itemContainerStyle={styles.itemContainer}
+                  activeColor={theme.colors.secondaryContainer}
                   data={roles}
                   labelField="label"
                   valueField="value"
                   placeholder="Select role"
-                  value={form.role}
+                  value={form.role || null}
                   onFocus={() => setIsFocus(true)}
                   onBlur={() => setIsFocus(false)}
+                  placeholderStyle={{
+                    color: theme.colors.onSurfaceVariant,
+                  }}
+                  selectedTextStyle={{
+                    color: theme.colors.onSurface,
+                    fontSize: 14,
+                  }}
+                  renderItem={item => {
+                    const isSelected = item.value === form.role;
+
+                    return (
+                      <View
+                        style={[
+                          styles.item,
+                          isSelected && {
+                            backgroundColor: theme.colors.secondaryContainer,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={{
+                            color: isSelected
+                              ? theme.colors.onSecondaryContainer
+                              : theme.colors.onSurface,
+                            fontSize: 14,
+                          }}
+                        >
+                          {item.label}
+                        </Text>
+                      </View>
+                    );
+                  }}
                   onChange={item => {
                     handleChange('role', item.value);
                     setIsFocus(false);
@@ -220,11 +265,7 @@ const AddUserBottomSheet = forwardRef(({ onSubmit }, ref) => {
                     />
                   )}
                 />
-
-                <HelperText type="error">
-                  {touched.role && errors.role}
-                </HelperText>
-              </>
+              </View>
             )}
           </View>
         </KeyboardAvoidingView>
@@ -280,11 +321,21 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     gap: 12,
     borderTopWidth: 1,
-    borderTopColor: '#f0f0f0',
-    backgroundColor: 'white',
+    //borderTopColor: '#f0f0f0',
+    // backgroundColor: 'white',
   },
   cancelButton: { flex: 1 },
   saveButton: { flex: 2 },
+  itemContainer: {
+    marginHorizontal: 6,
+    borderRadius: 20,
+  },
+
+  item: {
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+  },
 });
 
 export default AddUserBottomSheet;
