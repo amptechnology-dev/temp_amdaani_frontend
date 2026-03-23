@@ -12,6 +12,7 @@ import {
 import BaseBottomSheet from './BaseBottomSheet';
 
 const CartItemBottomSheet = forwardRef(({ item, onUpdate, purchase }, ref) => {
+  console.log('++', item);
   // console.log("CartItemBottomSheet item:", item);
   const theme = useTheme();
   // make selling price editable by the user
@@ -54,7 +55,7 @@ const CartItemBottomSheet = forwardRef(({ item, onUpdate, purchase }, ref) => {
   const [price, setPrice] = useState(() => {
     const base = purchase
       ? Number(item?.price ?? item?.lastPurchasePrice ?? item?.costPrice ?? 0)
-      : Number(item?.price ?? item?.sellingPrice ?? 0);
+      : Number(item?.sellingPrice ?? item?.price ?? 0);
     const flat = Number(item?.discountPrice ?? item?.discount ?? 0);
     const pct = Number(item?.discountPercent ?? 0);
     if (item?.discountType === 'percent' || pct > 0) {
@@ -345,6 +346,12 @@ const CartItemBottomSheet = forwardRef(({ item, onUpdate, purchase }, ref) => {
                 return;
               }
 
+              const flatDiscountAmount =
+                discountType === 'percent'
+                  ? (Number(sellingPrice || 0) * (Number(discountValue) || 0)) /
+                    100 // 10000 * 30/100 = 3000
+                  : Number(discountValue) || 0;
+
               onUpdate({
                 ...item,
 
@@ -375,12 +382,12 @@ const CartItemBottomSheet = forwardRef(({ item, onUpdate, purchase }, ref) => {
                     }),
 
                 qty: qtyNumber,
-
+                subtotal: price,
                 // DISCOUNT (same for both modes)
-                discountPrice: 0,
-                discountPercent: 0,
-                discountType: 'amount',
-
+                discountPrice: flatDiscountAmount,
+                discountPercent:
+                  discountType === 'percent' ? Number(discountValue) || 0 : 0,
+                discountType: discountType,
                 _manualDiscountApplied: true,
               });
             } catch (err) {

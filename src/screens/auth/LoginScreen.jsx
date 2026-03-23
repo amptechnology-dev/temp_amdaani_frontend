@@ -15,6 +15,7 @@ import { TextInput, Text, useTheme, Button, Icon } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { OtpInput } from 'react-native-otp-entry';
 import { useAuth } from '../../context/AuthContext';
+import Toast from 'react-native-toast-message';
 import {
   startOtpListener,
   removeListener,
@@ -175,6 +176,14 @@ const LoginScreen = ({ navigation }) => {
     setLoading(false);
 
     if (res.success) {
+      Toast.show({
+        type: 'success',
+        text1: 'OTP Verified!',
+        text2: 'You have successfully logged in.',
+        position: 'top',
+        visibilityTime: 2000,
+      });
+
       if (res.data?.tempToken) {
         navigation.navigate('RegisterSimple', {
           tempToken: res.data.tempToken,
@@ -184,6 +193,13 @@ const LoginScreen = ({ navigation }) => {
     } else {
       setOtp('');
       if (otpRef.current) otpRef.current.setValue('');
+      Toast.show({
+        type: 'error',
+        text1: 'Invalid OTP',
+        text2: 'Please enter the correct OTP.',
+        position: 'top',
+        visibilityTime: 2000,
+      });
     }
   };
 

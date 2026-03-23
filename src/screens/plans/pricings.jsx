@@ -55,6 +55,9 @@ const PlanCard = ({
     }
   }
 
+  console.log('plan', plan);
+  console.log('courrent plan', isCurrentPlan);
+
   return (
     <Card
       key={plan._id}

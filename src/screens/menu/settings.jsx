@@ -72,16 +72,17 @@ const Settings = () => {
       setStockLoading(true);
       const newValue = !isStockEnabled;
 
-      const formData = new FormData();
-      formData.append('settings[stockManagement]', newValue);
+      //const formData = new FormData();
+      //formData.append('settings[stockManagement]', newValue);
 
-      const response = await api.put('/store/update-my-store', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
+       const response = await api.put('/store/update-my-store', {
+        settings: {
+          stockManagement: newValue,
         },
       });
 
       if (response.success) {
+        console.log('res', response);
         Toast.show({
           type: 'success',
           text1: 'Success',
@@ -108,6 +109,8 @@ const Settings = () => {
       setStockLoading(false);
     }
   };
+
+  console.log('->', isStockEnabled);
 
   const handlePurchaseOrderToggle = async () => {
     console.log('TOGGLE PURCHASE ORDER');

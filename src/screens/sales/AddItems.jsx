@@ -244,33 +244,30 @@ const AddItems = () => {
   };
 
   const calculateItemTotals = (product, qty, overridePrice) => {
-    // console.log('🧮 calculateItemTotals()', {
-    //   incomingPrice: overridePrice,
-    //   productPrice: product.price,
-    //   sellingPrice: product.sellingPrice,
-    //   discountPrice: product.discountPrice,
-    //   manual: product._manualDiscountApplied,
-    // });
-
     const vendorHasGst = !isPurchase || !!route?.params?.vendorGstNumber;
     const gstRate = vendorHasGst ? product.gstRate || 0 : 0;
     let sellingPrice = overridePrice ?? getPurchaseRate(product);
 
-    // SALE MODE: apply either product discount OR manual, but never twice
     if (!isPurchase) {
       if (product._manualDiscountApplied) {
-        // ❌ kuch bhi mat karo
-        // discount already included in item.price
-      } else if (product.discountPrice > 0) {
-        sellingPrice = Math.max(0, sellingPrice - product.discountPrice);
+        // ✅ price already has discount baked in — do nothing
+      } else if (
+        product.discountType === 'percent' &&
+        Number(product.discountPercent) > 0
+      ) {
+        // ✅ percent discount
+        sellingPrice = Math.max(
+          0,
+          sellingPrice - (sellingPrice * Number(product.discountPercent)) / 100,
+        );
+      } else if (Number(product.discountPrice) > 0) {
+        // ✅ flat discount
+        sellingPrice = Math.max(
+          0,
+          sellingPrice - Number(product.discountPrice),
+        );
       }
     }
-
-    // PURCHASE MODE: manual purchase discount (unchanged)
-    // if (isPurchase && product._manualDiscountApplied) {
-    //   const manualDisc = Number(product.discountPrice || 0);
-    //   sellingPrice = Math.max(0, sellingPrice - manualDisc);
-    // }
 
     let basePrice, taxAmount, subtotal;
 
@@ -436,6 +433,12 @@ const AddItems = () => {
     [dropdownQuantities, setQtyForProduct, isPurchase, presentItemSheet],
   );
 
+  const navigationState = navigation.getState();
+  console.log(
+    '🔍 Navigation stack:',
+    JSON.stringify(navigationState.routes, null, 2),
+  );
+
   // Remove from cart
   const removeFromCart = useCallback(identifier => {
     setCart(prev =>
@@ -492,10 +495,13 @@ const AddItems = () => {
   // When bottom sheet updates item (price/qty), update cart and dropdownQuantities
   const onBottomSheetUpdate = useCallback(
     updatedItem => {
-      updatedItem._manualDiscountApplied =
-        Number(updatedItem.discountPrice) > 0;
+      console.log('===> update items', updatedItem);
 
-      // recalc subtotal with GST logic (use calculateItemTotals)
+      // ✅ FIX: check both discountPrice AND discountPercent
+      updatedItem._manualDiscountApplied =
+        Number(updatedItem.discountPrice) > 0 ||
+        Number(updatedItem.discountPercent) > 0;
+
       const { subtotal } = calculateItemTotals(
         updatedItem,
         updatedItem.qty,
@@ -507,14 +513,22 @@ const AddItems = () => {
           c._id === updatedItem._id ? { ...updatedItem, subtotal } : c,
         ),
       );
+
       setDropdownQuantities(prev => ({
         ...prev,
         [updatedItem._id]: updatedItem.qty,
       }));
+
       setProducts(prev =>
         prev.map(p =>
           p._id === updatedItem._id
-            ? { ...p, sellingPrice: updatedItem.price }
+            ? {
+                ...p,
+                sellingPrice: updatedItem.sellingPrice,
+                discountPrice: updatedItem.discountPrice,
+                discountPercent: updatedItem.discountPercent,
+                discountType: updatedItem.discountType,
+              }
             : p,
         ),
       );
@@ -522,20 +536,28 @@ const AddItems = () => {
       setFilteredProducts(prev =>
         prev.map(p =>
           p._id === updatedItem._id
-            ? { ...p, sellingPrice: updatedItem.price }
+            ? {
+                ...p,
+                sellingPrice: updatedItem.sellingPrice,
+                discountPrice: updatedItem.discountPrice,
+                discountPercent: updatedItem.discountPercent,
+                discountType: updatedItem.discountType,
+              }
             : p,
         ),
       );
 
-      // close the item-specific bottom sheet
       closeItemSheet();
     },
     [closeItemSheet],
   );
 
+  console.log('-->filer items', filteredProducts);
+
   // UI renderer for each product in the item list
   const renderProductItem = useCallback(
     ({ item: product }) => {
+      console.log('product', product.sellingPrice);
       const visibleQty = dropdownQuantities[product._id] ?? 0;
       const inCart = cart.some(
         c => c._id === product._id || c.name === product.name,
@@ -560,6 +582,7 @@ const AddItems = () => {
           // fallback simple regex highlight
           const regex = new RegExp(`(${query})`, 'gi');
           const parts = text.split(regex);
+
           return (
             <Text>
               {parts.map((part, i) =>
@@ -624,6 +647,11 @@ const AddItems = () => {
         : inCart
         ? cartItem.price
         : getPurchaseRate(product);
+
+      console.log('==>display', displayPrice);
+      console.log(' cart items===>', cartItem);
+
+      console.log('cart++', cart);
 
       return (
         <View
@@ -719,7 +747,7 @@ const AddItems = () => {
                           ).toFixed(2)}
                         </Text>
                         <Text style={styles.originalPrice}>
-                          ₹{displayPrice.toFixed(2)}
+                          ₹{product.sellingPrice.toFixed(2)}
                         </Text>
                         <Text style={styles.perUnitText}>
                           {' '}
@@ -928,11 +956,16 @@ const AddItems = () => {
       });
       return;
     }
+
+    console.log('->cart', cart);
     const onItemsSelected = route?.params?.onItemsSelected;
+    console.log('-->proam', onItemsSelected);
     if (onItemsSelected) onItemsSelected(cart);
     navigation.pop();
     // Toast.show({ type: 'success', text1: 'Success', text2: 'Items added to invoice!' });
   }, [cart, navigation, route?.params]);
+
+  console.log(' ddsw-->', cart);
 
   return (
     <>

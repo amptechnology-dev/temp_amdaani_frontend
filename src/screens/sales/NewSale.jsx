@@ -109,7 +109,7 @@ export default function NewSale() {
             title: 'Permission Denied',
             message: 'You do not have permission to edit invoices.',
             actions: [{ label: 'Go Back', onPress: () => navigation.goBack() }],
-            type: 'error'
+            type: 'error',
           });
         }
       } else {
@@ -120,7 +120,7 @@ export default function NewSale() {
             title: 'Permission Denied',
             message: 'You do not have permission to create invoices.',
             actions: [{ label: 'Go Back', onPress: () => navigation.goBack() }],
-            type: 'error'
+            type: 'error',
           });
         }
       }
@@ -277,29 +277,29 @@ export default function NewSale() {
   const initialValues =
     isEditMode && existingInvoice
       ? {
-        partyName: existingInvoice.customerName || '',
-        contactNumber: existingInvoice.customerMobile || '',
-        gstNumber: existingInvoice.customerGstNumber || '',
-        address: existingInvoice.customerAddress || '',
-        city: existingInvoice.customerCity || '',
-        state: existingInvoice.customerState || '',
-        country: existingInvoice.customerCountry || 'India',
-        postalCode: existingInvoice.customerPostalCode || '',
-        invoicePrefix: existingInvoice.invoiceNumber.split('-')[0] || 'INV',
-        invoiceNumber: existingInvoice.invoiceNumber,
-      }
+          partyName: existingInvoice.customerName || '',
+          contactNumber: existingInvoice.customerMobile || '',
+          gstNumber: existingInvoice.customerGstNumber || '',
+          address: existingInvoice.customerAddress || '',
+          city: existingInvoice.customerCity || '',
+          state: existingInvoice.customerState || '',
+          country: existingInvoice.customerCountry || 'India',
+          postalCode: existingInvoice.customerPostalCode || '',
+          invoicePrefix: existingInvoice.invoiceNumber.split('-')[0] || 'INV',
+          invoiceNumber: existingInvoice.invoiceNumber,
+        }
       : {
-        partyName: '',
-        contactNumber: '',
-        gstNumber: '',
-        address: '',
-        city: '',
-        state: '',
-        country: 'India',
-        postalCode: '',
-        invoicePrefix: storedata?.settings?.invoicePrefix || 'INV',
-        invoiceNumber: storedata?.settings?.invoiceStartNumber || 1,
-      };
+          partyName: '',
+          contactNumber: '',
+          gstNumber: '',
+          address: '',
+          city: '',
+          state: '',
+          country: 'India',
+          postalCode: '',
+          invoicePrefix: storedata?.settings?.invoicePrefix || 'INV',
+          invoiceNumber: storedata?.settings?.invoiceStartNumber || 1,
+        };
 
   const [alertConfig, setAlertConfig] = useState({
     visible: false,
@@ -374,7 +374,7 @@ export default function NewSale() {
       fetchCustomers();
 
       // Optional cleanup
-      return () => { };
+      return () => {};
     }, []),
   );
 
@@ -493,9 +493,9 @@ export default function NewSale() {
               : true;
             const mobileMatch = m
               ? (c.mobile || '').includes(m) ||
-              (c.mobile || '')
-                .replace(/\D/g, '')
-                .includes(m.replace(/\D/g, ''))
+                (c.mobile || '')
+                  .replace(/\D/g, '')
+                  .includes(m.replace(/\D/g, ''))
               : true;
             // If both queries present, require BOTH to match (AND). If only one present, match that one.
             if (n && m) return nameMatch && mobileMatch;
@@ -762,7 +762,7 @@ export default function NewSale() {
     const computedItems = (cartItems || []).map(item => {
       const gstRate = Number(item.gstRate || 0);
       const qty = Number(item.qty || 0);
-      const sellingPriceRaw = Number(item.price ?? item.sellingPrice ?? 0);
+      const sellingPriceRaw = Number(item.sellingPrice ?? 0);
       const discount = Number(item.discountPrice ?? item.discount ?? 0);
       const isTaxInclusive = Boolean(item.isTaxInclusive);
 
@@ -1019,8 +1019,8 @@ export default function NewSale() {
       payment.paid === 0 && payment.grandTotal > 0
         ? 'unpaid'
         : payment.due === 0 && payment.grandTotal > 0
-          ? 'paid'
-          : 'partial';
+        ? 'paid'
+        : 'partial';
 
     const customerGstFinal = values?.gstNumber || selectedCustomer?.gstNumber;
     const customerStateFinal = values?.state || selectedCustomer?.state;
@@ -1124,8 +1124,9 @@ export default function NewSale() {
         Toast.show({
           type: 'success',
           text1: isEditMode ? 'Invoice Updated!' : 'Invoice Created!',
-          text2: `Invoice #${invoiceData.invoiceNumber} has been successfully ${isEditMode ? 'updated' : 'created'
-            }.`,
+          text2: `Invoice #${invoiceData.invoiceNumber} has been successfully ${
+            isEditMode ? 'updated' : 'created'
+          }.`,
         });
         // Only update store invoice counters for NEW invoices. Do not modify invoice numbering on edit.
         if (!isEditMode) {
@@ -1237,7 +1238,7 @@ export default function NewSale() {
         // VERY IMPORTANT — keep product original too
         product: {
           ...item.product,
-          sellingPrice: editedPrice,   // ← THIS FIXES THE UI (399 instead of 499)
+          sellingPrice: editedPrice, // ← THIS FIXES THE UI (399 instead of 499)
         },
 
         qty: item.qty ?? item.quantity ?? 0,
@@ -1433,7 +1434,7 @@ export default function NewSale() {
                   keyboardType="phone-pad"
                   error={Boolean(
                     formikRef.current?.touched?.contactNumber &&
-                    formikRef.current?.errors?.contactNumber,
+                      formikRef.current?.errors?.contactNumber,
                   )}
                 />
 
@@ -1544,9 +1545,20 @@ export default function NewSale() {
                       setMobileQuery(snapshot.mobile);
                       customerSheetRef.current?.expand?.();
                     }}
-                    style={{ alignSelf: 'flex-start', backgroundColor: theme.colors.background, borderColor: theme.colors.primary + 20, borderWidth: 1, borderRadius: 12, padding: 4, marginVertical: 4, paddingHorizontal: 16 }}
+                    style={{
+                      alignSelf: 'flex-start',
+                      backgroundColor: theme.colors.background,
+                      borderColor: theme.colors.primary + 20,
+                      borderWidth: 1,
+                      borderRadius: 12,
+                      padding: 4,
+                      marginVertical: 4,
+                      paddingHorizontal: 16,
+                    }}
                   >
-                    <Text style={{ fontSize: 12, color: theme.colors.primary }}>Add More Customer Details</Text>
+                    <Text style={{ fontSize: 12, color: theme.colors.primary }}>
+                      Add More Customer Details
+                    </Text>
                   </TouchableOpacity>
                 ) : null}
               </View>
@@ -1562,8 +1574,8 @@ export default function NewSale() {
                 onSave={handleCustomerSave}
               /> */}
               {invoiceLoaded &&
-                showPreview &&
-                (invoiceCalculations.computedItems || cartItems).length > 0 ? (
+              showPreview &&
+              (invoiceCalculations.computedItems || cartItems).length > 0 ? (
                 <View style={{ flex: 1, position: 'relative' }}>
                   {/* <View style={{ flexDirection: 'row', gap: 8, marginHorizontal: 16 }}>
                         <Button
@@ -1664,7 +1676,7 @@ export default function NewSale() {
                     {invoiceLoaded &&
                       showPreview &&
                       (invoiceCalculations.computedItems || cartItems).length >
-                      0 && (
+                        0 && (
                         <>
                           <FAB
                             size="small"
@@ -1944,10 +1956,10 @@ export default function NewSale() {
                           <View
                             pointerEvents={
                               !Boolean(selectedCustomer) &&
-                                !Boolean(
-                                  formikRef.current?.values?.contactNumber?.trim()
-                                    ?.length >= 10,
-                                )
+                              !Boolean(
+                                formikRef.current?.values?.contactNumber?.trim()
+                                  ?.length >= 10,
+                              )
                                 ? 'box-only'
                                 : 'auto'
                             }
@@ -2180,7 +2192,7 @@ export default function NewSale() {
           actions={alertConfig.actions}
           onDismiss={() => setAlertConfig({ ...alertConfig, visible: false })}
         />
-      </SafeAreaView >
+      </SafeAreaView>
 
       <DiscountBottomSheet
         ref={discountSheetRef}

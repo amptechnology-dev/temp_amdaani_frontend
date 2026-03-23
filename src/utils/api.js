@@ -10,6 +10,7 @@ let updateAuthState = null;
 let logoutFn = null;
 const BASE_URL = Config.API_BASE_URL;
 
+//API_BASE_URL=https://amdaani.v1.amptechnology.in/api/
 //'https://pos-dev.amptechnology.in/api'
 console.log('CONFIG FULL:', Config);
 
