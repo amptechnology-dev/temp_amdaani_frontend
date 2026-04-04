@@ -1,4 +1,3 @@
-// src/utils/api.js
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Toast from 'react-native-toast-message';
@@ -10,11 +9,6 @@ let updateAuthState = null;
 let logoutFn = null;
 const BASE_URL = Config.API_BASE_URL;
 
-//API_BASE_URL=https://amdaani.v1.amptechnology.in/api/
-//'https://pos-dev.amptechnology.in/api'
-console.log('CONFIG FULL:', Config);
-
-// 🔑 Allow AuthContext to register its handlers
 export const setAuthHandlers = (updateFn, logout) => {
   updateAuthState = updateFn;
   logoutFn = logout;
@@ -38,7 +32,7 @@ api.interceptors.request.use(async config => {
   return config;
 });
 
-// --- SINGLE refresh lock ---
+// ── Single refresh lock ──────────────────────────────────────
 let refreshPromise = null;
 
 api.interceptors.response.use(
@@ -56,22 +50,18 @@ api.interceptors.response.use(
             if (!storedAuth) throw new Error('No auth found');
             const { accessToken, refreshToken } = JSON.parse(storedAuth);
 
-            // console.log('[Auth] Attempting token refresh...');
-
-            // 🚀 Refresh call
             const res = await axios.post(
               `${BASE_URL}/auth/refresh-tokens`,
               { refreshToken },
               {
                 headers: {
-                  Authorization: `Bearer ${accessToken}`, // expired token
+                  Authorization: `Bearer ${accessToken}`,
                   'Content-Type': 'application/json',
                 },
               },
             );
 
             if (res.data?.success && res.data?.data) {
-              // console.log('[Auth] Refresh successful');
               const newTokens = {
                 accessToken: res.data.data.accessToken,
                 refreshToken: res.data.data.refreshToken,
@@ -83,10 +73,8 @@ api.interceptors.response.use(
                 isAuthenticated: true,
               };
 
-              // save to storage
               await AsyncStorage.setItem('auth', JSON.stringify(updatedAuth));
 
-              // update AuthContext state
               if (updateAuthState) {
                 await updateAuthState(updatedAuth);
               }
@@ -96,12 +84,11 @@ api.interceptors.response.use(
 
             throw new Error('Refresh failed');
           } catch (err) {
-            // console.log('[Auth] Refresh failed:', err?.message || err);
-
-            // 🚫 Don’t trigger reset if app is still bootstrapping
+            // ✅ FIX: isBootstrapping must be false before logout triggers
             if (!isBootstrapping) {
+              const storedAuth = await AsyncStorage.getItem('auth');
               const wasLoggedIn = JSON.parse(
-                (await AsyncStorage.getItem('auth')) || '{}',
+                storedAuth || '{}',
               )?.isAuthenticated;
 
               await AsyncStorage.removeItem('auth');
@@ -114,7 +101,7 @@ api.interceptors.response.use(
                 });
               }
 
-              if (logoutFn) logoutFn(false); // silent option
+              if (logoutFn) logoutFn(false);
             }
 
             throw err;
@@ -126,7 +113,6 @@ api.interceptors.response.use(
 
       try {
         const newTokens = await refreshPromise;
-        // retry original request with new accessToken
         originalRequest.headers.Authorization = `Bearer ${newTokens.accessToken}`;
         return api(originalRequest);
       } catch {
@@ -134,19 +120,13 @@ api.interceptors.response.use(
       }
     }
 
-    // other errors
     if (
       error.response?.data?.message ===
       'No active subscription found for this store!'
     )
       return;
 
-    //const message = error.response?.data?.message || 'Something went wrong';
     const message = extractErrorMessage(error);
-
-    // Toast.show({ type: 'error', text1: 'Error', text2: message });
-
-    // console.log('Error:', message);
     error.message = message;
     return Promise.reject(error);
   },

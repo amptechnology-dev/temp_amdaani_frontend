@@ -6,6 +6,7 @@ import React, {
   useContext,
   useMemo,
 } from 'react';
+import { AppState } from 'react-native'; // ✅ FIX: add this import
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Toast from 'react-native-toast-message';
 import { jwtDecode } from 'jwt-decode';
@@ -45,7 +46,7 @@ export const permissions = {
   CAN_VIEW_PURCHASES: 'view_purchases',
 };
 
-export let isBootstrapping = true;
+export let isBootstrapping = true; // stays true until splash done
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
@@ -59,7 +60,6 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [hasCompletedOnboarding, setHasCompletedOnboarding] = useState(false);
 
-  // subscription state
   const [subscription, setSubscription] = useState(null);
   const [usage, setUsage] = useState(null);
   const [subLoading, setSubLoading] = useState(false);
@@ -68,12 +68,12 @@ export const AuthProvider = ({ children }) => {
     setAuthHandlers(updateAuthState, logout);
   }, []);
 
-  // bootstrap auth with minimum splash duration
+  // ── Bootstrap ────────────────────────────────────────────────
   useEffect(() => {
     let isMounted = true;
     const loadAuth = async () => {
       const startTime = Date.now();
-      const MIN_SPLASH_DURATION = 2000; // 2 seconds minimum splash
+      const MIN_SPLASH_DURATION = 2000;
 
       try {
         const onboardingCompleted = await AsyncStorage.getItem(
@@ -82,26 +82,21 @@ export const AuthProvider = ({ children }) => {
         if (isMounted) {
           setHasCompletedOnboarding(onboardingCompleted === 'true');
         }
-        const storedAuth = await AsyncStorage.getItem('auth');
 
+        const storedAuth = await AsyncStorage.getItem('auth');
         if (storedAuth) {
           const parsedAuth = JSON.parse(storedAuth);
-
           if (parsedAuth.accessToken) {
             const decoded = jwtDecode(parsedAuth.accessToken);
 
             if (decoded.exp * 1000 > Date.now()) {
-              // Token valid
-              if (isMounted) {
+              if (isMounted)
                 setAuthState({ ...parsedAuth, isAuthenticated: true });
-              }
             } else if (parsedAuth.refreshToken) {
-              // Try refreshing
               try {
                 const res = await api.post('/auth/refresh-tokens', {
                   refreshToken: parsedAuth.refreshToken,
                 });
-
                 if (res.success && res.data) {
                   const updatedAuth = {
                     ...parsedAuth,
@@ -113,46 +108,31 @@ export const AuthProvider = ({ children }) => {
                     'auth',
                     JSON.stringify(updatedAuth),
                   );
-
-                  if (isMounted) {
-                    setAuthState(updatedAuth);
-                  }
+                  if (isMounted) setAuthState(updatedAuth);
                 } else {
-                  if (isMounted) {
-                    setAuthState({ isAuthenticated: false });
-                  }
+                  if (isMounted) setAuthState({ isAuthenticated: false });
                 }
-              } catch (refreshErr) {
-                if (isMounted) {
-                  setAuthState({ isAuthenticated: false });
-                }
+              } catch {
+                if (isMounted) setAuthState({ isAuthenticated: false });
               }
             } else {
-              if (isMounted) {
-                setAuthState({ isAuthenticated: false });
-              }
+              if (isMounted) setAuthState({ isAuthenticated: false });
             }
           }
         } else {
-          if (isMounted) {
-            setAuthState({ isAuthenticated: false });
-          }
+          if (isMounted) setAuthState({ isAuthenticated: false });
         }
-      } catch (err) {
-        // console.log('[Auth] Bootstrap error:', err);
-        if (isMounted) {
-          setAuthState({ isAuthenticated: false });
-        }
+      } catch {
+        if (isMounted) setAuthState({ isAuthenticated: false });
       } finally {
-        // Ensure minimum splash duration
-        const elapsedTime = Date.now() - startTime;
-        const remainingTime = Math.max(0, MIN_SPLASH_DURATION - elapsedTime);
-
+        const elapsed = Date.now() - startTime;
+        const remaining = Math.max(0, MIN_SPLASH_DURATION - elapsed);
         setTimeout(() => {
           if (isMounted) {
+            isBootstrapping = false; // ✅ FIX 1: mark bootstrap done so api.js can trigger logout
             setLoading(false);
           }
-        }, remainingTime);
+        }, remaining);
       }
     };
 
@@ -162,15 +142,50 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
+  // ✅ FIX 2: AppState listener — check token when app resumes from background
+  useEffect(() => {
+    const appStateRef = { current: AppState.currentState };
+
+    const handleAppStateChange = async nextState => {
+      if (
+        appStateRef.current.match(/inactive|background/) &&
+        nextState === 'active' &&
+        authState.isAuthenticated
+      ) {
+        try {
+          const storedAuth = await AsyncStorage.getItem('auth');
+          if (!storedAuth) return logout(false);
+
+          const { accessToken } = JSON.parse(storedAuth);
+          if (!accessToken) return logout(false);
+
+          const decoded = jwtDecode(accessToken);
+          const isExpired = decoded.exp * 1000 < Date.now();
+
+          if (isExpired) {
+            // Let api.js interceptor handle refresh + logout automatically
+            await api.get('/auth/me');
+          }
+        } catch {
+          // api.js 401 interceptor handles logout
+        }
+      }
+      appStateRef.current = nextState;
+    };
+
+    const sub = AppState.addEventListener('change', handleAppStateChange);
+    return () => sub.remove();
+  }, [authState.isAuthenticated]);
+
+  // ── rest of your existing code unchanged ─────────────────────
+
   useEffect(() => {
     if (authState.isAuthenticated) {
       ensureNotificationPermission();
       fetchUserProfile();
-      // console.log('subscribe');
     }
   }, [authState.isAuthenticated]);
 
-  // fetch subscription only after authenticated
   useEffect(() => {
     if (authState.isAuthenticated) {
       fetchSubscription();
@@ -187,7 +202,6 @@ export const AuthProvider = ({ children }) => {
       if (response.data && response.data.subscription) {
         setSubscription(response.data.subscription);
         setUsage(response.data.usage);
-        // console.log('[Subscription] data:', response.data);
       } else {
         setSubscription(null);
         setUsage(null);
@@ -200,7 +214,6 @@ export const AuthProvider = ({ children }) => {
   };
 
   const canCreateInvoice = () => {
-    // console.log('Can Create Invoice Subscription:', subscription);
     if (!subscription) {
       return {
         allowed: false,
@@ -208,7 +221,6 @@ export const AuthProvider = ({ children }) => {
         message: 'No active subscription found. Please subscribe to a plan.',
       };
     }
-
     const now = new Date();
     const endDate = new Date(subscription.endDate);
     if (now > endDate) {
@@ -218,7 +230,6 @@ export const AuthProvider = ({ children }) => {
         message: 'Your subscription has expired. Please renew your plan.',
       };
     }
-
     if (usage && subscription.usageLimits?.invoices !== undefined) {
       if (
         subscription?.usageLimits?.unlimited !== true &&
@@ -232,14 +243,12 @@ export const AuthProvider = ({ children }) => {
         };
       }
     }
-
     return { allowed: true };
   };
 
   const fetchUserProfile = async () => {
     try {
       const res = await api.get('/auth/me');
-      console.log('[Auth] User profile:', res.data);
       if (res.success && res.data) {
         setAuthState(prev => ({
           ...prev,
@@ -260,10 +269,7 @@ export const AuthProvider = ({ children }) => {
 
   const hasPermission = requiredPermission => {
     const userRole = authState?.user?.role;
-
     if (!userRole) return false;
-
-    // Check if role has specific permission or 'all'
     const userPermissions = userRole.permissions || [];
     return (
       userPermissions.includes(permissions.ALL) ||
@@ -284,16 +290,14 @@ export const AuthProvider = ({ children }) => {
     if (storedAuth) {
       const parsedAuth = JSON.parse(storedAuth);
       setAuthState(parsedAuth);
-      // console.log('[Auth] Context updated from storage');
     }
   };
 
   const sendOtp = async phone => {
     try {
       const res = await api.post('/auth/get-otp', { phone });
-      if (res.success) {
+      if (res.success)
         Toast.show({ type: 'success', text1: 'Success', text2: res.message });
-      }
       return res;
     } catch (err) {
       Toast.show({ type: 'error', text1: 'Failed', text2: err.message });
@@ -314,7 +318,6 @@ export const AuthProvider = ({ children }) => {
             tempToken: null,
           };
           await updateAuthState(newAuthState);
-          // resetToMainTabs();
         } else if (res.data?.tempToken) {
           setAuthState(prev => ({ ...prev, tempToken: res.data.tempToken }));
         }
@@ -357,8 +360,6 @@ export const AuthProvider = ({ children }) => {
     try {
       await AsyncStorage.setItem('@onboarding_completed', 'true');
       setHasCompletedOnboarding(true);
-      // resetToAuth();
-      // console.log('[Onboarding] Completed successfully');
     } catch (error) {
       console.error('[Onboarding] Error saving status:', error);
     }
@@ -388,7 +389,6 @@ export const AuthProvider = ({ children }) => {
 
   const getUserPreference = (key, defaultValue = null) => {
     if (!authState?.user?.preferences) return defaultValue;
-
     if (key.includes('.')) {
       const parts = key.split('.');
       let current = authState.user.preferences;
@@ -398,7 +398,6 @@ export const AuthProvider = ({ children }) => {
       }
       return current ?? defaultValue;
     }
-
     return authState.user.preferences[key] ?? defaultValue;
   };
 
@@ -421,12 +420,10 @@ export const AuthProvider = ({ children }) => {
       verifyOtp,
       completeRegistration,
       logout,
-      // subscription values
       subscription,
       completeOnboarding,
       usage,
       subLoading,
-      fetchSubscription,
       fetchSubscription,
       canCreateInvoice,
       hasPermission,
