@@ -1048,7 +1048,7 @@ export default function NewSale() {
       type: isGstInvoice ? 'gst' : 'non-gst',
       isIgst,
       items: cartItems.map(item => {
-        const base = Number(item.price ?? item.sellingPrice ?? 0);
+        const base = Number(item.sellingPrice ?? 0);
         const discount = Number(item.discountPrice ?? item.discount ?? 0);
         const gstRate = Number(item.gstRate ?? 0);
         const qty = Number(item.qty ?? 0);

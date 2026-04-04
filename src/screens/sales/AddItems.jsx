@@ -432,13 +432,9 @@ const AddItems = () => {
     },
     [dropdownQuantities, setQtyForProduct, isPurchase, presentItemSheet],
   );
-
-  const navigationState = navigation.getState();
-  console.log(
-    '🔍 Navigation stack:',
-    JSON.stringify(navigationState.routes, null, 2),
-  );
-
+  console.log('selected items => ', selectedCartItem);
+  console.log('filter data', filteredProducts);
+  console.log('products', products);
   // Remove from cart
   const removeFromCart = useCallback(identifier => {
     setCart(prev =>
@@ -495,7 +491,7 @@ const AddItems = () => {
   // When bottom sheet updates item (price/qty), update cart and dropdownQuantities
   const onBottomSheetUpdate = useCallback(
     updatedItem => {
-      console.log('===> update items', updatedItem);
+      //console.log('===> update items', updatedItem);
 
       // ✅ FIX: check both discountPrice AND discountPercent
       updatedItem._manualDiscountApplied =
@@ -552,7 +548,7 @@ const AddItems = () => {
     [closeItemSheet],
   );
 
-  console.log('-->filer items', filteredProducts);
+  // console.log('-->filer items', filteredProducts);
 
   // UI renderer for each product in the item list
   const renderProductItem = useCallback(
@@ -562,6 +558,7 @@ const AddItems = () => {
       const inCart = cart.some(
         c => c._id === product._id || c.name === product.name,
       );
+
       const cartItem = cart.find(
         c => c._id === product._id || c.name === product.name,
       );
@@ -648,11 +645,12 @@ const AddItems = () => {
         ? cartItem.price
         : getPurchaseRate(product);
 
-      console.log('==>display', displayPrice);
-      console.log(' cart items===>', cartItem);
+      // console.log('==>display', displayPrice);
+      // console.log(' cart items===>', cartItem);
 
-      console.log('cart++', cart);
+      //console.log('cart++', cart);
 
+      console.log('selected itsmas', selectItem);
       return (
         <View
           style={[
@@ -670,7 +668,9 @@ const AddItems = () => {
             onPress={() => {
               if (inCart) {
                 // open bottom sheet to edit selected item
+                console.log('carditems', cartItem);
                 setSelectedCartItem(cartItem);
+
                 presentItemSheet();
               } else {
                 // select (add) the item with default qty or visibleQty
@@ -965,7 +965,7 @@ const AddItems = () => {
     // Toast.show({ type: 'success', text1: 'Success', text2: 'Items added to invoice!' });
   }, [cart, navigation, route?.params]);
 
-  console.log(' ddsw-->', cart);
+  //console.log(' ddsw-->', cart);
 
   return (
     <>

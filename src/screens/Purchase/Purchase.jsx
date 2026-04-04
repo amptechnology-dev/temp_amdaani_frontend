@@ -1261,7 +1261,11 @@ export default function Purchase() {
 
   // Initial form view (when no items added yet)
   return (
-    <>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+    >
       <SafeAreaView
         style={[styles.container, { backgroundColor: theme.colors.background }]}
       >
@@ -1563,7 +1567,7 @@ export default function Purchase() {
                         styles.dropdown,
                         {
                           backgroundColor: theme.colors.surface,
-                          top: inputLayout.y + 0,
+                          top: inputLayout.y + 95,
                           left: inputLayout.x + 16,
                           width: inputLayout.width - 32,
                           opacity: dropdownAnim,
@@ -2232,7 +2236,7 @@ export default function Purchase() {
         setPaymentNote={setPaymentNote}
         onDone={() => paymentSheetRef.current?.close?.()}
       />
-    </>
+    </KeyboardAvoidingView>
   );
 }
 

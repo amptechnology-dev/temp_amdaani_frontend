@@ -29,7 +29,6 @@ const VendorDueDetails = () => {
   const theme = useTheme();
   const navigation = useNavigation();
 
-
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [customer, setCustomer] = useState(null);
@@ -40,10 +39,11 @@ const VendorDueDetails = () => {
 
   const fetchDueDetails = async () => {
     try {
-      const res = await api.get(`/vendor/due/${id}`)
+      const res = await api.get(`/vendor/due/${id}`);
       // console.log("Due Response", res)
       if (res.success) {
         setCustomer(res.data.vendor);
+        console.log('dew vendor', res.data.vendor);
         setInvoices(res.data.purchases);
       }
     } catch (err) {
@@ -73,11 +73,10 @@ const VendorDueDetails = () => {
   };
 
   const getTotalDue = () => {
-    return invoices.reduce(
-      (sum, inv) => sum + inv.amountDue,
-      0,
-    );
+    return invoices.reduce((sum, inv) => sum + inv.amountDue, 0);
   };
+
+  // console.log("-->costomer",customer)
 
   const getStatusColor = status => {
     switch (status?.toLowerCase()) {
@@ -243,7 +242,7 @@ const VendorDueDetails = () => {
                     {customer.mobile}
                   </Text>
                 </View>
-                {customer.address &&
+                {customer.address && (
                   <View
                     style={{
                       flexDirection: 'row',
@@ -265,7 +264,7 @@ const VendorDueDetails = () => {
                       {customer.address}
                     </Text>
                   </View>
-                }
+                )}
               </View>
             </View>
 
@@ -400,7 +399,6 @@ const VendorDueDetails = () => {
                       }}
                     >
                       {formatDate(invoice.date)}
-
                     </Text>
                   </View>
                   <Chip
@@ -497,8 +495,9 @@ const VendorDueDetails = () => {
                         style={[
                           styles.progressFill,
                           {
-                            width: `${(invoice.amountPaid / invoice.grandTotal) * 100
-                              }%`,
+                            width: `${
+                              (invoice.amountPaid / invoice.grandTotal) * 100
+                            }%`,
                             backgroundColor: theme.colors.primary,
                           },
                         ]}

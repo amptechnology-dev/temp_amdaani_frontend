@@ -40,6 +40,8 @@ const PurchaseDuesBottomSheet = forwardRef(
     // Calculate due amount
     const dueAmount = invoiceData?.amountDue;
 
+    console.log('amount--->', dueAmount);
+
     // Auto-fill amount when invoiceData changes
     useEffect(() => {
       if (invoiceData && dueAmount > 0) {
@@ -141,7 +143,7 @@ const PurchaseDuesBottomSheet = forwardRef(
         const response = await api.post(
           `/purchase/add-payment/${invoiceData._id}`,
           {
-            // amount: parseFloat(form.amount),
+            amount: parseFloat(form.amount),
             paymentMethod: form.paymentMethod,
             note: form.note,
           },

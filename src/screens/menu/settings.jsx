@@ -75,9 +75,10 @@ const Settings = () => {
       //const formData = new FormData();
       //formData.append('settings[stockManagement]', newValue);
 
-       const response = await api.put('/store/update-my-store', {
+      const response = await api.put('/store/update-my-store', {
         settings: {
           stockManagement: newValue,
+          purchaseOrderManagement: isPurchaseOrderEnabled,
         },
       });
 
@@ -121,6 +122,7 @@ const Settings = () => {
       const response = await api.put('/store/update-my-store', {
         settings: {
           purchaseOrderManagement: newValue,
+          stockManagement: isStockEnabled,
         },
       });
 

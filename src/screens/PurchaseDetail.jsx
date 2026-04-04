@@ -7,7 +7,6 @@ import {
   RefreshControl,
   StyleSheet,
   TouchableOpacity,
-  Share,
   Alert,
   Dimensions,
   Platform,
@@ -44,6 +43,7 @@ import RNFS from 'react-native-fs';
 import FileViewer from 'react-native-file-viewer';
 import { FAB } from 'react-native-paper';
 import { WebView } from 'react-native-webview';
+import Share from 'react-native-share';
 
 // Smooth animation preset — reuse everywhere
 const smoothEnter = (delay = 0, duration = 650) =>
@@ -554,11 +554,12 @@ const PurchaseDetail = ({ route, navigation }) => {
         return;
       }
 
-      await Share.share({
+      await Share.open({
         url:
           Platform.OS === 'android' ? `file://${pdf.filePath}` : pdf.filePath,
         title: `Purchase Invoice #${purchase.invoiceNumber}`,
         message: `Purchase Invoice #${purchase.invoiceNumber}`,
+        failOnCancel: false,
         type: 'application/pdf',
       });
     } catch (error) {
@@ -689,7 +690,7 @@ const PurchaseDetail = ({ route, navigation }) => {
 
   const statusConfig = getStatusConfig(paymentStatus);
 
-  const baseBottom = 80;
+  const baseBottom = 120;
   const fabSpacing = 56;
 
   const editFabBottom = baseBottom;
@@ -939,7 +940,7 @@ const styles = StyleSheet.create({
   // Floating Action Buttons
   floatingButtons: {
     position: 'absolute',
-    bottom: 0,
+    bottom: 30,
     left: 0,
     right: 0,
     flexDirection: 'row',
