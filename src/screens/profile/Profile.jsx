@@ -25,6 +25,7 @@ import {
   Chip,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Navbar from '../../components/Navbar';
 import StateSelectorBottomSheet from '../../components/BottomSheet/SelectStateBottomSheet';
 import ImagePickerBottomSheet from '../../components/BottomSheet/ImagePickerBottomSheet';
@@ -157,9 +158,9 @@ const validationSchema = Yup.object()
       return missing.length === 0
         ? true
         : this.createError({
-          path: 'bankName',
-          message: `${missing.join(', ')} required`,
-        });
+            path: 'bankName',
+            message: `${missing.join(', ')} required`,
+          });
     },
   );
 
@@ -179,6 +180,7 @@ const Profile = ({ navigation }) => {
   const formikRef = useRef(null);
 
   const richTextRef = useRef(null);
+  const insets = useSafeAreaInsets();
 
   // Track original data from API
   const [originalData, setOriginalData] = useState({});
@@ -241,8 +243,9 @@ const Profile = ({ navigation }) => {
           gstin: store.gstNumber || '',
           phoneNumber: store.contactNo || '',
           emailId: store.email || '',
-          businessAddress: `${address.street || ''} ${address.city || ''} ${address.state || ''
-            }`.trim(),
+          businessAddress: `${address.street || ''} ${address.city || ''} ${
+            address.state || ''
+          }`.trim(),
           pincode: address.postalCode || '',
           businessDescription: store.tagline || '',
 
@@ -288,18 +291,18 @@ const Profile = ({ navigation }) => {
           ...mappedData,
           logo: store.logoUrl
             ? {
-              uri: store.logoUrl,
-              fileName: 'business_logo.jpg',
-              isOriginal: true,
-            }
+                uri: store.logoUrl,
+                fileName: 'business_logo.jpg',
+                isOriginal: true,
+              }
             : null,
           signature: store.signatureUrl
             ? {
-              uri: store.signatureUrl,
-              type: 'upload',
-              fileName: 'business_signature.jpg',
-              isOriginal: true,
-            }
+                uri: store.signatureUrl,
+                type: 'upload',
+                fileName: 'business_signature.jpg',
+                isOriginal: true,
+              }
             : null,
         });
 
@@ -308,18 +311,18 @@ const Profile = ({ navigation }) => {
           ...mappedData,
           logo: store.logoUrl
             ? {
-              uri: store.logoUrl,
-              fileName: 'business_logo.jpg',
-              isOriginal: true,
-            }
+                uri: store.logoUrl,
+                fileName: 'business_logo.jpg',
+                isOriginal: true,
+              }
             : null,
           signature: store.signatureUrl
             ? {
-              uri: store.signatureUrl,
-              type: 'upload',
-              fileName: 'business_signature.jpg',
-              isOriginal: true,
-            }
+                uri: store.signatureUrl,
+                type: 'upload',
+                fileName: 'business_signature.jpg',
+                isOriginal: true,
+              }
             : null,
         }));
 
@@ -491,9 +494,9 @@ const Profile = ({ navigation }) => {
   };
 
   // const openBusinessTypeSelector = () => {
-  //   if (businessTypeSheetRef.current) {
-  //     businessTypeSheetRef.current.expand();
-  //   }
+  // if (businessTypeSheetRef.current) {
+  // businessTypeSheetRef.current.expand();
+  // }
   // };
 
   const openStateSelector = () => {
@@ -802,7 +805,7 @@ const Profile = ({ navigation }) => {
         onBlur={handleBlur('registrationNo')}
         error={touched.registrationNo && !!errors.registrationNo}
         mode="outlined"
-        editable={!originalData.registrationNo} //  editable only if empty
+        editable={!originalData.registrationNo} // editable only if empty
         style={styles.input}
         left={<TextInput.Icon icon="certificate-outline" />}
         // placeholder="Business registration number"
@@ -1327,21 +1330,21 @@ const Profile = ({ navigation }) => {
                 <Surface style={styles.contentContainer} elevation={1}>
                   {activeTab === 'basic'
                     ? renderBasicDetails({
-                      values,
-                      errors,
-                      touched,
-                      handleChange,
-                      handleBlur,
-                      setFieldValue,
-                    })
+                        values,
+                        errors,
+                        touched,
+                        handleChange,
+                        handleBlur,
+                        setFieldValue,
+                      })
                     : renderBusinessDetails({
-                      values,
-                      errors,
-                      touched,
-                      handleChange,
-                      handleBlur,
-                      setFieldValue,
-                    })}
+                        values,
+                        errors,
+                        touched,
+                        handleChange,
+                        handleBlur,
+                        setFieldValue,
+                      })}
                 </Surface>
                 {/* Bottom spacing for buttons */}
                 <View style={styles.bottomSpacing} />
@@ -1352,7 +1355,11 @@ const Profile = ({ navigation }) => {
             <View
               style={[
                 styles.buttonContainer,
-                { backgroundColor: theme.colors.background, elevation: 3 },
+                {
+                  backgroundColor: theme.colors.background,
+                  elevation: 3,
+                  paddingBottom: insets.bottom,
+                },
               ]}
             >
               <Divider />
@@ -1368,12 +1375,18 @@ const Profile = ({ navigation }) => {
                 <Button
                   mode="contained"
                   onPress={handleSubmit}
-                  disabled={!hasPermission(permissions.CAN_MANAGE_STORE) || isSubmitting || updating}
+                  disabled={
+                    !hasPermission(permissions.CAN_MANAGE_STORE) ||
+                    isSubmitting ||
+                    updating
+                  }
                   style={[styles.button, styles.saveButton]}
                   labelStyle={[
                     {
                       color:
-                        !hasPermission(permissions.CAN_MANAGE_STORE) || isSubmitting || updating
+                        !hasPermission(permissions.CAN_MANAGE_STORE) ||
+                        isSubmitting ||
+                        updating
                           ? theme.colors.onBackground
                           : theme.colors.onSurface,
                     },
@@ -1381,12 +1394,12 @@ const Profile = ({ navigation }) => {
                   icon={
                     updating
                       ? () => (
-                        <ActivityIndicator
-                          animating={true}
-                          size={18}
-                          color="white"
-                        />
-                      )
+                          <ActivityIndicator
+                            animating={true}
+                            size={18}
+                            color="white"
+                          />
+                        )
                       : 'content-save'
                   }
                 >
@@ -1429,13 +1442,13 @@ const Profile = ({ navigation }) => {
             />
 
             {/* <BusinessTypeSelectorBottomSheet
-              ref={businessTypeSheetRef}
-              onBusinessTypeSelect={type => {
-                formikRef.current?.setFieldValue('businessType', type.name);
-                businessTypeSheetRef.current?.close();
-              }
-              }
-            /> */}
+ ref={businessTypeSheetRef}
+ onBusinessTypeSelect={type => {
+ formikRef.current?.setFieldValue('businessType', type.name);
+ businessTypeSheetRef.current?.close();
+ }
+ }
+ /> */}
 
             {/* Signature Pad Modal */}
             <SignaturePadModal
@@ -1510,7 +1523,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   uploadSection: {
-    marginBottom: '25%',
+    marginBottom: '32%',
   },
   sectionTitle: {
     fontSize: 16,

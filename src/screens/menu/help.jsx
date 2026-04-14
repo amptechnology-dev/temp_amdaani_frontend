@@ -1,53 +1,52 @@
-import React, { useState } from 'react';
-import { View, StyleSheet, Linking } from 'react-native';
-import {
-  Text,
-  List,
-  Divider,
-  Button,
-  useTheme,
-  IconButton,
-  Card,
-} from 'react-native-paper';
+import React, { useState, useEffect } from 'react';
+import { View, StyleSheet, Linking, ActivityIndicator } from 'react-native';
+import { Text, List, Divider, useTheme, Card } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Navbar from '../../components/Navbar';
+import api from '../../utils/api';
 
 const HelpSupport = () => {
   const theme = useTheme();
   const [expanded, setExpanded] = useState(null);
-
-  const faqs = [
-    {
-      q: 'How do I create a new invoice?',
-      a: 'Go to Sales > New Sale and fill in the customer and item details.',
-    },
-    {
-      q: 'How do I manage my business profile?',
-      a: 'Navigate to Account > Business Profile to update your details.',
-    },
-    {
-      q: 'How can I upgrade my plan?',
-      a: 'Go to Account > Plans & Pricing and choose the plan that suits you best.',
-    },
-  ];
+  const [faqs, setFaqs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   const toggleExpand = index => {
     setExpanded(expanded === index ? null : index);
   };
 
+  // ✅ Fetch FAQs from API
+  const fetchFaqs = async () => {
+    try {
+      setLoading(true);
+
+      const response = await api.get('/faq');
+
+      // ✅ handle multiple API formats safely
+      const data = response?.data?.data || response?.data || [];
+
+      setFaqs(Array.isArray(data) ? data : []);
+      setError(false);
+    } catch (err) {
+      console.log('FAQ API Error:', err?.response || err.message);
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFaqs();
+  }, []);
+
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: theme.colors.background }]}
     >
-      <Navbar title={'Help & Support'}/>
+      <Navbar title={'Help & Support'} />
+
       <View style={styles.content}>
-        {/* Header */}
-        {/* <Text
-          variant="titleLarge"
-          style={[styles.title, { color: theme.colors.onSurface }]}
-        >
-          Help & Support
-        </Text> */}
         <Text
           variant="bodyMedium"
           style={[styles.subtitle, { color: theme.colors.onSurfaceVariant }]}
@@ -67,26 +66,44 @@ const HelpSupport = () => {
             titleStyle={{ color: theme.colors.onSurface }}
           />
           <Card.Content>
-            {faqs.map((item, index) => (
-              <View key={index}>
-                <List.Accordion
-                  title={item.q}
-                  expanded={expanded === index}
-                  onPress={() => toggleExpand(index)}
-                  titleStyle={{ color: theme.colors.onSurface }}
-                  style={styles.accordion}
-                >
-                  <Text style={{ color: theme.colors.onSurfaceVariant }}>
-                    {item.a}
-                  </Text>
-                </List.Accordion>
-                {index < faqs.length - 1 && <Divider />}
-              </View>
-            ))}
+            {/* 🔄 Loading */}
+            {loading && <ActivityIndicator size="small" />}
+
+            {/* ❌ Error */}
+            {error && (
+              <Text style={{ color: 'red' }}>
+                Failed to load FAQs. Tap to retry.
+              </Text>
+            )}
+
+            {/* 📭 Empty */}
+            {!loading && !error && faqs.length === 0 && (
+              <Text>No FAQs available</Text>
+            )}
+
+            {/* ✅ Data */}
+            {!loading &&
+              !error &&
+              faqs.map((item, index) => (
+                <View key={index}>
+                  <List.Accordion
+                    title={item.question || item.q || 'No Question'} // ✅ flexible key
+                    expanded={expanded === index}
+                    onPress={() => toggleExpand(index)}
+                    titleStyle={{ color: theme.colors.onSurface }}
+                    style={styles.accordion}
+                  >
+                    <Text style={{ color: theme.colors.onSurfaceVariant }}>
+                      {item.answer || item.a || 'No Answer'}
+                    </Text>
+                  </List.Accordion>
+                  {index < faqs.length - 1 && <Divider />}
+                </View>
+              ))}
           </Card.Content>
         </Card>
 
-        {/* Contact Options */}
+        {/* Contact Section */}
         <Card
           style={[
             styles.card,
@@ -132,7 +149,7 @@ const HelpSupport = () => {
                   color={theme.colors.primary}
                 />
               )}
-              onPress={() => Linking.openURL('tel:+ +918697972001')}
+              onPress={() => Linking.openURL('tel:+918697972001')} // ✅ FIXED
             />
           </Card.Content>
         </Card>
@@ -155,10 +172,6 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
-  },
-  title: {
-    fontWeight: '600',
-    marginBottom: 4,
   },
   subtitle: {
     marginBottom: 16,

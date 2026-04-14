@@ -99,7 +99,6 @@ const BaseBottomSheet = forwardRef(
       forceClose: () => bottomSheetRef.current?.forceClose?.(),
     }));
 
-
     // Memoized snap points
     const memoizedSnapPoints = useMemo(() => snapPoints, [snapPoints]);
 
@@ -157,9 +156,16 @@ const BaseBottomSheet = forwardRef(
               {title && (
                 <Text
                   variant="headlineSmall"
-                  ellipsizeMode='tail'
+                  ellipsizeMode="tail"
                   numberOfLines={1}
-                  style={[styles.title, { color: theme.colors.onSurface, flexShrink: 1, flexGrow: 1, }]}
+                  style={[
+                    styles.title,
+                    {
+                      color: theme.colors.onSurface,
+                      flexShrink: 1,
+                      flexGrow: 1,
+                    },
+                  ]}
                 >
                   {title}
                 </Text>
@@ -195,7 +201,7 @@ const BaseBottomSheet = forwardRef(
         if (!showFooter && !footerComponent) return null;
 
         return (
-          <BottomSheetFooter {...props} bottomInset={insets.bottom}>
+          <BottomSheetFooter {...props} bottomInset={0}>
             <View
               style={[
                 styles.footer,
@@ -228,7 +234,7 @@ const BaseBottomSheet = forwardRef(
               style={baseStyle}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingBottom: 120 }} 
+              contentContainerStyle={{ paddingBottom: 120 }}
             >
               {children}
             </BottomSheetScrollView>
@@ -250,7 +256,6 @@ const BaseBottomSheet = forwardRef(
               keyboardShouldPersistTaps="handled"
             />
           );
-
 
         case 'sectionlist':
           return (

@@ -67,6 +67,12 @@ const ExpenseHeadReport = () => {
   const gstin = store?.gstNumber || store?.gstin || 'N/A';
 
   useEffect(() => {
+    if (startDate && endDate) {
+      fetchReport();
+    }
+  }, [startDate, endDate]);
+
+  useEffect(() => {
     setTimeout(() => {
       // console.log('Auth Data:', authState);
     }, 3000);
@@ -426,6 +432,29 @@ const ExpenseHeadReport = () => {
     }
   };
 
+  const applyThisYear = () => {
+    const today = new Date();
+    const currentMonth = today.getMonth() + 1;
+    const fyStart =
+      currentMonth >= 4
+        ? new Date(today.getFullYear(), 3, 1)
+        : new Date(today.getFullYear() - 1, 3, 1);
+    setStartDate(fyStart);
+    setEndDate(today);
+  };
+
+  const applyThisMonth = () => {
+    const today = new Date();
+    setStartDate(new Date(today.getFullYear(), today.getMonth(), 1));
+    setEndDate(today);
+  };
+
+  const applyPreviousMonth = () => {
+    const today = new Date();
+    setStartDate(new Date(today.getFullYear(), today.getMonth() - 1, 1));
+    setEndDate(new Date(today.getFullYear(), today.getMonth(), 0));
+  };
+
   const renderExpenseItem = expense => (
     <List.Item
       title={`₹${expense.amount}`}
@@ -531,15 +560,73 @@ const ExpenseHeadReport = () => {
           />
         </View>
 
-        <Button
-          mode="contained"
-          onPress={fetchReport}
-          loading={loading}
-          disabled={loading}
-          icon={loading ? 'progress-clock' : 'refresh'}
-        >
-          {loading ? 'Loading...' : 'Generate'}
-        </Button>
+        <View style={[styles.row, compact && { gap: 4 }]}>
+          <Button
+            mode="outlined"
+            compact
+            onPress={applyThisYear}
+            style={{ flex: 1 }}
+            labelStyle={{ fontSize: 11 }}
+          >
+            This Year
+          </Button>
+          <Button
+            mode="outlined"
+            compact
+            onPress={applyThisMonth}
+            style={{ flex: 1 }}
+            labelStyle={{ fontSize: 11 }}
+          >
+            This Month
+          </Button>
+          <Button
+            mode="outlined"
+            compact
+            onPress={applyPreviousMonth}
+            style={{ flex: 1 }}
+            labelStyle={{ fontSize: 11 }}
+          >
+            Prev Month
+          </Button>
+        </View>
+        <View style={[styles.row, compact && { gap: 6 }]}>
+          <Button
+            mode="contained"
+            onPress={fetchReport}
+            disabled={!startDate || !endDate}
+            style={{ flex: 1 }}
+            labelStyle={[
+              styles.submitButtonLabel,
+              {
+                color:
+                  !startDate || !endDate
+                    ? theme.colors.onBackground
+                    : theme.colors.onSurface,
+              },
+            ]}
+            icon={loading ? 'progress-clock' : 'refresh'}
+          >
+            {loading ? 'Loading...' : 'Generate'}
+          </Button>
+          {/* <Button
+                                    mode="contained-tonal"
+                                    onPress={exportPDF}
+                                    disabled={!invoices.length || loading}
+                                    style={styles.ml8}
+                                    icon="file-export-outline"
+                                >
+                                    Export PDF
+                                </Button>
+                                <Button
+                                    mode="contained-tonal"
+                                    onPress={exportExcel}
+                                    disabled={!invoices.length || loading}
+                                    style={styles.ml8}
+                                    icon="file-excel"
+                                >
+                                    Export Excel
+                                </Button> */}
+        </View>
       </View>
 
       {loading ? (

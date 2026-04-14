@@ -36,6 +36,7 @@
     "react": "19.1.0",
     "react-native": "0.80.2",
     "react-native-android-location-enabler": "^3.0.1",
+    "react-native-audio-record": "^0.2.2",
     "react-native-biometrics": "^3.0.1",
     "react-native-blob-util": "^0.22.2",
     "react-native-config": "^1.6.1",

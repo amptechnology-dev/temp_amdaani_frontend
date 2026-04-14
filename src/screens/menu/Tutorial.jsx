@@ -113,8 +113,6 @@ const Tutorial = () => {
 
         setVideos(formattedVideos);
 
-
-
         // Auto-select first video if no video is currently playing
         if (formattedVideos.length > 0 && !currentVideo) {
           const firstVideo = formattedVideos[0];
@@ -137,9 +135,9 @@ const Tutorial = () => {
     selectedCategory === 'all'
       ? videos
       : videos.filter(
-        video =>
-          video.category?.toLowerCase() === selectedCategory.toLowerCase(),
-      );
+          video =>
+            video.category?.toLowerCase() === selectedCategory.toLowerCase(),
+        );
 
   // Initial data fetch
   useEffect(() => {
@@ -152,12 +150,16 @@ const Tutorial = () => {
   }, []);
 
   const onStateChange = useCallback(state => {
+    console.log('Player state:', state); // ← add this to debug
     if (state === 'ended') {
       setPlaying(false);
     }
     if (state === 'playing') {
-      setVideoLoading(false);
+      setVideoLoading(false); // ← this should hide loader
       setVideoError(false);
+    }
+    if (state === 'buffering') {
+      setVideoLoading(false); // ← buffering means video loaded, just buffering
     }
     if (state === 'error') {
       setVideoError(true);
@@ -175,9 +177,13 @@ const Tutorial = () => {
       setPlaying(true);
       setVideoLoading(true);
       setVideoError(false);
+
+      // ← Fallback: force hide loader after 4 seconds
+      setTimeout(() => {
+        setVideoLoading(false);
+      }, 4000);
     }
   }, []);
-
   const seekTo = useCallback(seconds => {
     playerRef.current?.seekTo(seconds, true);
   }, []);

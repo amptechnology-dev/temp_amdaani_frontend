@@ -158,12 +158,47 @@ const SalesReport = () => {
     dashboardTodayFlag,
   ]);
 
+  const applyThisYear = () => {
+    const today = new Date();
+    const currentYear = today.getFullYear();
+    const currentMonth = today.getMonth() + 1;
+    const fyStart =
+      currentMonth >= 4
+        ? new Date(currentYear, 3, 1)
+        : new Date(currentYear - 1, 3, 1);
+    setStartDate(fyStart);
+    setEndDate(today);
+  };
+
+  const applyThisMonth = () => {
+    const today = new Date();
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+    setStartDate(monthStart);
+    setEndDate(today);
+  };
+
+  const applyPreviousMonth = () => {
+    const today = new Date();
+    const prevMonthStart = new Date(
+      today.getFullYear(),
+      today.getMonth() - 1,
+      1,
+    );
+    const prevMonthEnd = new Date(today.getFullYear(), today.getMonth(), 0);
+    setStartDate(prevMonthStart);
+    setEndDate(prevMonthEnd);
+  };
+
   const totals = useMemo(() => {
     const toNum = v => Number(v || 0);
+    const gstTotal = invoices.reduce((s, r) => s + toNum(r.gstTotal), 0);
+
     return {
       count: invoices.length,
       subTotal: invoices.reduce((s, r) => s + toNum(r.subTotal), 0),
-      gstTotal: invoices.reduce((s, r) => s + toNum(r.gstTotal), 0),
+      gstTotal,
+      cgstTotal: gstTotal / 2,
+      sgstTotal: gstTotal / 2,
       discountTotal: invoices.reduce((s, r) => s + toNum(r.discountTotal), 0),
       grandTotal: invoices.reduce((s, r) => s + toNum(r.grandTotal), 0),
     };
@@ -246,11 +281,19 @@ const SalesReport = () => {
   <head>
     <meta charset="utf-8" />
     <style>
-      @page { size: A4 landscape;  margin: 30px 24px; }
+       @page {
+        size: A4 landscape; margin: 20px 20px; 
+        @top-right {
+          content: "Page " counter(page) " of " counter(pages);
+          font-size: 10px;
+          color: #666;
+    }
+    }
 
       body {
         font-family: -apple-system, Roboto, Segoe UI, Arial;
         padding: 0;
+         margin: 0; 
         color: #111;
       }
 
@@ -322,41 +365,73 @@ const SalesReport = () => {
         color: #666;
         font-size: 10px;
       }
+
+     
     </style>
   </head>
   <body>
-      <h2 style="text-align:center;">${storeName}</h2>
-        <p style="text-align:center;"><b>Address:</b> ${address}</p>
-        <p style="text-align:center;"><b>Contact No:</b> ${contactNo}</p>
-        ${gstin
-        ? `<p style="text-align:center;"><b>GSTIN:</b> ${gstin}</p>`
-        : ''
-      }
+     <table style="width:100%; border-collapse:collapse; margin-bottom:8px;">
+  <tr>
+    <td style="text-align:center; padding:2px 0;">
+      <strong style="font-size:14px;">${storeName}</strong>
+    </td>
+  </tr>
+  <tr>
+    <td style="text-align:center; padding:1px 0; font-size:10px; color:#444;">
+      ${address} &nbsp;|&nbsp; <b>Ph:</b> ${contactNo} ${
+      gstin ? `&nbsp;|&nbsp; <b>GSTIN:</b> ${gstin}` : ''
+    }
+    </td>
+  </tr>
+</table>
     <h1>Sales Register</h1>
     <div class="muted">Period From : ${formattedRange}</div>
 
     <div class="summary">
       <div class="chip">Invoices: ${totals.count}</div>
       <div class="chip">Subtotal: ${currency(totals.subTotal)}</div>
-      <div class="chip">GST: ${currency(totals.gstTotal)}</div>
+       <div class="chip">SGST: ${currency(totals.cgstTotal)}</div>
+      <div class="chip">CGST: ${currency(totals.sgstTotal)}</div>
       <div class="chip">Discount: ${currency(totals.discountTotal)}</div>
       <div class="chip">Grand Total: ${currency(totals.grandTotal)}</div>
     </div>
 
     <table>
       <thead>${headRow}</thead>
-      <tbody>${bodyRows || `<tr><td colspan="11" align="center">No records</td></tr>`
+      <tbody>${
+        bodyRows || `<tr><td colspan="11" align="center">No records</td></tr>`
       }</tbody>
     </table>
 
-    <div class="grand-total">
-      <div>
-        <div>Subtotal: ${currency(totals.subTotal)}</div>
-        <div>GST Total: ${currency(totals.gstTotal)}</div>
-        <div>Discount Total: ${currency(totals.discountTotal)}</div>
-        <div>Grand Total: <span>${currency(totals.grandTotal)}</span></div>
-      </div>
-    </div>
+    <div class="grand-total" style="margin-top:0;">
+  <table style="width:100%; border-collapse:collapse; table-layout:fixed;">
+    <tr style="border-top: 2px solid #333;">
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd; font-weight:700;">TOTAL</td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd;"></td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd;"></td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd;"></td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd;"></td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd; text-align:right; font-weight:700;">${currency(
+        totals.subTotal,
+      )}</td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd; text-align:right; font-weight:700;">${currency(
+        totals.gstTotal,
+      )}</td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd; text-align:right; font-weight:700;">${currency(
+        totals.cgstTotal,
+      )}</td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd; text-align:right; font-weight:700;">${currency(
+        totals.sgstTotal,
+      )}</td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd; text-align:right; font-weight:700;">${currency(
+        totals.discountTotal,
+      )}</td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd; text-align:right; font-weight:700;">${currency(
+        totals.grandTotal,
+      )}</td>
+    </tr>
+  </table>
+</div>
 
     <div class="footer">Powered by AMDAANI | ${new Date().toLocaleString()}</div>
   </body>
@@ -598,6 +673,36 @@ const SalesReport = () => {
             disabled={loading || (!startDate && !endDate)}
             accessibilityLabel="Clear date range"
           />
+        </View>
+
+        <View style={[styles.row, compact && { gap: 4 }]}>
+          <Button
+            mode="outlined"
+            compact
+            onPress={applyThisYear}
+            style={{ flex: 1 }}
+            labelStyle={{ fontSize: 11 }}
+          >
+            This Year
+          </Button>
+          <Button
+            mode="outlined"
+            compact
+            onPress={applyThisMonth}
+            style={{ flex: 1 }}
+            labelStyle={{ fontSize: 11 }}
+          >
+            This Month
+          </Button>
+          <Button
+            mode="outlined"
+            compact
+            onPress={applyPreviousMonth}
+            style={{ flex: 1 }}
+            labelStyle={{ fontSize: 11 }}
+          >
+            Prev Month
+          </Button>
         </View>
 
         {/* Second row: Actions */}

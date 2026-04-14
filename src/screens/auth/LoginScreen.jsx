@@ -10,21 +10,17 @@ import {
   ScrollView,
   StatusBar,
   Image,
+  Keyboard,
+  TouchableWithoutFeedback,
 } from 'react-native';
 import { TextInput, Text, useTheme, Button, Icon } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { OtpInput } from 'react-native-otp-entry';
 import { useAuth } from '../../context/AuthContext';
 import Toast from 'react-native-toast-message';
-import {
-  startOtpListener,
-  removeListener,
-  getHash,
-} from 'react-native-otp-verify';
 import LottieView from 'lottie-react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import TermsBottomSheet from '../../components/BottomSheet/TermsBottomSheet';
-import { resetToMainTabs } from '../../navigation/navigation';
 
 const { width, height } = Dimensions.get('window');
 
@@ -37,6 +33,7 @@ const LoginScreen = ({ navigation }) => {
   const [timerActive, setTimerActive] = useState(false);
   const [phoneError, setPhoneError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   const theme = useTheme();
   const otpRef = useRef(null);
   const lottieRef = useRef(null);
@@ -49,6 +46,7 @@ const LoginScreen = ({ navigation }) => {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(50)).current;
   const scaleAnim = useRef(new Animated.Value(0.9)).current;
+  const lottieHeight = useRef(new Animated.Value(height * 0.25)).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -71,45 +69,35 @@ const LoginScreen = ({ navigation }) => {
     ]).start();
   }, []);
 
-  const validatePhone = phone => {
-    if (!phone || phone.trim() === '') {
-      return 'Phone number is required';
-    }
-    const phoneRegex = /^[6-9][0-9]{9}$/;
-    if (!phoneRegex.test(phone)) {
-      return 'Invalid phone number';
-    }
-    return null;
-  };
-
-  // useEffect(() => {
-  //   getHash()
-  //     .then(hash => {
-  //       // console.log('hash', hash);
-  //     })
-  //     .catch(// console.log);
-  //   return;
-  // }, []);
-
-  // useEffect(() => {
-  //   startOtpListener(async message => {
-  //     try {
-  //       const extractedOtp = /(\d{6})/g.exec(message)?.[1];
-  //       if (extractedOtp) {
-  //         setOtp(extractedOtp);
-  //         if (otpRef.current) {
-  //           otpRef.current.setValue(extractedOtp);
-  //         }
-  //         const enteredOtp = extractedOtp;
-  //         // console.log('get otp : ', enteredOtp);
-  //         await handleVerifyOtp(enteredOtp);
-  //       }
-  //     } catch (e) {
-  //       // console.log('OTP extract error:', e);
-  //     }
-  //   });
-  //   return () => removeListener();
-  // }, []);
+  // ✅ Keyboard listeners — collapse lottie when keyboard opens
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      () => {
+        setKeyboardVisible(true);
+        Animated.timing(lottieHeight, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: false,
+        }).start();
+      },
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => {
+        setKeyboardVisible(false);
+        Animated.timing(lottieHeight, {
+          toValue: height * 0.25,
+          duration: 200,
+          useNativeDriver: false,
+        }).start();
+      },
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     let interval;
@@ -123,13 +111,16 @@ const LoginScreen = ({ navigation }) => {
     return () => clearInterval(interval);
   }, [timer, timerActive]);
 
+  const validatePhone = phone => {
+    if (!phone || phone.trim() === '') return 'Phone number is required';
+    const phoneRegex = /^[6-9][0-9]{9}$/;
+    if (!phoneRegex.test(phone)) return 'Invalid phone number';
+    return null;
+  };
+
   const handlePhoneChange = text => {
     const cleaned = text.replace(/[^0-9]/g, '');
-
-    if (cleaned.length <= 10) {
-      setPhone(cleaned);
-    }
-
+    if (cleaned.length <= 10) setPhone(cleaned);
     if (phoneError) setPhoneError('');
   };
 
@@ -138,6 +129,7 @@ const LoginScreen = ({ navigation }) => {
       const error = validatePhone(phone);
       if (error) return setPhoneError(error);
 
+      Keyboard.dismiss();
       setLoading(true);
       const res = await sendOtp(phone);
       setLoading(false);
@@ -148,15 +140,6 @@ const LoginScreen = ({ navigation }) => {
         setTimer(60);
       }
     } else {
-      // Check if terms are accepted before verifying
-      // if (!termsAccepted) {
-      //   // Show terms with accept button
-      //   setShowAcceptButton(true);
-      //   termsSheetRef.current?.present();
-      //   return;
-      // }
-
-      // Proceed with OTP verification
       await handleVerifyOtp(otp);
     }
   };
@@ -165,8 +148,6 @@ const LoginScreen = ({ navigation }) => {
     setTermsAccepted(true);
     setShowAcceptButton(false);
     termsSheetRef.current?.close();
-
-    // Automatically verify OTP after accepting terms
     handleVerifyOtp(otp);
   };
 
@@ -249,273 +230,287 @@ const LoginScreen = ({ navigation }) => {
         style={styles.gradient}
       >
         <SafeAreaView style={styles.safeArea} edges={['top']}>
-          <KeyboardAvoidingView
-            style={styles.container}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined} // ✅ Change 'height' to undefined for Android
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0} // ✅ Set to 0
-          >
-            <ScrollView
-              contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              bounces={false}
+          {/* ✅ Dismiss keyboard when tapping outside */}
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <KeyboardAvoidingView
+              style={styles.container}
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'} // ✅ 'height' for Android
+              keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
             >
-              <View style={styles.appHeader}>
-                <Image
-                  source={require('../../assets/images/Tapplogo.png')} // Change path to your logo
-                  style={styles.appLogo}
-                  resizeMode="contain"
-                />
-                <Text
-                  variant="titleLarge"
-                  style={[styles.appName, { color: 'white' }]}
-                >
-                  AMDAANI
-                </Text>
-              </View>
-
-              {/* Lottie Animation */}
-              <Animated.View
-                style={[
-                  styles.lottieContainer,
-                  {
-                    opacity: fadeAnim,
-                    transform: [{ scale: scaleAnim }],
-                  },
-                ]}
+              <ScrollView
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+                bounces={false}
               >
-                <LottieView
-                  source={require('../../assets/animations/billpayment.json')}
-                  autoPlay
-                  loop
-                  style={styles.lottie}
-                />
-              </Animated.View>
-
-              {/* Card Container */}
-              <Animated.View
-                style={[
-                  styles.card,
-                  {
-                    backgroundColor: theme.colors.primaryContainer,
-                    opacity: fadeAnim,
-                    transform: [{ translateY: slideAnim }],
-                  },
-                ]}
-              >
-                {/* Header */}
-                <View style={styles.header}>
-                  <Text variant="headlineLarge" style={styles.title}>
-                    Welcome to AMDAANI
-                  </Text>
-                  <Text variant="bodyLarge" style={styles.subtitle}>
-                    {showOtpInput
-                      ? `Verify OTP sent to ${getMaskedPhone(phone)}`
-                      : 'Sign in to continue'}
-                  </Text>
-                </View>
-
-                {/* Form */}
-                <View style={styles.formContainer}>
-                  {!showOtpInput ? (
-                    <>
-                      <View style={styles.inputWrapper}>
-                        <Text variant="labelLarge" style={styles.label}>
-                          Phone Number
-                        </Text>
-                        <TextInput
-                          mode="outlined"
-                          placeholder="Enter 10-digit number"
-                          keyboardType="numeric"
-                          value={phone}
-                          onChangeText={handlePhoneChange}
-                          maxLength={10}
-                          error={!!phoneError}
-                          style={[
-                            styles.input,
-                            { backgroundColor: theme.colors.surface },
-                          ]}
-                          outlineStyle={styles.inputOutline}
-                          activeOutlineColor={theme.colors.primary}
-                          left={
-                            <TextInput.Icon
-                              icon="phone"
-                              color={theme.colors.primary}
-                            />
-                          }
-                          theme={{ roundness: 12 }}
-                          right={
-                            phone ? (
-                              <TextInput.Icon
-                                icon="close-circle"
-                                onPress={() => {
-                                  setPhone('');
-                                  setPhoneError('');
-                                }}
-                              />
-                            ) : null
-                          }
-                        />
-                        {phoneError ? (
-                          <Text variant="bodySmall" style={styles.errorText}>
-                            {phoneError}
-                          </Text>
-                        ) : null}
-                      </View>
-                    </>
-                  ) : (
-                    <>
-                      <Text variant="labelLarge" style={styles.label}>
-                        Enter OTP
-                      </Text>
-                      <OtpInput
-                        ref={otpRef}
-                        numberOfDigits={6}
-                        onTextChange={text => {
-                          const cleaned = text.replace(/[^0-9]/g, '');
-                          setOtp(cleaned);
-                        }}
-                        theme={{
-                          containerStyle: styles.otpContainer,
-                          pinCodeContainerStyle: [
-                            styles.otpBox,
-                            {
-                              backgroundColor: theme.colors.surface,
-                              borderColor: theme.colors.outline,
-                            },
-                          ],
-                          pinCodeTextStyle: [
-                            styles.otpText,
-                            { color: theme.colors.onSurface },
-                          ],
-                          focusStickStyle: {
-                            backgroundColor: theme.colors.primary,
-                          },
-                          focusedPinCodeContainerStyle: {
-                            borderColor: '#667eea',
-                            borderWidth: 2.5,
-                          },
-                        }}
-                      />
-
-                      <View style={styles.otpActions}>
-                        <TouchableOpacity
-                          style={{ flexDirection: 'row', alignItems: 'center' }}
-                          activeOpacity={0.8}
-                          onPress={handleBackToPhone}
-                        >
-                          <Icon source="chevron-left" size={22} />
-                          <Text style={styles.linkText}>Wrong number?</Text>
-                        </TouchableOpacity>
-
-                        {timerActive ? (
-                          <View
-                            style={[
-                              styles.timerBadge,
-                              { backgroundColor: theme.colors.surfaceVariant },
-                            ]}
-                          >
-                            <Text style={styles.timerText}>
-                              {formatTime(timer)}
-                            </Text>
-                          </View>
-                        ) : (
-                          <TouchableOpacity onPress={handleResendOTP}>
-                            <Text style={styles.linkText}>Resend OTP</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    </>
-                  )}
-
-                  {/* Continue Button with Gradient */}
-                  <TouchableOpacity
-                    onPress={handleContinue}
-                    disabled={
-                      loading ||
-                      (showOtpInput && otp.length !== 6) ||
-                      (!showOtpInput && phone.length !== 10)
-                    }
-                    activeOpacity={0.8}
+                <View style={styles.appHeader}>
+                  <Image
+                    source={require('../../assets/images/Tapplogo.png')}
+                    style={styles.appLogo}
+                    resizeMode="contain"
+                  />
+                  <Text
+                    variant="titleLarge"
+                    style={[styles.appName, { color: 'white' }]}
                   >
-                    <LinearGradient
-                      colors={[theme.colors.secondary, theme.colors.primary]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={[
-                        styles.gradientButton,
-                        (loading ||
-                          (showOtpInput && otp.length !== 6) ||
-                          (!showOtpInput && phone.length !== 10)) &&
-                          styles.gradientButtonDisabled,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.buttonText,
-                          { color: theme.colors.onPrimary },
-                        ]}
-                      >
-                        {loading
-                          ? 'Please wait...'
-                          : showOtpInput
-                          ? 'Verify & Continue'
-                          : 'Send OTP'}
-                      </Text>
-                    </LinearGradient>
-                  </TouchableOpacity>
+                    AMDAANI
+                  </Text>
                 </View>
 
-                {/* Footer */}
-                <View style={styles.footer}>
-                  <Text variant="bodySmall" style={styles.footerText}>
-                    By continuing, you agree to our
-                  </Text>
-                  <View style={styles.footerLinks}>
+                {/* ✅ Lottie collapses when keyboard opens */}
+                <Animated.View
+                  style={[
+                    styles.lottieContainer,
+                    {
+                      height: lottieHeight,
+                      opacity: keyboardVisible ? 0 : 1,
+                      overflow: 'hidden',
+                    },
+                  ]}
+                >
+                  <LottieView
+                    ref={lottieRef}
+                    source={require('../../assets/animations/billpayment.json')}
+                    autoPlay
+                    loop
+                    style={styles.lottie}
+                  />
+                </Animated.View>
+
+                {/* Card Container */}
+                <Animated.View
+                  style={[
+                    styles.card,
+                    {
+                      backgroundColor: theme.colors.primaryContainer,
+                      opacity: fadeAnim,
+                      transform: [{ translateY: slideAnim }],
+                    },
+                  ]}
+                >
+                  {/* Header */}
+                  <View style={styles.header}>
+                    <Text variant="headlineLarge" style={styles.title}>
+                      Welcome to AMDAANI
+                    </Text>
+                    <Text variant="bodyLarge" style={styles.subtitle}>
+                      {showOtpInput
+                        ? `Verify OTP sent to ${getMaskedPhone(phone)}`
+                        : 'Sign in to continue'}
+                    </Text>
+                  </View>
+
+                  {/* Form */}
+                  <View style={styles.formContainer}>
+                    {!showOtpInput ? (
+                      <>
+                        <View style={styles.inputWrapper}>
+                          <Text variant="labelLarge" style={styles.label}>
+                            Phone Number
+                          </Text>
+                          <TextInput
+                            mode="outlined"
+                            placeholder="Enter 10-digit number"
+                            keyboardType="number-pad" // ✅ number-pad works on ALL devices
+                            returnKeyType="done"
+                            value={phone}
+                            onChangeText={handlePhoneChange}
+                            onSubmitEditing={handleContinue}
+                            maxLength={10}
+                            error={!!phoneError}
+                            style={[
+                              styles.input,
+                              { backgroundColor: theme.colors.surface },
+                            ]}
+                            outlineStyle={styles.inputOutline}
+                            activeOutlineColor={theme.colors.primary}
+                            left={
+                              <TextInput.Icon
+                                icon="phone"
+                                color={theme.colors.primary}
+                              />
+                            }
+                            theme={{ roundness: 12 }}
+                            right={
+                              phone ? (
+                                <TextInput.Icon
+                                  icon="close-circle"
+                                  onPress={() => {
+                                    setPhone('');
+                                    setPhoneError('');
+                                  }}
+                                />
+                              ) : null
+                            }
+                          />
+                          {phoneError ? (
+                            <Text variant="bodySmall" style={styles.errorText}>
+                              {phoneError}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                        <Text variant="labelLarge" style={styles.label}>
+                          Enter OTP
+                        </Text>
+                        <OtpInput
+                          ref={otpRef}
+                          numberOfDigits={6}
+                          onTextChange={text => {
+                            const cleaned = text.replace(/[^0-9]/g, '');
+                            setOtp(cleaned);
+                          }}
+                          theme={{
+                            containerStyle: styles.otpContainer,
+                            pinCodeContainerStyle: [
+                              styles.otpBox,
+                              {
+                                backgroundColor: theme.colors.surface,
+                                borderColor: theme.colors.outline,
+                              },
+                            ],
+                            pinCodeTextStyle: [
+                              styles.otpText,
+                              { color: theme.colors.onSurface },
+                            ],
+                            focusStickStyle: {
+                              backgroundColor: theme.colors.primary,
+                            },
+                            focusedPinCodeContainerStyle: {
+                              borderColor: '#667eea',
+                              borderWidth: 2.5,
+                            },
+                          }}
+                        />
+
+                        <View style={styles.otpActions}>
+                          <TouchableOpacity
+                            style={{
+                              flexDirection: 'row',
+                              alignItems: 'center',
+                            }}
+                            activeOpacity={0.8}
+                            onPress={handleBackToPhone}
+                          >
+                            <Icon source="chevron-left" size={22} />
+                            <Text style={styles.linkText}>Wrong number?</Text>
+                          </TouchableOpacity>
+
+                          {timerActive ? (
+                            <View
+                              style={[
+                                styles.timerBadge,
+                                {
+                                  backgroundColor: theme.colors.surfaceVariant,
+                                },
+                              ]}
+                            >
+                              <Text style={styles.timerText}>
+                                {formatTime(timer)}
+                              </Text>
+                            </View>
+                          ) : (
+                            <TouchableOpacity onPress={handleResendOTP}>
+                              <Text style={styles.linkText}>Resend OTP</Text>
+                            </TouchableOpacity>
+                          )}
+                        </View>
+                      </>
+                    )}
+
+                    {/* Continue Button with Gradient */}
                     <TouchableOpacity
-                      onPress={() => {
-                        setShowAcceptButton(false); // View only mode
-                        termsSheetRef.current?.present();
-                      }}
+                      onPress={handleContinue}
+                      disabled={
+                        loading ||
+                        (showOtpInput && otp.length !== 6) ||
+                        (!showOtpInput && phone.length !== 10)
+                      }
+                      activeOpacity={0.8}
                     >
-                      <Text
+                      <LinearGradient
+                        colors={[theme.colors.secondary, theme.colors.primary]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
                         style={[
-                          styles.footerLink,
-                          { color: theme.colors.primary },
+                          styles.gradientButton,
+                          (loading ||
+                            (showOtpInput && otp.length !== 6) ||
+                            (!showOtpInput && phone.length !== 10)) &&
+                            styles.gradientButtonDisabled,
                         ]}
                       >
-                        Terms & Conditions
-                      </Text>
-                    </TouchableOpacity>
-                    <Text style={styles.footerText}> & </Text>
-                    <TouchableOpacity
-                      onPress={() => {
-                        setShowAcceptButton(false); // View only mode
-                        termsSheetRef.current?.present();
-                      }}
-                    >
-                      <Text
-                        style={[
-                          styles.footerLink,
-                          { color: theme.colors.primary },
-                        ]}
-                      >
-                        Privacy Policy
-                      </Text>
+                        <Text
+                          style={[
+                            styles.buttonText,
+                            { color: theme.colors.onPrimary },
+                          ]}
+                        >
+                          {loading
+                            ? 'Please wait...'
+                            : showOtpInput
+                            ? 'Verify & Continue'
+                            : 'Send OTP'}
+                        </Text>
+                      </LinearGradient>
                     </TouchableOpacity>
                   </View>
-                </View>
-              </Animated.View>
-            </ScrollView>
-          </KeyboardAvoidingView>
 
-          <TermsBottomSheet
-            ref={termsSheetRef}
-            showAcceptButton={showAcceptButton}
-            onAccept={handleAcceptTerms}
-          />
+                  {/* Footer */}
+                  <View style={styles.footer}>
+                    <Text variant="bodySmall" style={styles.footerText}>
+                      By continuing, you agree to our
+                    </Text>
+                    <View style={styles.footerLinks}>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setShowAcceptButton(false);
+                          termsSheetRef.current?.present();
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.footerLink,
+                            { color: theme.colors.primary },
+                          ]}
+                        >
+                          Terms & Conditions
+                        </Text>
+                      </TouchableOpacity>
+                      <Text style={styles.footerText}> & </Text>
+                      <TouchableOpacity
+                        onPress={() => {
+                          setShowAcceptButton(false);
+                          termsSheetRef.current?.present();
+                        }}
+                      >
+                        <Text
+                          style={[
+                            styles.footerLink,
+                            { color: theme.colors.primary },
+                          ]}
+                        >
+                          Privacy Policy
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </Animated.View>
+              </ScrollView>
+            </KeyboardAvoidingView>
+          </TouchableWithoutFeedback>
         </SafeAreaView>
       </LinearGradient>
+
+      {/* ✅ Outside everything — renders at root level on all devices */}
+      <TermsBottomSheet
+        ref={termsSheetRef}
+        showAcceptButton={showAcceptButton}
+        onAccept={handleAcceptTerms}
+      />
     </>
   );
 };

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   View,
   StyleSheet,
@@ -112,6 +112,11 @@ const ProductReport = () => {
       setLoading(false);
     }
   };
+  useEffect(() => {
+    if (startDate && endDate) {
+      fetchProducts();
+    }
+  }, [startDate, endDate]);
 
   const totals = useMemo(() => {
     const toNum = v => Number(v || 0);
@@ -180,11 +185,43 @@ const ProductReport = () => {
       })
       .join('');
 
+    const totalRow = `
+    <tr style="font-weight:700; border-top:2px solid #333;">
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd; font-weight:700;">TOTAL</td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd;"></td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd;"></td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd;"></td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd;"></td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd;"></td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd; text-align:right; font-weight:700;">${
+        totals.quantity
+      }</td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd;"></td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd; text-align:right; font-weight:700;">${currency(
+        totals.gstTotal,
+      )}</td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd; text-align:right; font-weight:700;">${currency(
+        totals.lineTotal,
+      )}</td>
+      <td style="padding:6px; font-size:11px; border:1px solid #ddd; text-align:right; font-weight:700;">${currency(
+        totals.grandTotal,
+      )}</td>
+    </tr>`;
+
     return `
       <html>
       <head>
         <meta charset="utf-8" />
         <style>
+         @page {
+        size: A4 landscape; margin: 20px 20px; 
+        @top-right {
+          content: "Page " counter(page) " of " counter(pages);
+          font-size: 10px;
+          color: #666;
+    }
+    }
+      
           body { font-family: -apple-system, Roboto, Segoe UI, Arial; padding: 24px; color: #111; }
           h1 { font-size: 20px; margin: 0 0 4px; }
           .muted { color: #666; margin-bottom: 16px; }
@@ -195,18 +232,29 @@ const ProductReport = () => {
           th { background: #fafafa; font-weight: 700; }
           tfoot td { font-weight: 700; }
           .right { text-align: right; }
+         tfoot { display: table-row-group; }
+
           .footer { margin-top: 14px; color: #666; font-size: 10px; }
+
+         
         </style>
       </head>
       <body>
-        <h2 style="text-align:center;">${storeName}</h2>
-        <p style="text-align:center;"><b>Address:</b> ${address}</p>
-        <p style="text-align:center;"><b>Contact No:</b> ${contactNo}</p>
-        ${gstin
-        ? `<p style="text-align:center;"><b>GSTIN:</b> ${gstin}</p>`
-        : ''
-      }
-        <h1>Product Sale Report</h1>
+        <table style="width:100%; border-collapse:collapse; margin-bottom:8px;">
+  <tr>
+    <td style="text-align:center; padding:2px 0;">
+      <strong style="font-size:14px;">${storeName}</strong>
+    </td>
+  </tr>
+  <tr>
+    <td style="text-align:center; padding:1px 0; font-size:10px; color:#444;">
+      ${address} &nbsp;|&nbsp; <b>Ph:</b> ${contactNo} ${
+      gstin ? `&nbsp;|&nbsp; <b>GSTIN:</b> ${gstin}` : ''
+    }
+    </td>
+  </tr>
+</table>
+        <h1>Product Report</h1>
         <div class="muted">Date Range: ${formattedRange}</div>
 
         <div class="summary">
@@ -218,26 +266,43 @@ const ProductReport = () => {
         </div>
 
         <table>
-          <thead>${headRow}</thead>
-          <tbody>${bodyRows || `<tr><td colspan="10">No records</td></tr>`
-      }</tbody>
-          <tfoot>
-            <tr>
-              <td colspan="5" class="right">Totals</td>
-              <td align="right">${totals.quantity}</td>
-              <td></td>
-              <td></td>
-              <td align="right">${currency(totals.gstTotal)}</td>
-              <td align="right">${currency(totals.lineTotal)}</td>
-              <td align="right">${currency(totals.grandTotal)}</td>
-            </tr>
-          </tfoot>
-        </table>
+        <thead>${headRow}</thead>
+        <tbody>
+          ${
+            bodyRows ||
+            `<tr><td colspan="11" align="center">No records</td></tr>`
+          }
+          ${totalRow}
+        </tbody>
+      </table>
 
         <div class="footer">Powered by AMDAANI | This is System Generated ${new Date().toLocaleString()}</div>
       </body>
       </html>
     `;
+  };
+
+  const applyThisYear = () => {
+    const today = new Date();
+    const currentMonth = today.getMonth() + 1;
+    const fyStart =
+      currentMonth >= 4
+        ? new Date(today.getFullYear(), 3, 1)
+        : new Date(today.getFullYear() - 1, 3, 1);
+    setStartDate(fyStart);
+    setEndDate(today);
+  };
+
+  const applyThisMonth = () => {
+    const today = new Date();
+    setStartDate(new Date(today.getFullYear(), today.getMonth(), 1));
+    setEndDate(today);
+  };
+
+  const applyPreviousMonth = () => {
+    const today = new Date();
+    setStartDate(new Date(today.getFullYear(), today.getMonth() - 1, 1));
+    setEndDate(new Date(today.getFullYear(), today.getMonth(), 0));
   };
 
   const exportPDF = async () => {
@@ -454,17 +519,74 @@ const ProductReport = () => {
           />
         </View>
 
+        <View style={[styles.row, compact && { gap: 4 }]}>
+          <Button
+            mode="outlined"
+            compact
+            onPress={applyThisYear}
+            style={{ flex: 1 }}
+            labelStyle={{ fontSize: 11 }}
+          >
+            This Year
+          </Button>
+          <Button
+            mode="outlined"
+            compact
+            onPress={applyThisMonth}
+            style={{ flex: 1 }}
+            labelStyle={{ fontSize: 11 }}
+          >
+            This Month
+          </Button>
+          <Button
+            mode="outlined"
+            compact
+            onPress={applyPreviousMonth}
+            style={{ flex: 1 }}
+            labelStyle={{ fontSize: 11 }}
+          >
+            Prev Month
+          </Button>
+        </View>
+
         {/* Actions */}
         <View style={[styles.row, compact && { gap: 6 }]}>
           <Button
-            style={{ flex: 1 }}
             mode="contained"
             onPress={fetchProducts}
-            disabled={loading}
+            disabled={!startDate || !endDate}
+            style={{ flex: 1 }}
+            labelStyle={[
+              styles.submitButtonLabel,
+              {
+                color:
+                  !startDate || !endDate
+                    ? theme.colors.onBackground
+                    : theme.colors.onSurface,
+              },
+            ]}
             icon={loading ? 'progress-clock' : 'refresh'}
           >
             {loading ? 'Loading...' : 'Generate'}
           </Button>
+          {/* <Button
+                              mode="contained-tonal"
+                              onPress={exportPDF}
+                              disabled={!invoices.length || loading}
+                              style={styles.ml8}
+                              icon="file-export-outline"
+                          >
+                              Export PDF
+                          </Button>
+                          <Button
+                              mode="contained-tonal"
+                              onPress={exportExcel}
+                              disabled={!invoices.length || loading}
+                              style={styles.ml8}
+                              icon="file-excel"
+                          >
+                              Export Excel
+                          </Button> */}
         </View>
       </View>
 

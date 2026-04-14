@@ -1,232 +1,135 @@
-import React, { useRef, useMemo } from 'react';
-import { Modal, View, StyleSheet, SafeAreaView } from 'react-native';
+import React, { useRef, useState, useEffect } from 'react';
+import {
+  Modal,
+  View,
+  StyleSheet,
+  Dimensions,
+  Image,
+  InteractionManager,
+} from 'react-native';
 import { Appbar, useTheme, Button } from 'react-native-paper';
-import Signature from 'react-native-signature-canvas';
+import SignatureCanvas from 'react-native-signature-canvas';
 
-/**
- * TWEAKS:
- * - ASPECT_RATIO: Wider = smaller second number for landscape canvas
- * - BOX_MAX_HEIGHT_PCT: Max fraction of screen height the box can occupy
- */
-const ASPECT_RATIO = 16 / 9; // Landscape ratio for canvas
-const BOX_MAX_HEIGHT_PCT = 0.6; // 60% of the available height
-
-const htmlStyle = `
-  .m-signature-pad--footer { display:none; }
-  body,html { 
-    width:100%; 
-    height:100%; 
-    margin:0; 
-    overflow: hidden;
-  }
-  .m-signature-pad { 
-    box-shadow:none; 
-    border:none;
-    width: 100%;
-    height: 100%;
-  }
-  .m-signature-pad--body {
-    background:#fff;
-    border:2px dashed #ddd; 
-    border-radius:12px;
-    width: 100% !important;
-    height: 100% !important;
-    position: relative;
-  }
-  canvas { 
-    width:100% !important; 
-    height:100% !important;
-    display: block !important;
-    border-radius: 12px;
-  }
-  /* Force landscape aspect for the signature area */
-  .signature-pad {
-    width: 100%;
-    height: 100%;
-    min-height: 200px;
-  }
-`;
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const SignaturePadModal = ({
   visible,
   title = 'Draw your signature',
   onDone,
   onCancel,
-  backgroundColor = '#fff',
-  strokeColor = '#000',
-  minWidth = 2,
-  maxWidth = 4,
 }) => {
   const theme = useTheme();
-  const sigRef = useRef(null);
-  const webStyle = useMemo(() => htmlStyle, []);
+  const ref = useRef(null);
+  const [signature, setSignature] = useState(null);
+  const [showCanvas, setShowCanvas] = useState(false);
 
-  const handleOK = signature => {
-    try {
-      onDone?.({
-        uri: signature, // data:image/png;base64,....
-        type: 'image/png',
-        fileName: `signature_${Date.now()}.png`,
+  useEffect(() => {
+    if (visible) {
+      setSignature(null);
+      // Wait for Modal animation to finish completely
+      const task = InteractionManager.runAfterInteractions(() => {
+        setTimeout(() => {
+          setShowCanvas(true);
+        }, 300); // Slightly longer delay for stability
       });
-    } catch {
-      onCancel?.();
+      return () => task.cancel();
+    } else {
+      setShowCanvas(false);
     }
+  }, [visible]);
+
+  const handleOK = sig => {
+    if (!sig) return;
+    setSignature(sig);
+    onDone?.({
+      uri: sig,
+      type: 'image/png',
+      fileName: `signature_${Date.now()}.png`,
+    });
   };
 
   const handleClear = () => {
-    sigRef.current?.clearSignature();
+    ref.current?.clearSignature();
+    setSignature(null);
   };
 
-  const handleSave = () => {
-    sigRef.current?.readSignature();
-  };
+  const canvasHeight = SCREEN_HEIGHT * 0.45;
 
   return (
     <Modal
       visible={visible}
       animationType="slide"
       onRequestClose={onCancel}
-      transparent={false}
+      hardwareAccelerated={true}
     >
-      <SafeAreaView
+      <View
         style={[styles.container, { backgroundColor: theme.colors.background }]}
       >
-        {/* Header - Portrait orientation */}
-        <Appbar.Header
-          style={[styles.header, { backgroundColor: theme.colors.surface }]}
-          mode="small"
-        >
-          <Appbar.Action
-            icon="close"
-            onPress={onCancel}
-            iconColor={theme.colors.onSurface}
-          />
-          <Appbar.Content
-            title={title}
-            titleStyle={{ color: theme.colors.onSurface }}
-          />
-          <Appbar.Action
-            icon="eraser"
-            onPress={handleClear}
-            iconColor={theme.colors.primary}
-          />
-          <Appbar.Action
-            icon="check"
-            onPress={handleSave}
-            iconColor={theme.colors.primary}
-          />
+        <Appbar.Header>
+          <Appbar.Action icon="close" onPress={onCancel} />
+          <Appbar.Content title={title} />
+          <Appbar.Action icon="eraser" onPress={handleClear} />
         </Appbar.Header>
 
-        <View style={styles.content}>
-          {/* Landscape oriented signature canvas */}
-          <View style={styles.canvasContainer}>
-            <View style={[styles.landscapeBox, { aspectRatio: ASPECT_RATIO }]}>
-              <Signature
-                ref={sigRef}
-                onOK={handleOK}
-                onEmpty={onCancel}
-                webStyle={webStyle}
-                backgroundColor={backgroundColor}
-                penColor={strokeColor}
-                minWidth={minWidth}
-                maxWidth={maxWidth}
-                autoClear={false}
-                descriptionText=""
-                clearText="Clear"
-                confirmText="Save"
-              />
-            </View>
+        {signature && (
+          <View style={styles.preview}>
+            <Image
+              source={{ uri: signature }}
+              style={{ width: 250, height: 100 }}
+              resizeMode="contain"
+            />
           </View>
+        )}
 
-          {/* Bottom Action Buttons */}
-          <View style={styles.bottomActions}>
-            <Button
-              mode="outlined"
-              onPress={handleClear}
-              icon="eraser"
-              style={[styles.actionButton, styles.clearButton]}
-              textColor={theme.colors.error}
-            >
-              Clear
-            </Button>
-
-            <Button
-              mode="contained"
-              onPress={handleSave}
-              icon="content-save"
-              style={[styles.actionButton, styles.saveButton]}
-              buttonColor={theme.colors.primary}
-            >
-              Save Signature
-            </Button>
-          </View>
+        <View style={{ height: canvasHeight, backgroundColor: '#eee' }}>
+          {showCanvas && (
+            <SignatureCanvas
+              ref={ref}
+              onOK={handleOK}
+              onEmpty={() => console.log('Empty')}
+              autoClear={false}
+              descriptionText="Sign here"
+              penColor="black"
+              backgroundColor="white"
+              style={styles.canvas}
+              androidLayerType="hardware"
+              webviewProps={{
+                scrollEnabled: false, // Prevents the page from moving while signing
+                javaScriptEnabled: true,
+                domStorageEnabled: true,
+                androidLayerType: 'hardware',
+                mixedContentMode: 'always',
+              }}
+            />
+          )}
         </View>
-      </SafeAreaView>
+
+        <View style={styles.actions}>
+          <Button
+            mode="outlined"
+            onPress={handleClear}
+            style={{ flex: 1, marginRight: 8 }}
+          >
+            Clear
+          </Button>
+          <Button
+            mode="contained"
+            onPress={() => ref.current?.readSignature()}
+            style={{ flex: 1, marginLeft: 8 }}
+          >
+            Save Signature
+          </Button>
+        </View>
+      </View>
     </Modal>
   );
 };
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  header: {
-    elevation: 2,
-  },
-  content: {
-    flex: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    justifyContent: 'space-between',
-  },
-  canvasContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 20,
-  },
-  /**
-   * Landscape canvas container:
-   * - Wide aspect ratio (16:9) for landscape feel
-   * - Full width utilization
-   * - Height constraint to prevent overflow
-   */
-  landscapeBox: {
-    width: '100%',
-    maxWidth: 500, // Maximum width for very wide screens
-    maxHeight: `${Math.round(BOX_MAX_HEIGHT_PCT * 100)}%`,
-    alignSelf: 'center',
-    borderRadius: 12,
-    overflow: 'hidden',
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    backgroundColor: '#fff',
-  },
-  bottomActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 20,
-    paddingHorizontal: 8,
-    gap: 16,
-  },
-  actionButton: {
-    flex: 1,
-    marginHorizontal: 4,
-    paddingVertical: 6,
-  },
-  clearButton: {
-    borderColor: '#f44336',
-  },
-  saveButton: {
-    elevation: 2,
-  },
-});
-
 export default SignaturePadModal;
+
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  preview: { alignItems: 'center', marginVertical: 10 },
+  actions: { flexDirection: 'row', padding: 16 },
+  canvas: { flex: 1, borderBottomWidth: 1, borderBottomColor: '#ccc' },
+});
