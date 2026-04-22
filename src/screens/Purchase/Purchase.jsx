@@ -62,6 +62,8 @@ import InvoiceItemCard from '../../components/InvoiceItemCard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import InvoiceSummaryBox from '../../components/InvoiceSummaryBox';
+import PurchaseInviceItemCard from '../../components/purchaseInviceItemCard';
+import PurchaseSummaryBox from '../../components/purchaseSummaryBox';
 
 Sound.setCategory('Ambient', true);
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -297,30 +299,33 @@ export default function Purchase() {
 
   const isGstInvoice = vendorHasGst ? invoiceKind === 'gst' : false;
 
-  const initialValues =
-    isEditMode && existingPurchase
-      ? {
-          vendorName: existingPurchase.vendorName || '',
-          vendorNumber: existingPurchase.vendorMobile || '',
-          gstNumber: existingPurchase.vendorGstNumber || '',
-          address: existingPurchase.vendorAddress || '',
-          city: existingPurchase.vendorCity || '',
-          state: existingPurchase.vendorState || '',
-          country: 'India',
-          postalCode: existingPurchase.vendorPostalCode || '',
-          purchaseNumber: existingPurchase.invoiceNumber,
-        }
-      : {
-          vendorName: '',
-          vendorNumber: '',
-          gstNumber: '',
-          address: '',
-          city: '',
-          state: '',
-          country: 'India',
-          postalCode: '',
-          purchaseNumber: '',
-        };
+  const initialValues = useMemo(
+    () =>
+      isEditMode && existingPurchase
+        ? {
+            vendorName: existingPurchase.vendorName || '',
+            vendorNumber: existingPurchase.vendorMobile || '',
+            gstNumber: existingPurchase.vendorGstNumber || '',
+            address: existingPurchase.vendorAddress || '',
+            city: existingPurchase.vendorCity || '',
+            state: existingPurchase.vendorState || '',
+            country: 'India',
+            postalCode: existingPurchase.vendorPostalCode || '',
+            purchaseNumber: existingPurchase.invoiceNumber,
+          }
+        : {
+            vendorName: '',
+            vendorNumber: '',
+            gstNumber: '',
+            address: '',
+            city: '',
+            state: '',
+            country: 'India',
+            postalCode: '',
+            purchaseNumber: '',
+          },
+    [isEditMode, existingPurchase],
+  );
 
   const [alertConfig, setAlertConfig] = useState({
     visible: false,
@@ -706,23 +711,9 @@ export default function Purchase() {
   );
 
   useEffect(() => {
-    if (isEditMode && existingPurchase?.items) {
-      const normalizedItems = existingPurchase.items.map(item => ({
-        ...item,
-        qty: Number(item.quantity),
-        price: Number(item.rate),
-      }));
-
-      setCartItems(normalizedItems);
-      setShowPreview(true);
-      setInvoiceLoaded(true);
-    }
-  }, [isEditMode]);
-
-  useEffect(() => {
     if (isEditMode && existingPurchase?.invoiceNumber) {
       setManualPurchaseNo(existingPurchase.invoiceNumber);
-      setIsEditingPurchaseNo(false); // show as text, not input
+      setIsEditingPurchaseNo(true); // allow editing like add mode
     }
   }, [isEditMode, existingPurchase]);
 
@@ -733,41 +724,60 @@ export default function Purchase() {
       if (isEditMode && existingPurchase?._id) {
         try {
           const res = await api.get(`/purchase/id/${existingPurchase._id}`);
-          // console.log('Full invoice details:', res);
           if (res?.success && res?.data) {
             const fullInvoice = res.data;
 
-            // Normalize items so UI and calculator see consistent keys + numeric types
+            // Normalize items using PURCHASE-SPECIFIC keys for calculations
             const normalizedItems = (fullInvoice.items || []).map(item => ({
-              // keep original fields too but ensure canonical keys exist
               ...item,
+              // Purchase-specific keys (required by invoiceCalculations)
+              costPrice: Number(item.costPrice ?? item.rate ?? item.price ?? 0),
+              purchaseDiscount: Number(
+                item.purchaseDiscount ?? item.discount ?? 0,
+              ),
+              purchaseGstRate: Number(
+                item.purchaseGstRate ?? item.gstRate ?? 0,
+              ),
+              isPurchaseTaxInclusive: Boolean(
+                item.isPurchaseTaxInclusive ?? item.isTaxInclusive ?? false,
+              ),
+              // Standard keys
               qty: Number(item.quantity ?? item.qty ?? 0),
-              price: Number(item.sellingPrice ?? item.price ?? 0),
-              gstRate: Number(item.gstRate ?? 0),
-              isTaxInclusive: item.isTaxInclusive ?? false,
-              discount: Number(item.discount ?? 0),
+              gstRate: Number(item.purchaseGstRate ?? item.gstRate ?? 0),
+              isTaxInclusive: Boolean(
+                item.isPurchaseTaxInclusive ?? item.isTaxInclusive ?? false,
+              ),
+              discount: Number(item.purchaseDiscount ?? item.discount ?? 0),
               hsn: item.hsn ?? '',
-              unit: item.unit ?? 'pcs',
+              unit: item.unit ?? 'Piece',
               total: Number(item.total ?? 0),
+              _id: item._id || item.product,
+              productId: item.product || item._id,
             }));
 
             setCartItems(normalizedItems);
             setShowPreview(true);
             setSelectedCustomer({
-              name: fullInvoice.customerName,
-              mobile: fullInvoice.customerMobile,
-              address: fullInvoice.customerAddress,
-              gstNumber: fullInvoice.customerGstNumber || '',
+              name: fullInvoice.vendorName,
+              mobile: fullInvoice.vendorMobile,
+              address: fullInvoice.vendorAddress,
+              gstNumber: fullInvoice.vendorGstNumber || '',
             });
 
-            // Ensure invoice type reflects saved invoice
-            if (fullInvoice.type === 'gst' || fullInvoice.type === 'non-gst') {
-              setInvoiceKind(fullInvoice.type);
+            // Load payment details from existing purchase
+            setPurchaseDate(new Date(fullInvoice.date));
+            setPaidAmount(Number(fullInvoice.amountPaid ?? 0));
+            setPaymentMethod(fullInvoice.paymentMethod || 'cash');
+            setPaymentNote(fullInvoice.paymentNote || '');
+            if (fullInvoice.discountTotal && fullInvoice.discountTotal > 0) {
+              setDiscount({
+                type: 'flat',
+                value: Number(fullInvoice.discountTotal),
+              });
             }
+            hasUserEditedPaid.current = true;
 
             setInvoiceLoaded(true);
-            // Optionally, store invoice details locally if needed
-            // console.log('Loaded full invoice for edit:', fullInvoice);
           } else {
             console.warn('Invoice fetch failed or empty data');
           }
@@ -785,6 +795,20 @@ export default function Purchase() {
       setMobileQuery(existingPurchase.customerMobile || '');
     }
   }, [isEditMode, existingPurchase]);
+
+  React.useEffect(() => {
+    const gt = Number(
+      invoiceCalculations?.netTotalExclusiveOnly ??
+        invoiceCalculations?.netTotal ??
+        0,
+    );
+    if (!hasUserEditedPaid.current) {
+      setPaidAmount(gt);
+    }
+  }, [
+    invoiceCalculations?.netTotalExclusiveOnly,
+    invoiceCalculations?.netTotal,
+  ]);
 
   const now = new Date();
   const invoiceDate = now;
@@ -805,52 +829,39 @@ export default function Purchase() {
     let totalTax = 0;
     const gstBreakdown = {};
 
-    // Build a computed items array (pure — do NOT mutate cartItems)
     const computedItems = (cartItems || []).map(item => {
-      const gstRate = Number(item.gstRate || 0);
-      const qty = Number(item.qty || 0);
-      const sellingPriceRaw = Number(item.price ?? item.sellingPrice ?? 0);
-      const discount = Number(item.discountPrice ?? item.discount ?? 0);
-      const isTaxInclusive = Boolean(item.isTaxInclusive);
-      // const sellingPrice = Number(item.sellingPrice ?? 0);
+      const qty = Number(item.qty ?? item.quantity ?? 0);
 
-      // 🧮 Apply discount safely (before tax)
-      const sellingPrice = Math.max(0, sellingPriceRaw - discount);
+      const rawCostPrice = Number(item.costPrice ?? item.price ?? 0);
+      const purchaseDiscount = Number(item.purchaseDiscount ?? 0);
+      const netRate = Math.max(0, rawCostPrice - purchaseDiscount);
+
+      const gstRate = Number(item.purchaseGstRate || 0);
+      const isTaxInclusive = Boolean(item.isPurchaseTaxInclusive);
 
       let baseRate = 0;
       let taxableValue = 0;
       let gstAmount = 0;
       let totalAmount = 0;
 
-      if (!vendorHasGst) {
-        baseRate = sellingPriceRaw;
-        taxableValue = sellingPrice * qty;
-        gstAmount = 0;
-        totalAmount = taxableValue;
+      if (isTaxInclusive) {
+        baseRate = gstRate > 0 ? netRate / (1 + gstRate / 100) : netRate;
+        taxableValue = baseRate * qty;
+        gstAmount = taxableValue * (gstRate / 100);
+        totalAmount = netRate * qty;
+      } else {
+        baseRate = netRate;
+        taxableValue = netRate * qty;
+        gstAmount = taxableValue * (gstRate / 100);
+        totalAmount = taxableValue + gstAmount;
+      }
 
-        subtotal += totalAmount;
-      } else if (isGstInvoice) {
-        if (isTaxInclusive) {
-          // Tax inclusive: price already includes GST
-          baseRate = sellingPriceRaw / (1 + gstRate / 100);
-          taxableValue = (sellingPrice / (1 + gstRate / 100)) * qty;
-          gstAmount = taxableValue * (gstRate / 100);
-          totalAmount = sellingPrice * qty; // stays inclusive
-        } else {
-          // Tax exclusive: add GST after discount
-          baseRate = sellingPriceRaw;
-          taxableValue = sellingPrice * qty;
-          gstAmount = taxableValue * (gstRate / 100);
-          totalAmount = taxableValue + gstAmount;
-        }
-        // if (isTaxInclusive) {
-        //   subtotal += totalAmount - gstAmount; // extract taxable part
-        // } else {
-        //   subtotal += taxableValue;
-        // }
-        subtotal += totalAmount;
-        totalTax += gstAmount;
+      subtotal += taxableValue;
+      totalTax += gstAmount; // ✅ always accumulate tax regardless of vendor GST status
 
+      // GST breakdown — only for display purposes when isGstInvoice
+      if (isGstInvoice && gstRate > 0) {
+        // ✅ removed vendorHasGst gate
         const cgstAmount = isIgst ? 0 : gstAmount / 2;
         const sgstAmount = isIgst ? 0 : gstAmount / 2;
         const igstAmount = isIgst ? gstAmount : 0;
@@ -869,70 +880,64 @@ export default function Purchase() {
         gstBreakdown[gstRate].sgstAmount += sgstAmount;
         gstBreakdown[gstRate].igstAmount += igstAmount;
         gstBreakdown[gstRate].totalGst += gstAmount;
-      } else {
-        // Non-GST: just apply discount
-        baseRate = sellingPriceRaw;
-        taxableValue = sellingPrice * qty;
-        gstAmount = 0;
-        totalAmount = taxableValue;
-        subtotal += totalAmount;
       }
 
       return {
         ...item,
-        baseRate,
-        discount,
-        taxableValue,
-        gstAmount,
-        total: Number(totalAmount), // computed line total
-        qty,
-        price: sellingPriceRaw,
+        price: rawCostPrice,
+        costPrice: rawCostPrice,
+        purchaseDiscount,
         gstRate,
         isTaxInclusive,
+        isPurchaseTaxInclusive: isTaxInclusive,
+        baseRate,
+        taxableValue,
+        gstAmount,
+        qty,
+        total: Number(totalAmount.toFixed(4)),
       };
     });
-    // const grandTotalRaw = isGstInvoice ? subtotal + totalTax : subtotal;
-    const grandTotalRaw = subtotal;
-    let grandTotalAfterDiscount = grandTotalRaw;
 
-    let discountTotal = 0;
-    if (discount?.type === 'flat') {
-      discountTotal = Number(discount?.value || 0);
-    } else if (discount?.type === 'percent') {
-      discountTotal = grandTotalRaw * (Number(discount?.value || 0) / 100);
-    }
+    const grandTotalRaw = subtotal + totalTax;
 
-    const roundedTotal = Math.round(grandTotalAfterDiscount);
+    const discountTotal = computedItems.reduce((sum, item) => {
+      const qty = Number(item.qty ?? 0);
+      const purchaseDiscount = Number(item.purchaseDiscount ?? 0);
+      return sum + purchaseDiscount * qty;
+    }, 0);
+
+    const netTotal = computedItems.reduce((s, item) => s + item.total, 0);
+
+    const grandTotalAfterDiscount = grandTotalRaw;
+    const roundedTotal = Math.round(netTotal);
+    const roundOff = Number(
+      (roundedTotal - netTotal + Number.EPSILON).toFixed(2),
+    );
+    const netTotalExclusiveOnly = netTotal;
 
     const totalQuantity = computedItems.reduce(
       (sum, it) => sum + (it.qty || 0),
       0,
     );
 
-    const netTotal = Math.round(grandTotalAfterDiscount - discountTotal);
-    const rawDifference =
-      Math.round(grandTotalAfterDiscount - discountTotal) -
-      (grandTotalAfterDiscount - discountTotal);
-
-    const roundOff = Number((rawDifference + Number.EPSILON).toFixed(2));
-
-    // console.log('Round off:', roundOff);
-
     return {
       subtotal,
       netTotal,
+      netTotalExclusiveOnly,
       roundOff,
-      totalTax: isGstInvoice ? totalTax : 0,
+      totalTax, // ✅ always return real tax amount
       grandTotal: grandTotalAfterDiscount,
       roundedTotal,
       grandTotalRaw,
       discountTotal: Number(discountTotal.toFixed(2)),
       totalQuantity,
       itemCount: computedItems.length,
-      gstBreakdown: isGstInvoice ? gstBreakdown : {},
+      gstBreakdown: isGstInvoice ? gstBreakdown : {}, // breakdown only for GST invoices
       computedItems,
     };
-  }, [cartItems, isGstInvoice, discount, isIgst]);
+  }, [cartItems, isGstInvoice, vendorHasGst, discount, isIgst]);
+
+  console.log('net ===>', invoiceCalculations);
 
   // console.log("computedItems", invoiceCalculations?.computedItems)
 
@@ -947,9 +952,17 @@ export default function Purchase() {
 
   // Derived payment info
   const payment = React.useMemo(() => {
-    const grandTotal = Number(invoiceCalculations?.netTotal ?? 0);
+    // isPurchaseTaxInclusive: true  → show WITHOUT tax (base value only)
+    // isPurchaseTaxInclusive: false → show WITH tax (GST added on top)
+    // Mixed cart: each item handled individually in netTotalExclusiveOnly
+    const grandTotal = Number(
+      invoiceCalculations?.netTotalExclusiveOnly ??
+        invoiceCalculations?.netTotal ??
+        0,
+    );
+
     const paid = Math.max(0, Number.isFinite(paidAmount) ? paidAmount : 0);
-    const normPaid = Math.min(paid, grandTotal); // disallow overpay in UI
+    const normPaid = Math.min(paid, grandTotal);
     const due = Math.max(0, grandTotal - normPaid);
 
     let status = 'unpaid';
@@ -957,13 +970,15 @@ export default function Purchase() {
     else if (due === 0 && grandTotal > 0) status = 'paid';
     else if (normPaid > 0 && normPaid < grandTotal) status = 'partial';
 
-    return {
-      grandTotal,
-      paid: normPaid,
-      due,
-      status,
-    };
-  }, [invoiceCalculations?.netTotal, paidAmount]);
+    return { grandTotal, paid: normPaid, due, status };
+  }, [
+    invoiceCalculations?.netTotalExclusiveOnly,
+    invoiceCalculations?.netTotal,
+    paidAmount,
+  ]);
+
+  console.log('invoice --->', invoiceCalculations.computedItems);
+  console.log('==>nat', invoiceCalculations.totalTax);
 
   // Helper chip for status colors
   const getStatusStyle = (status, theme) => {
@@ -1043,6 +1058,7 @@ export default function Purchase() {
   }
 
   const createPurchase = async (values, { setSubmitting, resetForm }) => {
+    console.log('====>purcsj', values);
     // No subscription limit for purchase, skip the invoice subscription check
 
     if (cartItems.length === 0) {
@@ -1123,31 +1139,51 @@ export default function Purchase() {
       items: invoiceCalculations.computedItems.map(item => ({
         product: item._id || item.productId,
         name: item.name,
+        hsn: item.hsn || '',
         unit: item.unit || 'Piece',
         mrp: Number(item.mrp ?? 0),
 
-        // BASE RATE BEFORE DISCOUNT
-        rate: Number(item.price ?? 0),
-        sellingPrice: Number(item.sellingPrice ?? 0),
+        // ✅ raw costPrice (before purchase discount)
+        rate: Number(item.costPrice ?? item.price ?? 0),
+        costPrice: Number(item.costPrice ?? item.price ?? 0),
 
-        // TAX DETAILS
+        // ✅ purchase-specific discount per unit
+        purchaseDiscount: Number(item.purchaseDiscount ?? 0),
+        discount: Number(item.purchaseDiscount ?? 0),
+
+        // ✅ tax details from computed item (purchaseGstRate resolved into gstRate)
         gstRate: Number(item.gstRate ?? 0),
-        isTaxInclusive: item.isTaxInclusive ?? false,
-        // QUANTITY
+        purchaseGstRate: Number(item.gstRate ?? 0),
+        isPurchaseTaxInclusive: Boolean(item.isPurchaseTaxInclusive),
+        isTaxInclusive: Boolean(item.isPurchaseTaxInclusive),
+
+        // quantity
         quantity: Number(item.qty ?? 0),
-        // DISCOUNT (CORRECT)
-        discount: Number(item.discount ?? 0),
-        sellingDiscount: Number(item.sellingDiscount || 0),
-        // CORRECT FINAL TOTAL (FROM COMPUTATION)
+
+        // computed line totals
+        baseRate: Number(item.baseRate ?? 0),
+        taxableValue: Number(item.taxableValue ?? 0),
+        gstAmount: Number(item.gstAmount ?? 0),
+
+        // ✅ final line total (after discount + tax per item)
         total: Number(item.total ?? 0),
       })),
 
+      // ✅ subtotal = base after item discounts, before tax
       subTotal: Number(invoiceCalculations.subtotal.toFixed(2)),
+
+      // ✅ total GST across all items
       gstTotal: Number(invoiceCalculations.totalTax.toFixed(2)),
       isIgst: isIgst,
 
+      // ✅ bill-level discount (flat or %)
       discountTotal: Number(invoiceCalculations.discountTotal.toFixed(2)),
       roundOff: Number(invoiceCalculations.roundOff),
+
+      // ✅ netTotal = true payable:
+      //    inclusive items → netRate × qty (GST not added again)
+      //    exclusive items → (netRate + tax) × qty
+      //    then − bill discount
       grandTotal: Number(invoiceCalculations.netTotal.toFixed(2)),
 
       paymentStatus,
@@ -1156,7 +1192,6 @@ export default function Purchase() {
       paymentMethod: paymentMethod,
       paymentNote: paymentNote || '',
     };
-
     // console.log("Purchase Payload:", purchaseData);
 
     try {
@@ -1235,7 +1270,7 @@ export default function Purchase() {
       subtotal: item.total ?? item.subtotal ?? 0,
     }));
 
-    navigation.push('AddItemSales', {
+    navigation.push('AddPurchaseItems', {
       purchase: true,
       existingCart: preparedCart,
       onItemsSelected: newCart => {
@@ -1679,7 +1714,7 @@ export default function Purchase() {
                         item._id || `${item.name}-${index}`
                       }
                       renderItem={({ item }) => (
-                        <InvoiceItemCard
+                        <PurchaseInviceItemCard
                           item={item}
                           isGstInvoice={isGstInvoice}
                         />
@@ -1689,7 +1724,7 @@ export default function Purchase() {
                         paddingTop: 4,
                       }}
                       ListFooterComponent={
-                        <InvoiceSummaryBox invoice={invoiceCalculations} />
+                        <PurchaseSummaryBox invoice={invoiceCalculations} />
                       }
                     />
                     {invoiceLoaded &&

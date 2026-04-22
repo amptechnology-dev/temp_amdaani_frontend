@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Image,
   KeyboardAvoidingView,
+  Keyboard,
 } from 'react-native';
 import {
   Text,
@@ -51,10 +52,19 @@ import {
   RichToolbar,
 } from 'react-native-pell-rich-editor';
 
-const bankFields = ['bankName', 'accountNo', 'holderName', 'ifsc', 'branch'];
+const bankFieldNames = [
+  'bankName',
+  'accountNo',
+  'holderName',
+  'ifsc',
+  'branch',
+];
 
-const validationSchema = Yup.object()
-  .shape({
+const anyBankFilled = vals =>
+  bankFieldNames.some(f => vals[f] && vals[f].trim() !== '');
+
+const validationSchema = Yup.object().shape(
+  {
     businessName: Yup.string().required('Business Name is required'),
 
     gstin: Yup.string()
@@ -91,16 +101,56 @@ const validationSchema = Yup.object()
       .required('Pincode is required')
       .matches(/^[0-9]{6}$/, 'Pincode must be 6 digits'),
 
-    // Bank fields (initially optional, handled in test below)
-    bankName: Yup.string().nullable(),
+    // ✅ Bank fields — all reference each other, noSortEdges fixes cyclic error
+    bankName: Yup.string()
+      .nullable()
+      .when(['accountNo', 'holderName', 'ifsc', 'branch'], {
+        is: (...others) => others.some(v => v && v.trim()),
+        then: schema => schema.required('Bank Name is required'),
+        otherwise: schema => schema,
+      }),
+
     accountNo: Yup.string()
       .nullable()
-      .matches(/^[0-9]{9,18}$/, 'Account number must be 9–18 digits'),
-    holderName: Yup.string().nullable(),
+      .test(
+        'accountNo-format',
+        'Must be 9–18 digits',
+        value => !value || /^[0-9]{9,18}$/.test(value),
+      )
+      .when(['bankName', 'holderName', 'ifsc', 'branch'], {
+        is: (...others) => others.some(v => v && v.trim()),
+        then: schema => schema.required('Account Number is required'),
+        otherwise: schema => schema,
+      }),
+
+    holderName: Yup.string()
+      .nullable()
+      .when(['bankName', 'accountNo', 'ifsc', 'branch'], {
+        is: (...others) => others.some(v => v && v.trim()),
+        then: schema => schema.required('Holder Name is required'),
+        otherwise: schema => schema,
+      }),
+
     ifsc: Yup.string()
       .nullable()
-      .matches(/^[A-Z]{4}0[A-Z0-9]{6}$/, 'Invalid IFSC code'),
-    branch: Yup.string().nullable(),
+      .test(
+        'ifsc-format',
+        'Invalid IFSC code',
+        value => !value || /^[A-Z]{4}0[A-Z0-9]{6}$/.test(value),
+      )
+      .when(['bankName', 'accountNo', 'holderName', 'branch'], {
+        is: (...others) => others.some(v => v && v.trim()),
+        then: schema => schema.required('IFSC Code is required'),
+        otherwise: schema => schema,
+      }),
+
+    branch: Yup.string()
+      .nullable()
+      .when(['bankName', 'accountNo', 'holderName', 'ifsc'], {
+        is: (...others) => others.some(v => v && v.trim()),
+        then: schema => schema.required('Branch is required'),
+        otherwise: schema => schema,
+      }),
 
     upiId: Yup.string()
       .matches(/^\w+@\w+$/, 'Invalid UPI ID')
@@ -129,40 +179,52 @@ const validationSchema = Yup.object()
     userEmail: Yup.string().email('Invalid email'),
     userPhone: Yup.string().matches(/^[0-9]{10}$/, 'Must be 10 digits'),
 
-    // logo and signature optional
     logo: Yup.mixed().nullable(),
     signature: Yup.mixed().nullable(),
-  })
-  .test(
-    'bank-fields-required',
-    'If any bank detail is filled, all fields are required',
-    function (values) {
-      if (!values) return true;
+  },
+  [
+    ['bankName', 'accountNo'],
+    ['bankName', 'holderName'],
+    ['bankName', 'ifsc'],
+    ['bankName', 'branch'],
+    ['accountNo', 'holderName'],
+    ['accountNo', 'ifsc'],
+    ['accountNo', 'branch'],
+    ['holderName', 'ifsc'],
+    ['holderName', 'branch'],
+    ['ifsc', 'branch'],
+  ],
+);
+// .test(
+//   'bank-fields-required',
+//   'If any bank detail is filled, all fields are required',
+//   function (values) {
+//     if (!values) return true;
 
-      const { bankName, accountNo, holderName, ifsc, branch } = values;
+//     const { bankName, accountNo, holderName, ifsc, branch } = values;
 
-      const anyFilled = [bankName, accountNo, holderName, ifsc, branch].some(
-        v => v && v.trim() !== '',
-      );
+//     const anyFilled = [bankName, accountNo, holderName, ifsc, branch].some(
+//       v => v && v.trim() !== '',
+//     );
 
-      if (!anyFilled) return true; // ✅ all empty → pass
+//     if (!anyFilled) return true; // ✅ all empty → pass
 
-      // ❌ if something is missing
-      const missing = [];
-      if (!bankName) missing.push('Bank Name');
-      if (!accountNo) missing.push('Account Number');
-      if (!holderName) missing.push('Account Holder Name');
-      if (!ifsc) missing.push('IFSC Code');
-      if (!branch) missing.push('Branch');
+//     // ❌ if something is missing
+//     const missing = [];
+//     if (!bankName) missing.push('Bank Name');
+//     if (!accountNo) missing.push('Account Number');
+//     if (!holderName) missing.push('Account Holder Name');
+//     if (!ifsc) missing.push('IFSC Code');
+//     if (!branch) missing.push('Branch');
 
-      return missing.length === 0
-        ? true
-        : this.createError({
-            path: 'bankName',
-            message: `${missing.join(', ')} required`,
-          });
-    },
-  );
+//     return missing.length === 0
+//       ? true
+//       : this.createError({
+//           path: 'bankName',
+//           message: `${missing.join(', ')} required`,
+//         });
+//   },
+// );
 
 const Profile = ({ navigation }) => {
   const theme = useTheme();
@@ -365,6 +427,7 @@ const Profile = ({ navigation }) => {
       'bankDetails[branch]': 'branch',
       'bankDetails[upiId]': 'upiId',
       'settings[invoiceTerms]': 'invoiceTerms',
+      'settings[invoicePrefix]': 'invoicePrefix',
       ownershipType: 'ownershipType', // ✅ Yeh line add karo
     };
 
@@ -593,6 +656,7 @@ const Profile = ({ navigation }) => {
   };
   // Handle logo upload with bottom sheet
   const handleLogoUpload = () => {
+    Keyboard.dismiss();
     setActiveUploadType('logo');
     imagePickerSheetRef.current?.expand();
   };
@@ -639,6 +703,7 @@ const Profile = ({ navigation }) => {
 
   // Show signature options using bottom sheet
   const handleSignatureAction = () => {
+    Keyboard.dismiss();
     setActiveUploadType('signature');
     imagePickerSheetRef.current?.expand();
   };
@@ -981,6 +1046,7 @@ const Profile = ({ navigation }) => {
         keyboardType="numeric"
         left={<TextInput.Icon icon="credit-card-outline" />}
         // placeholder="Account number"
+        maxLength={18}
         theme={{ roundness: 12 }}
       />
       {touched.accountNo && errors.accountNo && (
@@ -1022,7 +1088,6 @@ const Profile = ({ navigation }) => {
       {touched.ifsc && errors.ifsc && (
         <Text style={styles.errorText}>{errors.ifsc}</Text>
       )}
-
       {/* Branch */}
       <TextInput
         label="Branch"
@@ -1049,7 +1114,7 @@ const Profile = ({ navigation }) => {
         onBlur={handleBlur('upiId')}
         error={touched.upiId && !!errors.upiId}
         mode="outlined"
-        maxLength={20}
+        maxLength={70}
         style={styles.input}
         left={<TextInput.Icon icon="qrcode" />}
         // placeholder="UPI ID"
@@ -1115,8 +1180,10 @@ const Profile = ({ navigation }) => {
           actions.insertOrderedList,
           actions.undo,
           actions.redo,
+          'dismissKeyboard',
         ]}
         style={[styles.toolbar, { backgroundColor: theme.colors.background }]} // Optional stylingstyles.toolbar}
+        dismissKeyboard={() => richTextRef.current?.blurContentEditor()}
       />
 
       {/* Business Logo */}
@@ -1239,6 +1306,8 @@ const Profile = ({ navigation }) => {
           return handleSave(values); // return the promise so Formik awaits and resets isSubmitting
         }} // handleSave will now receive form values
         enableReinitialize
+        validateOnChange={true} // ← add this
+        validateOnBlur={true}
       >
         {({
           handleChange,
@@ -1326,6 +1395,9 @@ const Profile = ({ navigation }) => {
                 style={styles.scrollView}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
+                onScrollBeginDrag={() =>
+                  richTextRef.current?.blurContentEditor()
+                }
               >
                 <Surface style={styles.contentContainer} elevation={1}>
                   {activeTab === 'basic'

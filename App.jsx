@@ -69,6 +69,9 @@ import AllTransactions from './src/screens/menu/AllTransactions';
 import VendorDueDetails from './src/screens/vendor/VendorDueDetails';
 import Item from './src/screens/item/Item';
 import UsersList from './src/screens/menu/UserList';
+import GstReport from './src/screens/report/GstReport';
+import AddPurchaseItems from './src/screens/Purchase/AddPurchaseItems';
+import AddPurchaseItem from './src/screens/Purchase/AddPurchaseItem';
 
 const Stack = createStackNavigator();
 
@@ -147,7 +150,10 @@ function RootNavigator() {
         <Stack.Screen name="TagTutorial" component={TagTutorial} />
         <Stack.Screen name="ExpenseHeadReport" component={ExpenseHeadReport} />
         <Stack.Screen name="PurchaseDetail" component={PurchaseDetail} />
+        <Stack.Screen name="GstReport" component={GstReport} />
         <Stack.Screen name="UserList" component={UsersList} />
+        <Stack.Screen name="AddPurchaseItems" component={AddPurchaseItems} />
+        <Stack.Screen name="AddPurchaseItem" component={AddPurchaseItem} />
         <Stack.Screen
           name="InvoiceTransactions"
           component={InvoiceTransactions}

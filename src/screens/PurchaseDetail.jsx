@@ -234,12 +234,13 @@ const PurchaseDetail = ({ route, navigation }) => {
     return true; // Android 10+ doesn't need permission
   };
 
+  console.log('purchase -->', purchase);
+
   // Transform purchase data to match invoice template format
   // Replace entire transformPurchaseToInvoiceData() with this:
   const transformPurchaseToInvoiceData = () => {
     if (!purchase) return null;
 
-    // Destructure from purchase payload
     const {
       vendorName,
       vendorMobile,
@@ -250,79 +251,71 @@ const PurchaseDetail = ({ route, navigation }) => {
       invoiceNumber,
       date,
       items = [],
-      subTotal = 0,
-      gstTotal = 0,
       isIgst = false,
-      discountTotal = 0,
       roundOff = 0,
-      grandTotal = 0,
       paymentStatus,
       paymentMethod,
       amountPaid = 0,
       amountDue = 0,
       paymentNote,
-      status,
     } = purchase;
 
-    // Business rule: if vendor has no GSTIN -> treat whole purchase as non-GST
     const vendorHasGst = !!(
       vendorGstNumber && String(vendorGstNumber).trim().length > 0
     );
 
-    // Build cartItems array that the template expects
-    // Contract:
-    //  - baseRate = exclusive per-unit price
-    //  - discount = per-unit discount (raw value as stored)
-    //  - gstAmount = calculated only if vendorHasGst === true
     const cartItems = items.map(item => {
+      console.log('---item ', item);
       const qty = Number(item.quantity || 0);
-      const rawRate = Number(item.rate || 0); // rate as stored (may be tax-inclusive)
-      const gstRateRaw = Number(item.gstRate || 0);
+      const rawRate = Number(item.rate || 0);
+      const gstRate = Number(item.gstRate || 0);
       const isInc = !!item.isTaxInclusive;
 
-      // If vendor has no GST, force gstRate to 0 for calculations and display
-      const gstRate = vendorHasGst ? gstRateRaw : 0;
+      let baseRate = 0;
+      let taxableValue = 0;
+      let gstAmount = 0;
+      let totalAmount = 0;
+      let perUnitDiscountRaw = Number(item.discount || 0);
+      let perUnitDiscountExclusive = perUnitDiscountRaw;
 
-      // Convert provided rate to exclusive baseRate if rate is tax-inclusive
-      const baseRate =
-        isInc && gstRate > 0 ? rawRate / (1 + gstRate / 100) : rawRate;
+      if (isInc) {
+        // ✅ GST baked inside rate — extract base, total = rawRate × qty (no extra tax)
+        baseRate = gstRate > 0 ? rawRate / (1 + gstRate / 100) : rawRate;
+        perUnitDiscountExclusive =
+          gstRate > 0
+            ? perUnitDiscountRaw / (1 + gstRate / 100)
+            : perUnitDiscountRaw;
 
-      // per-unit discount (raw). We convert it to exclusive-equivalent if the rate was inclusive
-      const perUnitDiscountRaw = Number(item.discount || 0);
-      const perUnitDiscountExclusive =
-        isInc && gstRate > 0
-          ? perUnitDiscountRaw / (1 + gstRate / 100)
-          : perUnitDiscountRaw;
-
-      // taxable value (exclusive) for this line
-      const taxableValue = baseRate * qty - perUnitDiscountExclusive * qty;
-
-      // IMPORTANT: only compute GST if vendor has GST
-      const gstAmount =
-        vendorHasGst && gstRate > 0 ? taxableValue * (gstRate / 100) : 0;
-
-      const total = taxableValue + gstAmount;
+        taxableValue = baseRate * qty - perUnitDiscountExclusive * qty;
+        gstAmount = gstRate > 0 ? taxableValue * (gstRate / 100) : 0;
+        totalAmount = rawRate * qty - perUnitDiscountRaw * qty; // ✅ no extra tax
+      } else {
+        // ✅ GST on top — total = taxableValue + gstAmount
+        baseRate = rawRate;
+        taxableValue = baseRate * qty - perUnitDiscountRaw * qty;
+        gstAmount = gstRate > 0 ? taxableValue * (gstRate / 100) : 0;
+        totalAmount = taxableValue + gstAmount; // ✅ tax added
+      }
 
       return {
-        // keep both raw and normalized fields so template or debug can use either
         name: item.name,
         hsn: item.hsn,
         qty,
         quantity: qty,
         unit: item.unit,
-        price: rawRate, // display rate as stored
-        baseRate, // exclusive rate used for taxable calculations
-        gstRate, // zero if vendorHasGst === false
+        price: rawRate,
+        mrp: item.mrp,
+        baseRate,
+        gstRate,
         gstAmount,
-        discount: perUnitDiscountRaw, // raw per-unit discount (for display)
-        discountExclusivePerUnit: perUnitDiscountExclusive, // converted exclusive discount
+        discount: perUnitDiscountRaw,
+        discountExclusivePerUnit: perUnitDiscountExclusive,
         taxableValue,
-        total,
+        total: Number(totalAmount.toFixed(4)),
         isTaxInclusive: isInc,
       };
     });
 
-    // Recompute totals from cartItems (so template uses the same numbers)
     const sums = cartItems.reduce(
       (acc, it) => {
         acc.subtotal += Number(it.baseRate || 0) * Number(it.qty || 0);
@@ -344,27 +337,21 @@ const PurchaseDetail = ({ route, navigation }) => {
       },
     );
 
-    // Keep roundOff from purchase if provided; otherwise compute difference between rounded and raw (optional)
     const effectiveRoundOff = Number(roundOff || 0);
-    // If explicit roundOff exists, obey it. If not, compute small round-off to nearest integer rupee if you prefer:
-    // const computedRoundOff = effectiveRoundOff || Math.round(sums.totalAmount) - sums.totalAmount;
     const computedGrand = Number(
       (sums.totalAmount + effectiveRoundOff).toFixed(2),
     );
 
-    // Build invoiceCalculations for template
     const invoiceCalculations = {
       subtotal: Number(sums.subtotal.toFixed(2)),
       discountTotal: Number(sums.discountTotal.toFixed(2)),
-      gstTotal: vendorHasGst ? Number(sums.gstTotal.toFixed(2)) : 0,
+      gstTotal: Number(sums.gstTotal.toFixed(2)),
       grandTotal: Number(computedGrand.toFixed(2)),
-      gstBreakdown: vendorHasGst
-        ? calculateGSTBreakdown(cartItems, isIgst)
-        : {},
+      gstBreakdown: calculateGSTBreakdown(cartItems, isIgst),
       totals: {
         totalQty: sums.totalQty,
         totalTaxable: Number(sums.totalTaxable.toFixed(2)),
-        totalGST: vendorHasGst ? Number(sums.gstTotal.toFixed(2)) : 0,
+        totalGST: Number(sums.gstTotal.toFixed(2)),
         totalAmount: Number(sums.totalAmount.toFixed(2)),
       },
     };
@@ -384,10 +371,11 @@ const PurchaseDetail = ({ route, navigation }) => {
       status: paymentStatus || 'unpaid',
     };
 
+    const hasAnyGst = sums.gstTotal > 0;
+
     return {
       preview: false,
       createdInvoice: true,
-
       invoiceData: {
         ...purchase,
         isIgst,
@@ -397,19 +385,16 @@ const PurchaseDetail = ({ route, navigation }) => {
         grandTotal: invoiceCalculations.grandTotal,
         paymentMethod,
         paymentNote,
-        // include vendorHasGst for template convenience
         vendorHasGst,
       },
-
       formValues,
       cartItems,
       invoiceCalculations,
-
       invoiceNumber,
       currentDate: new Date(),
       currentTime: format(new Date(), 'HH:mm:ss'),
       invoiceDate: new Date(date),
-      isGstInvoice: vendorHasGst,
+      isGstInvoice: hasAnyGst,
       isFreePlan: true,
       appBrand: { name: 'AMDAANI', logoUrl: '' },
       payment,

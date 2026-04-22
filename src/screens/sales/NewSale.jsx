@@ -97,6 +97,9 @@ export default function NewSale() {
     fetchSubscription,
     hasPermission,
   } = useAuth();
+
+  const [afterStoredata, setAfterStoredata] = useState({});
+  //const storedata = authState?.user?.store;
   const storedata = authState?.user?.store;
 
   useEffect(() => {
@@ -390,6 +393,16 @@ export default function NewSale() {
         const newInvoice = incrementInvoiceNumber(res.data.invoiceNumber);
         setNextInvoiceNo(newInvoice);
         // console.log('Next Invoice:', newInvoice);
+        setAfterStoredata({
+          address: res.data?.address,
+          bankDetails: res.data?.bankDetails,
+          name: res.data?.name,
+          settings: res.data?.settings,
+          contactNo: res.data?.contactNo,
+          logoUrl: res.data?.logoUrl,
+          gstNumber: res.data?.gstNumber,
+          signatureUrl: res.data?.signatureUrl,
+        });
       } else {
         // No invoice found → start fresh
         setNextInvoiceNo(`${prefix}-${currentFY}-${startNo}`);
@@ -689,6 +702,8 @@ export default function NewSale() {
           // console.log('Full invoice details:', res);
           if (res?.success && res?.data) {
             const fullInvoice = res.data;
+
+            console.log('data-->', res.data);
 
             // Normalize items so UI and calculator see consistent keys + numeric types
             const normalizedItems = (fullInvoice.items || []).map(item => ({
@@ -1222,6 +1237,8 @@ export default function NewSale() {
     );
   };
 
+  console.log('adterstore dta', afterStoredata);
+
   const handleAddItems = () => {
     // Ensure each item has a unique identifier (needed for FlatList & AddItems)
     const preparedCart = (cartItems || []).map((item, index) => {
@@ -1610,7 +1627,10 @@ export default function NewSale() {
                           invoiceDate: isEditMode
                             ? new Date(existingInvoice?.invoiceDate)
                             : invoiceDate,
-                          storedata,
+                          storedata:
+                            Object.keys(afterStoredata).length > 0
+                              ? afterStoredata
+                              : storedata,
                           isGstInvoice,
                           payment: {
                             paid: payment.paid,

@@ -40,6 +40,14 @@ const ReportScreen = () => {
       icon: 'cash-multiple',
       route: 'ExpenseHeadReport',
     },
+    {
+      id: '5',
+      title: 'GST Report',
+      description:
+        'GST summary including tax collected, input credits, and filing details',
+      icon: 'money-bill',
+      route: 'GstReport',
+    },
   ];
 
   const renderReportCard = ({ item }) => (

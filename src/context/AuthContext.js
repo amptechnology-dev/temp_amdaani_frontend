@@ -319,7 +319,16 @@ export const AuthProvider = ({ children }) => {
           };
           await updateAuthState(newAuthState);
         } else if (res.data?.tempToken) {
-          setAuthState(prev => ({ ...prev, tempToken: res.data.tempToken }));
+          // ✅ persist tempToken to storage so completeRegistration can read it
+          const tempAuthState = {
+            isAuthenticated: false,
+            user: null,
+            accessToken: null,
+            refreshToken: null,
+            tempToken: res.data.tempToken,
+          };
+          await AsyncStorage.setItem('auth', JSON.stringify(tempAuthState));
+          setAuthState(tempAuthState);
         }
       }
       return res;
@@ -330,12 +339,26 @@ export const AuthProvider = ({ children }) => {
 
   const completeRegistration = async formData => {
     try {
+      // Read directly from storage — don't trust stale closure state
+      const storedAuth = await AsyncStorage.getItem('auth');
+      const tempToken = storedAuth
+        ? JSON.parse(storedAuth).tempToken
+        : authState.tempToken;
+
+      if (!tempToken) {
+        return {
+          success: false,
+          message: 'Session expired. Please verify OTP again.',
+        };
+      }
+
       const res = await api.post('/auth/register', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
-          Authorization: `Bearer ${authState.tempToken}`,
+          Authorization: `Bearer ${tempToken}`,
         },
       });
+
       if (res.success) {
         const newAuthState = {
           isAuthenticated: true,

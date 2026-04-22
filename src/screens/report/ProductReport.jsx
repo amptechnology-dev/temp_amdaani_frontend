@@ -129,6 +129,7 @@ const ProductReport = () => {
     };
   }, [products]);
 
+
   const ensureAndroidDownloadPermission = async () => {
     if (Platform.OS !== 'android') return true;
     if (Platform.Version < 29) {

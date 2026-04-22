@@ -1,4 +1,3 @@
-// /mnt/data/AddItems.jsx
 import React, {
   useState,
   useEffect,
@@ -12,7 +11,6 @@ import {
   FlatList,
   TouchableOpacity,
   Dimensions,
-  Platform,
 } from 'react-native';
 import {
   Button,
@@ -21,13 +19,10 @@ import {
   useTheme,
   Surface,
   IconButton,
-  Card,
   ActivityIndicator,
   Badge,
   TouchableRipple,
-  Divider,
   Icon,
-  Chip,
 } from 'react-native-paper';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Navbar from '../../components/Navbar';
@@ -38,61 +33,168 @@ import { useNavigation, useRoute } from '@react-navigation/native';
 import CartItemBottomSheet from '../../components/BottomSheet/CartItemBottomSheet';
 import { useBottomSheet } from '../../hook/useBottomSheet';
 import Fuse from 'fuse.js';
-import { TextSkeleton, ProductListSkeleton } from '../../components/Skeletons';
+import { ProductListSkeleton } from '../../components/Skeletons';
 import CartBottomSheet from '../../components/BottomSheet/CartBottomSheet';
 import { useAuth, permissions } from '../../context/AuthContext';
 
 const { height: screenHeight } = Dimensions.get('window');
 
-const AddItems = () => {
+const AddPurchaseItems = () => {
   const theme = useTheme();
   const navigation = useNavigation();
   const route = useRoute();
   const { hasPermission, isStockEnabled } = useAuth();
   const isPurchase = route?.params?.purchase;
+
   const { bottomSheetRef, present, close } = useBottomSheet();
   const {
     bottomSheetRef: cartBottomSheetRef,
     expand: presentCartSheet,
     close: closeCartSheet,
   } = useBottomSheet();
-
   const {
     bottomSheetRef: itemBottomSheetRef,
     expand: presentItemSheet,
     close: closeItemSheet,
   } = useBottomSheet();
 
-  // state
+  // ─── State ────────────────────────────────────────────────────────────────
   const [products, setProducts] = useState([]);
   const [filteredProducts, setFilteredProducts] = useState([]);
-  const [cart, setCart] = useState([]); // selected items (qty>0)
+  const [cart, setCart] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  // UI-visible per-product quantity. Default 0 -> not selected
   const [dropdownQuantities, setDropdownQuantities] = useState({});
   const [selectedCartItem, setSelectedCartItem] = useState(null);
-
   const [page, setPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [cartInitialized, setCartInitialized] = useState(false);
 
   const limit = 500;
-
   const searchInputRef = useRef(null);
 
-  // fetch products
+  // ─── 1. getPurchaseRate ───────────────────────────────────────────────────
+  // Returns the RAW cost price (before discount). Discount is never applied here.
+  const getPurchaseRate = useCallback(
+    product => {
+      if (isPurchase) {
+        return Number(
+          product.costPrice > 0
+            ? product.costPrice
+            : product.lastPurchasePrice > 0
+            ? product.lastPurchasePrice
+            : 0,
+        );
+      }
+      return Number(product.sellingPrice ?? product.price ?? 0);
+    },
+    [isPurchase],
+  );
+
+  // ─── 2. calculateItemTotals ───────────────────────────────────────────────
+  /**
+   * CALCULATION RULES
+   *
+   * PURCHASE mode:
+   *   netRate  = costPrice (overridePrice) - purchaseDiscount
+   *   if isTaxInclusive:
+   *     basePrice = netRate / (1 + purchaseGstRate/100)
+   *     taxAmount = netRate - basePrice
+   *     subtotal  = qty × netRate
+   *   else:
+   *     basePrice = netRate
+   *     taxAmount = netRate × purchaseGstRate/100
+   *     subtotal  = qty × (netRate + taxAmount)
+   *
+   * SALES mode:
+   *   Uses gstRate + discountPrice/discountPercent — same inclusive/exclusive logic.
+   *
+   * KEY RULE: overridePrice must always be the RAW costPrice (before discount).
+   * purchaseDiscount is always read from product/cartItem — never pre-baked into price.
+   */
+  const calculateItemTotals = useCallback(
+    (product, qty, overridePrice) => {
+      const vendorHasGst = !isPurchase || !!route?.params?.vendorGstNumber;
+      const gstRate = vendorHasGst
+        ? Number(
+            isPurchase ? product.purchaseGstRate ?? 0 : product.gstRate ?? 0,
+          )
+        : 0;
+
+      // Raw rate — must be costPrice for purchase, sellingPrice for sales
+      let rawRate = Number(overridePrice ?? getPurchaseRate(product) ?? 0);
+
+      // Compute net rate after discount
+      let netRate = rawRate;
+      if (isPurchase) {
+        const purchaseDiscount = Number(product.purchaseDiscount ?? 0);
+        if (purchaseDiscount > 0) {
+          netRate = Math.max(0, rawRate - purchaseDiscount);
+        }
+      } else {
+        if (product._manualDiscountApplied) {
+          // discount already baked in — do nothing
+        } else if (
+          product.discountType === 'percent' &&
+          Number(product.discountPercent) > 0
+        ) {
+          netRate = Math.max(
+            0,
+            rawRate - (rawRate * Number(product.discountPercent)) / 100,
+          );
+        } else if (Number(product.discountPrice) > 0) {
+          netRate = Math.max(0, rawRate - Number(product.discountPrice));
+        }
+      }
+
+      let basePrice, taxAmount, subtotal;
+
+      if (isPurchase) {
+        if (product.isPurchaseTaxInclusive) {
+          // GST is already inside costPrice — amount does NOT change
+          // Just extract base and tax portions for reporting; subtotal = qty × netRate
+          basePrice = netRate / (1 + gstRate / 100);
+          taxAmount = netRate - basePrice;
+          subtotal = qty * netRate;
+        } else {
+          // GST is added ON TOP of costPrice — amount increases
+          basePrice = netRate;
+          taxAmount = netRate * (gstRate / 100);
+          subtotal = qty * (netRate + taxAmount);
+        }
+      } else {
+        // Sales mode — use isTaxInclusive
+        if (product.isTaxInclusive) {
+          basePrice = netRate / (1 + gstRate / 100);
+          taxAmount = netRate - basePrice;
+          subtotal = qty * netRate;
+        } else {
+          basePrice = netRate;
+          taxAmount = netRate * (gstRate / 100);
+          subtotal = qty * (netRate + taxAmount);
+        }
+      }
+
+      return {
+        basePrice: Number(basePrice.toFixed(4)),
+        taxAmount: Number(taxAmount.toFixed(4)),
+        subtotal: Number(subtotal.toFixed(4)),
+      };
+    },
+    [isPurchase, route?.params?.vendorGstNumber, getPurchaseRate],
+  );
+
+  // ─── Fetch products ───────────────────────────────────────────────────────
   useEffect(() => {
     fetchProducts();
   }, []);
 
-  // Initialize cart from route param (if provided) and normalize keys so they match product IDs when possible
+  // ─── Initialize cart from route params ───────────────────────────────────
   useEffect(() => {
     if (!route?.params?.existingCart) return;
 
     const existing = route.params.existingCart || [];
-    // console.log(existing)
 
     const normalized = existing.map(item => {
       const qty = item.qty ?? item.quantity ?? item.qtySold ?? 0;
@@ -101,13 +203,14 @@ const AddItems = () => {
         item.productId ??
         (item.product && (item.product._id || item.product.id)) ??
         null;
+      // Store RAW costPrice as price — discount is re-applied in calculateItemTotals
       const price = isPurchase
         ? Number(
             item.costPrice > 0
               ? item.costPrice
-              : item.price ?? prod.lastPurchasePrice ?? 0,
+              : item.price ?? item.lastPurchasePrice ?? 0,
           )
-        : item.price ?? item.sellingPrice ?? 0;
+        : Number(item.sellingPrice ?? item.price ?? 0);
 
       return { ...item, _id: id, qty, price };
     });
@@ -115,7 +218,6 @@ const AddItems = () => {
     setCart(normalized);
     setCartInitialized(true);
 
-    // Build dropdown quantities map using the normalized _id when available, else fallback to name/sku
     const qMap = {};
     normalized.forEach(i => {
       const key = i._id ?? i.name ?? i.sku;
@@ -124,11 +226,9 @@ const AddItems = () => {
     setDropdownQuantities(prev => ({ ...prev, ...qMap }));
   }, [route?.params?.existingCart]);
 
-  // When products load (or change), reconcile existing cart items to ensure they reference the proper product _id and have product metadata
+  // ─── Reconcile cart with loaded products ─────────────────────────────────
   useEffect(() => {
     if (!cartInitialized || products.length === 0) return;
-
-    // console.log("🔥 Running merge once:", { cart, products });
 
     const newQtyMap = { ...dropdownQuantities };
 
@@ -144,16 +244,16 @@ const AddItems = () => {
       if (!prod) return item;
 
       const qty = item.qty ?? 0;
-      const price = item.price ?? item.sellingPrice ?? 0;
+      const rawPrice = isPurchase
+        ? Number(item.price ?? prod.costPrice ?? prod.lastPurchasePrice ?? 0)
+        : Number(item.price ?? prod.sellingPrice ?? 0);
 
       const merged = {
         ...item,
         ...prod,
-        price,
-        sellingPrice: price,
-        productOriginalPrice: prod.sellingPrice,
+        price: rawPrice, // always raw
+        costPrice: prod.costPrice,
         qty,
-
         ...(isPurchase && {
           discountPrice: 0,
           discountPercent: 0,
@@ -161,7 +261,7 @@ const AddItems = () => {
         }),
       };
 
-      const { subtotal } = calculateItemTotals(merged, qty, price);
+      const { subtotal } = calculateItemTotals(merged, qty, rawPrice);
       merged.subtotal = subtotal;
 
       newQtyMap[prod._id] = qty;
@@ -169,21 +269,8 @@ const AddItems = () => {
     });
 
     setCart(newCart);
-
-    // update UI
-    setFilteredProducts(prev =>
-      prev.map(p => {
-        const c = newCart.find(x => x._id === p._id);
-        if (!c) return p;
-        return {
-          ...p,
-          price: c.price,
-          sellingPrice: c.price,
-        };
-      }),
-    );
-
-    setCartInitialized(false); // 🔥 Prevent further runs
+    setFilteredProducts(prev => prev.map(p => p)); // trigger re-render
+    setCartInitialized(false);
   }, [products, cartInitialized]); // ✔ NO CART DEPENDENCY
 
   const fetchProducts = async (pageNumber = 1) => {
@@ -194,15 +281,13 @@ const AddItems = () => {
       const response = await api.get(
         `/product?page=${pageNumber}&limit=${limit}`,
       );
-      console.log('Fetched products:', response.data);
+
       if (response.success && response.data?.docs) {
         const newProducts = response.data.docs;
 
         setProducts(prev =>
           pageNumber === 1 ? newProducts : [...prev, ...newProducts],
         );
-
-        // For Fuse (local search) to always search over all loaded pages
         setFilteredProducts(prev =>
           pageNumber === 1 ? newProducts : [...prev, ...newProducts],
         );
@@ -210,7 +295,6 @@ const AddItems = () => {
         setPage(pageNumber);
         setHasNextPage(response.data.hasNextPage);
 
-        // initialize dropdown quantities if needed
         const initial = {};
         newProducts.forEach(p => {
           initial[p._id] = dropdownQuantities[p._id] ?? 0;
@@ -229,61 +313,7 @@ const AddItems = () => {
     }
   };
 
-  const getPurchaseRate = product => {
-    if (isPurchase) {
-      return Number(
-        product.costPrice > 0
-          ? product.costPrice
-          : product.lastPurchasePrice > 0
-          ? product.lastPurchasePrice // fallback
-          : 0,
-      );
-    }
-
-    return Number(product.price ?? product.sellingPrice ?? 0);
-  };
-
-  const calculateItemTotals = (product, qty, overridePrice) => {
-    const vendorHasGst = !isPurchase || !!route?.params?.vendorGstNumber;
-    const gstRate = vendorHasGst ? product.gstRate || 0 : 0;
-    let sellingPrice = overridePrice ?? getPurchaseRate(product);
-
-    if (!isPurchase) {
-      if (product._manualDiscountApplied) {
-        // ✅ price already has discount baked in — do nothing
-      } else if (
-        product.discountType === 'percent' &&
-        Number(product.discountPercent) > 0
-      ) {
-        // ✅ percent discount
-        sellingPrice = Math.max(
-          0,
-          sellingPrice - (sellingPrice * Number(product.discountPercent)) / 100,
-        );
-      } else if (Number(product.discountPrice) > 0) {
-        // ✅ flat discount
-        sellingPrice = Math.max(
-          0,
-          sellingPrice - Number(product.discountPrice),
-        );
-      }
-    }
-
-    let basePrice, taxAmount, subtotal;
-
-    if (product.isTaxInclusive) {
-      basePrice = sellingPrice / (1 + gstRate / 100);
-      taxAmount = basePrice * (gstRate / 100);
-      subtotal = qty * sellingPrice;
-    } else {
-      basePrice = sellingPrice;
-      taxAmount = basePrice * (gstRate / 100);
-      subtotal = qty * (basePrice + taxAmount);
-    }
-
-    return { basePrice, taxAmount, subtotal };
-  };
-
+  // ─── Fuse search ──────────────────────────────────────────────────────────
   const fuse = useMemo(() => {
     return new Fuse(products, {
       keys: [
@@ -293,7 +323,7 @@ const AddItems = () => {
         { name: 'category.name', weight: 0.1 },
       ],
       includeScore: true,
-      includeMatches: true, // ✅ required for accurate highlighting
+      includeMatches: true,
       shouldSort: true,
       threshold: 0.35,
       minMatchCharLength: 2,
@@ -310,21 +340,15 @@ const AddItems = () => {
         setFilteredProducts(products);
         return;
       }
-
-      // Run fuzzy search with match info
       const fuseResults = fuse.search(trimmed);
-
-      // Map items while keeping match info
       const withMatches = fuseResults.map(r => ({
         ...r.item,
         _matches: r.matches || [],
       }));
-
       setFilteredProducts(withMatches);
     }, 300);
   }, [fuse, products]);
 
-  // Handle input change
   const handleSearchChange = useCallback(
     text => {
       setSearchQuery(text);
@@ -333,24 +357,12 @@ const AddItems = () => {
     [debouncedSearch],
   );
 
-  // Derived list: selected products (in cart) first, then others (filtered)
-  // const sortedProducts = useMemo(() => {
-  //   const inCart = [];
-  //   const notInCart = [];
-  //   filteredProducts.forEach(p => {
-  //     if (cart.some(c => c._id === p._id)) inCart.push(p);
-  //     else notInCart.push(p);
-  //   });
-  //   return [...inCart, ...notInCart];
-  // }, [filteredProducts, cart]);
-  const sortedProducts = useMemo(() => filteredProducts, [filteredProducts]);
-
-  // Helper: update dropdownQuantities safely
+  // ─── 3. setQtyForProduct ──────────────────────────────────────────────────
   const setQtyForProduct = useCallback((productId, qty) => {
     setDropdownQuantities(prev => ({ ...prev, [productId]: Math.max(0, qty) }));
   }, []);
 
-  // Select/add item: uses dropdownQuantities[product._id] as requested; default -> 1
+  // ─── 4. selectItem ────────────────────────────────────────────────────────
   const selectItem = useCallback(
     product => {
       const currentQty = dropdownQuantities[product._id] || 0;
@@ -360,27 +372,22 @@ const AddItems = () => {
         const existingIndex = prevCart.findIndex(
           i => i._id === product._id || i.name === product.name,
         );
-        const purchaseRate = getPurchaseRate(product);
-        const { subtotal } = calculateItemTotals(
-          product,
-          finalQty,
-          purchaseRate,
-        );
 
-        // we'll keep a reference to the item that we actually put in cart
+        // Always use RAW costPrice — discount applied inside calculateItemTotals
+        const rawPrice = getPurchaseRate(product);
+        const { subtotal } = calculateItemTotals(product, finalQty, rawPrice);
+
         let cartItemForSheet = null;
 
         if (existingIndex >= 0) {
           const updated = [...prevCart];
-
           const updatedItem = {
             ...updated[existingIndex],
             qty: finalQty,
-            price: purchaseRate,
+            price: rawPrice,
+            costPrice: rawPrice,
             subtotal,
             hsn: product.hsn || updated[existingIndex].hsn || '',
-
-            // 🛑 PURCHASE → reset purchase discount & selling discount
             ...(isPurchase && {
               discountPrice: 0,
               discountPercent: 0,
@@ -388,26 +395,21 @@ const AddItems = () => {
               _manualDiscountApplied: false,
             }),
           };
-
           updated[existingIndex] = cartItemForSheet = updatedItem;
           setQtyForProduct(product._id, finalQty);
-
-          // ✅ open bottom sheet with the SAME object as in cart
           if (isPurchase) {
             setSelectedCartItem(cartItemForSheet);
             presentItemSheet();
           }
-
           return updated;
         } else {
           const newItem = {
             ...product,
             qty: finalQty,
-            price: purchaseRate,
+            price: rawPrice,
+            costPrice: rawPrice,
             subtotal,
             hsn: product.hsn || '',
-
-            // 🛑 PURCHASE → never pass auto discount
             ...(isPurchase && {
               discountPrice: 0,
               discountPercent: 0,
@@ -415,69 +417,55 @@ const AddItems = () => {
               _manualDiscountApplied: false,
             }),
           };
-
           cartItemForSheet = newItem;
-
           setQtyForProduct(product._id, finalQty);
-
-          // ✅ open bottom sheet with the NEW cart item
           if (isPurchase) {
             setSelectedCartItem(cartItemForSheet);
             presentItemSheet();
           }
-
           return [...prevCart, newItem];
         }
       });
     },
-    [dropdownQuantities, setQtyForProduct, isPurchase, presentItemSheet],
+    [
+      dropdownQuantities,
+      setQtyForProduct,
+      isPurchase,
+      presentItemSheet,
+      getPurchaseRate,
+      calculateItemTotals,
+    ],
   );
-  console.log('selected items => ', selectedCartItem);
-  console.log('filter data', filteredProducts);
-  console.log('products', products);
-  // Remove from cart
+
+  // ─── 5. removeFromCart ────────────────────────────────────────────────────
   const removeFromCart = useCallback(identifier => {
     setCart(prev =>
       prev.filter(
         i => String(i._id) !== String(identifier) && i.name !== identifier,
       ),
     );
-
     setDropdownQuantities(prev => {
       const next = { ...prev };
-
-      // remove direct key matches
       delete next[identifier];
-      // remove stringified matches
       Object.keys(next).forEach(k => {
         if (k === String(identifier)) delete next[k];
       });
-
-      // also remove any keys that are equal to a cart item's name (best-effort cleanup)
-      Object.keys(next).forEach(k => {
-        if (typeof k === 'string' && k === identifier) delete next[k];
-      });
-
       return next;
     });
   }, []);
 
-  // Update cart item quantity (from plus/minus). If newQty <= 0 -> remove.
-  // Do calculations in functional update to avoid race conditions.
+  // ─── 6. updateCartQuantity ────────────────────────────────────────────────
+  // item.price is always RAW — discount re-applied inside calculateItemTotals
   const updateCartQuantity = useCallback(
     (productId, newQty) => {
       if (newQty <= 0) {
         removeFromCart(productId);
         return;
       }
-
-      // Update dropdownQuantities immediately so UI reflects the change
       setDropdownQuantities(prev => ({ ...prev, [productId]: newQty }));
-
       setCart(prev =>
         prev.map(item => {
           if (item._id === productId || item.name === productId) {
-            // recompute subtotal (async-friendly microtask)
             const { subtotal } = calculateItemTotals(item, newQty, item.price);
             return { ...item, qty: newQty, subtotal };
           }
@@ -485,101 +473,103 @@ const AddItems = () => {
         }),
       );
     },
-    [removeFromCart],
+    [removeFromCart, calculateItemTotals],
   );
 
-  // When bottom sheet updates item (price/qty), update cart and dropdownQuantities
+  const formatAmount = num => {
+    return Number.isInteger(num) ? num : parseFloat(num.toString());
+  };
+
+  // ─── 7. onBottomSheetUpdate ───────────────────────────────────────────────
+  /**
+   * Bottom sheet may update: qty, purchaseDiscount, costPrice (stored as price).
+   * item.price from bottom sheet = raw costPrice (it must send raw price, not net).
+   * purchaseDiscount on the item is the updated discount value.
+   * We recalculate subtotal from scratch using the updated values.
+   */
   const onBottomSheetUpdate = useCallback(
     updatedItem => {
-      //console.log('===> update items', updatedItem);
-
-      // ✅ FIX: check both discountPrice AND discountPercent
       updatedItem._manualDiscountApplied =
         Number(updatedItem.discountPrice) > 0 ||
         Number(updatedItem.discountPercent) > 0;
 
+      // updatedItem.price = raw costPrice; purchaseDiscount applied inside
       const { subtotal } = calculateItemTotals(
         updatedItem,
         updatedItem.qty,
         updatedItem.price,
       );
 
-      setCart(prev =>
-        prev.map(c =>
-          c._id === updatedItem._id ? { ...updatedItem, subtotal } : c,
-        ),
-      );
+      const finalItem = { ...updatedItem, subtotal };
 
+      setCart(prev => prev.map(c => (c._id === finalItem._id ? finalItem : c)));
       setDropdownQuantities(prev => ({
         ...prev,
-        [updatedItem._id]: updatedItem.qty,
+        [finalItem._id]: finalItem.qty,
       }));
 
-      setProducts(prev =>
-        prev.map(p =>
-          p._id === updatedItem._id
-            ? {
-                ...p,
-                sellingPrice: updatedItem.sellingPrice,
-                discountPrice: updatedItem.discountPrice,
-                discountPercent: updatedItem.discountPercent,
-                discountType: updatedItem.discountType,
-              }
-            : p,
-        ),
-      );
-
-      setFilteredProducts(prev =>
-        prev.map(p =>
-          p._id === updatedItem._id
-            ? {
-                ...p,
-                sellingPrice: updatedItem.sellingPrice,
-                discountPrice: updatedItem.discountPrice,
-                discountPercent: updatedItem.discountPercent,
-                discountType: updatedItem.discountType,
-              }
-            : p,
-        ),
-      );
+      // Sync discount fields back to product list (sales mode only)
+      if (!isPurchase) {
+        const syncFields = {
+          sellingPrice: finalItem.sellingPrice,
+          discountPrice: finalItem.discountPrice,
+          discountPercent: finalItem.discountPercent,
+          discountType: finalItem.discountType,
+        };
+        setProducts(prev =>
+          prev.map(p =>
+            p._id === finalItem._id ? { ...p, ...syncFields } : p,
+          ),
+        );
+        setFilteredProducts(prev =>
+          prev.map(p =>
+            p._id === finalItem._id ? { ...p, ...syncFields } : p,
+          ),
+        );
+      }
 
       closeItemSheet();
     },
-    [closeItemSheet],
+    [closeItemSheet, calculateItemTotals, isPurchase],
   );
 
-  // console.log('-->filer items', filteredProducts);
-
-  // UI renderer for each product in the item list
+  // ─── 8. renderProductItem ─────────────────────────────────────────────────
   const renderProductItem = useCallback(
     ({ item: product }) => {
-      console.log('product', product.sellingPrice);
       const visibleQty = dropdownQuantities[product._id] ?? 0;
       const inCart = cart.some(
         c => c._id === product._id || c.name === product.name,
       );
-
       const cartItem = cart.find(
         c => c._id === product._id || c.name === product.name,
       );
       const displayQty = inCart ? cartItem.qty : visibleQty;
-      const price = inCart ? cartItem.price : getPurchaseRate(product);
+
+      const displayPrice = isPurchase
+        ? inCart
+          ? Number(cartItem.costPrice ?? cartItem.price ?? 0)
+          : getPurchaseRate(product)
+        : inCart
+        ? cartItem.price
+        : getPurchaseRate(product);
+
       const subtotal = inCart
-        ? cartItem.subtotal
-        : calculateItemTotals(product, displayQty || 0, price).subtotal;
+        ? cartItem.subtotal ?? 0
+        : calculateItemTotals(
+            product,
+            displayQty || 0,
+            getPurchaseRate(product),
+          ).subtotal;
 
-      const highlightMatch = (product, field, query) => {
-        if (!query || !product || !product[field])
-          return <Text>{product?.[field] || ''}</Text>;
+      const highlightMatch = (prod, field, query) => {
+        if (!query || !prod?.[field]) return <Text>{prod?.[field] || ''}</Text>;
 
-        const matches = product._matches?.find(m => m.key === field);
-        const text = product[field];
+        const matches = prod._matches?.find(m => m.key === field);
+        const text = prod[field];
 
         if (!matches || !matches.indices?.length) {
-          // fallback simple regex highlight
           const regex = new RegExp(`(${query})`, 'gi');
           const parts = text.split(regex);
-
           return (
             <Text>
               {parts.map((part, i) =>
@@ -598,12 +588,9 @@ const AddItems = () => {
           );
         }
 
-        // Use Fuse's match indices (precise highlighting)
         const nodes = [];
         let lastIndex = 0;
-
         matches.indices.forEach(([start, end], idx) => {
-          // Add text before the match
           if (start > lastIndex) {
             nodes.push(
               <Text key={`t-${idx}-before`}>
@@ -611,8 +598,6 @@ const AddItems = () => {
               </Text>,
             );
           }
-
-          // Add highlighted match
           nodes.push(
             <Text
               key={`t-${idx}-match`}
@@ -625,32 +610,82 @@ const AddItems = () => {
               {text.slice(start, end + 1)}
             </Text>,
           );
-
           lastIndex = end + 1;
         });
-
-        // Add remaining text
         if (lastIndex < text.length) {
           nodes.push(<Text key="t-end">{text.slice(lastIndex)}</Text>);
         }
-
         return <Text>{nodes}</Text>;
       };
 
-      const displayPrice = isPurchase
-        ? inCart
-          ? Number(cartItem.purchasePrice || cartItem.price)
-          : 0
-        : inCart
-        ? cartItem.price
-        : getPurchaseRate(product);
+      // ─── Purchase price breakdown (inline IIFE) ───────────────────────────
+      const renderPurchasePriceRow = () => {
+        if (!inCart || displayPrice <= 0) return null;
 
-      // console.log('==>display', displayPrice);
-      // console.log(' cart items===>', cartItem);
+        const purchaseDiscount = Number(cartItem.purchaseDiscount ?? 0);
+        const gstRate = Number(cartItem.purchaseGstRate ?? 0);
+        const rawPrice = displayPrice; // raw costPrice (before discount)
+        const netRate = Math.max(0, rawPrice - purchaseDiscount);
+        const isTaxInclusive = cartItem.isPurchaseTaxInclusive;
 
-      //console.log('cart++', cart);
+        let taxAmount = 0;
+        if (gstRate > 0) {
+          taxAmount = isTaxInclusive
+            ? netRate - netRate / (1 + gstRate / 100) // extract GST already inside
+            : netRate * (gstRate / 100); // add GST on top
+        }
 
-      //console.log('selected itsmas', selectItem);
+        const priceLabel =
+          purchaseDiscount > 0
+            ? `₹(${rawPrice.toFixed(2)} - ${purchaseDiscount.toFixed(2)})`
+            : `₹${rawPrice.toFixed(2)}`;
+
+        const gstLabel =
+          gstRate > 0
+            ? isTaxInclusive
+              ? ` (incl. ${gstRate}% GST)`
+              : ` + ₹${taxAmount.toFixed(2)} GST (${gstRate}%)`
+            : '';
+
+        const baseForBreakdown = isTaxInclusive
+          ? netRate / (1 + gstRate / 100)
+          : netRate;
+
+        return (
+          <View style={{ marginTop: 4 }}>
+            <Text
+              style={[
+                styles.productPrice,
+                { color: theme.colors.primary, fontWeight: '600' },
+              ]}
+            >
+              {`${priceLabel}${gstLabel} × ${displayQty} = ₹${
+                isTaxInclusive
+                  ? subtotal.toFixed(2)
+                  : (netRate + taxAmount).toFixed(2)
+              }`}
+            </Text>
+            {gstRate > 0 && (
+              <Text
+                style={{
+                  fontSize: 11,
+                  color: theme.colors.onSurfaceVariant,
+                  marginTop: 2,
+                }}
+              >
+                {isTaxInclusive
+                  ? `Base: ₹${baseForBreakdown.toFixed(
+                      2,
+                    )} + Tax: ₹${taxAmount.toFixed(2)}`
+                  : `Base: ₹${netRate.toFixed(2)} + Tax: ₹${taxAmount.toFixed(
+                      2,
+                    )} → ₹${(netRate + taxAmount).toFixed(2)}/unit`}
+              </Text>
+            )}
+          </View>
+        );
+      };
+
       return (
         <View
           style={[
@@ -663,17 +698,12 @@ const AddItems = () => {
             { borderBottomColor: theme.colors.outline },
           ]}
         >
-          {/* Card main touch area */}
           <TouchableRipple
             onPress={() => {
               if (inCart) {
-                // open bottom sheet to edit selected item
-                console.log('carditems', cartItem);
                 setSelectedCartItem(cartItem);
-
                 presentItemSheet();
               } else {
-                // select (add) the item with default qty or visibleQty
                 selectItem(product);
               }
             }}
@@ -699,38 +729,12 @@ const AddItems = () => {
                 >
                   {highlightMatch(product, 'name', searchQuery)}
                 </Text>
-
-                {/* {product.sku && <Badge style={styles.skuBadge}>{product.sku}</Badge>} */}
               </View>
 
-              {/* Price section with discount handling */}
+              {/* ── Price / Subtotal row ── */}
               <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                 {isPurchase ? (
-                  inCart && displayPrice > 0 ? (
-                    <Text
-                      style={[
-                        styles.productPrice,
-                        {
-                          marginTop: 6,
-                          color: theme.colors.primary,
-                          fontWeight: '600',
-                        },
-                      ]}
-                    >
-                      {cartItem.discountPrice > 0 ? (
-                        <>
-                          ₹({displayPrice.toFixed(2)} -{' '}
-                          {cartItem.discountPrice.toFixed(2)}) x {displayQty} =
-                          ₹{(subtotal || 0).toFixed(2)}
-                        </>
-                      ) : (
-                        <>
-                          ₹{displayPrice.toFixed(2)} x {displayQty} = ₹
-                          {(subtotal || 0).toFixed(2)}
-                        </>
-                      )}
-                    </Text>
-                  ) : null
+                  renderPurchasePriceRow()
                 ) : (
                   <>
                     {product.discountPrice > 0 ? (
@@ -760,7 +764,7 @@ const AddItems = () => {
                           styles.productPrice,
                           {
                             color: theme.colors.primary,
-                            fontWeight: 700,
+                            fontWeight: '700',
                             fontSize: 15,
                           },
                         ]}
@@ -784,18 +788,18 @@ const AddItems = () => {
                     {
                       backgroundColor:
                         product.currentStock <= 5
-                          ? '#ffebee' // Light red background
+                          ? '#ffebee'
                           : product.currentStock <= 20
-                          ? '#fff3e0' // Light orange background
-                          : '#e8f5e9', // Light green background
+                          ? '#fff3e0'
+                          : '#e8f5e9',
                       borderWidth: 1,
                       borderColor:
                         product.currentStock <= 5
-                          ? '#f44336' // Red border
+                          ? '#f44336'
                           : product.currentStock <= 20
-                          ? '#ff9800' // Orange border
-                          : '#4caf50', // Green border
-                      alignSelf: 'flex-start', // Ensure the badge only takes content width
+                          ? '#ff9800'
+                          : '#4caf50',
+                      alignSelf: 'flex-start',
                     },
                   ]}
                 >
@@ -805,26 +809,20 @@ const AddItems = () => {
                       fontWeight: '600',
                       color:
                         product.currentStock <= 5
-                          ? '#c62828' // Dark red text
+                          ? '#c62828'
                           : product.currentStock <= 20
-                          ? '#e65100' // Dark orange text
-                          : '#2e7d32', // Dark green text
+                          ? '#e65100'
+                          : '#2e7d32',
                     }}
                   >
                     {product.currentStock} in stock
                   </Text>
                 </View>
               )}
-
-              {/* {inCart && (
-                <Text style={[styles.productPrice, { marginTop: 6, color: theme.colors.primary }]}>
-                  Subtotal: ₹{(subtotal || 0).toFixed(2)}
-                </Text>
-              )} */}
             </View>
           </TouchableRipple>
 
-          {/* Quantity controls + delete icon for selected */}
+          {/* Quantity controls */}
           <View style={styles.quantitySection}>
             {inCart && (
               <IconButton
@@ -858,7 +856,6 @@ const AddItems = () => {
                   if (inCart) {
                     updateCartQuantity(product._id || product.name, targetQty);
                   } else {
-                    // if not in cart, decrement visible qty (but keep >=0)
                     setDropdownQuantities(prev => ({
                       ...prev,
                       [product._id]: Math.max(0, (prev[product._id] || 0) - 1),
@@ -894,7 +891,6 @@ const AddItems = () => {
                 >
                   {displayQty || 0}
                 </Text>
-                {/* <Text style={styles.quantityLabel}>Qty</Text> */}
               </View>
 
               <TouchableOpacity
@@ -904,12 +900,10 @@ const AddItems = () => {
                   if (inCart) {
                     updateCartQuantity(product._id || product.name, targetQty);
                   } else {
-                    // First, update visible qty
                     setDropdownQuantities(prev => ({
                       ...prev,
                       [product._id]: targetQty,
                     }));
-                    // Then, actually add it to the cart
                     selectItem(product);
                   }
                 }}
@@ -935,18 +929,41 @@ const AddItems = () => {
       selectItem,
       updateCartQuantity,
       removeFromCart,
-      present,
+      presentItemSheet,
+      getPurchaseRate,
+      calculateItemTotals,
+      isPurchase,
+      isStockEnabled,
+      searchQuery,
     ],
   );
-
-  // totals
+  // ─── Totals ───────────────────────────────────────────────────────────────
   const totals = useMemo(() => {
     const itemCount = cart.length;
-    const totalQuantity = cart.reduce((s, i) => s + i.qty, 0);
+    const totalQuantity = cart.reduce((s, i) => s + (i.qty || 0), 0);
     const totalAmount = cart.reduce((s, i) => s + (i.subtotal || 0), 0);
-    return { itemCount, totalQuantity, totalAmount };
-  }, [cart]);
 
+    const totalDisplay = isPurchase
+      ? cart.reduce((s, i) => {
+          const qty = i.qty || 0;
+          const purchaseDiscount = Number(i.purchaseDiscount ?? 0);
+          const rawPrice = Number(i.costPrice ?? i.price ?? 0);
+          const netRate = Math.max(0, rawPrice - purchaseDiscount);
+          const gstRate = Number(i.purchaseGstRate ?? 0);
+
+          if (i.isPurchaseTaxInclusive) {
+            return s + qty * netRate; // GST inside — no change
+          } else {
+            const taxAmount = netRate * (gstRate / 100);
+            return s + qty * (netRate + taxAmount); // GST on top — exact float
+          }
+        }, 0)
+      : totalAmount;
+
+    return { itemCount, totalQuantity, totalAmount, totalDisplay };
+  }, [cart, isPurchase]);
+
+  // ─── Submit ───────────────────────────────────────────────────────────────
   const handleSubmit = useCallback(() => {
     if (cart.length === 0) {
       Toast.show({
@@ -956,17 +973,12 @@ const AddItems = () => {
       });
       return;
     }
-
-    console.log('->cart', cart);
     const onItemsSelected = route?.params?.onItemsSelected;
-    console.log('-->proam', onItemsSelected);
     if (onItemsSelected) onItemsSelected(cart);
     navigation.pop();
-    // Toast.show({ type: 'success', text1: 'Success', text2: 'Items added to invoice!' });
   }, [cart, navigation, route?.params]);
 
-  //console.log(' ddsw-->', cart);
-
+  // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <>
       <SafeAreaView
@@ -998,9 +1010,7 @@ const AddItems = () => {
                     onPress={() => {
                       setSearchQuery('');
                       setFilteredProducts(products);
-                      if (products.length < limit) {
-                        fetchProducts(1); // reload full list if not fully loaded yet
-                      }
+                      if (products.length < limit) fetchProducts(1);
                     }}
                   />
                 ) : null
@@ -1023,14 +1033,14 @@ const AddItems = () => {
                   marginBottom: 0,
                   marginLeft: 8,
                   marginRight: 4,
-                  alignSelf: 'center', // force center alignment
-                  padding: 0, // remove extra IconButton padding
+                  alignSelf: 'center',
+                  padding: 0,
                 }}
                 onPress={() => {
-                  navigation.push('AddItem', {
+                  navigation.push('AddPurchaseItem', {
                     name: searchQuery,
                     onItemCreated: newItem => {
-                      const price = isPurchase
+                      const rawPrice = isPurchase
                         ? Number(
                             newItem.costPrice || newItem.purchasePrice || 0,
                           )
@@ -1039,13 +1049,14 @@ const AddItems = () => {
                       const { subtotal } = calculateItemTotals(
                         newItem,
                         1,
-                        price,
+                        rawPrice,
                       );
 
                       const cartItem = {
                         ...newItem,
                         qty: 1,
-                        price,
+                        price: rawPrice,
+                        costPrice: rawPrice,
                         subtotal,
                         ...(isPurchase && {
                           discountPrice: 0,
@@ -1069,7 +1080,7 @@ const AddItems = () => {
             )}
           </View>
 
-          {/* Items List (merged catalog + cart) */}
+          {/* Items List */}
           <View style={styles.cartSection}>
             <View style={styles.cartHeader}>
               <Text variant="labelLarge" style={styles.sectionTitle}>
@@ -1078,9 +1089,7 @@ const AddItems = () => {
 
               {cart.length > 0 && (
                 <TouchableOpacity
-                  onPress={() => {
-                    presentCartSheet(); // ✅ opens only when tapped
-                  }}
+                  onPress={() => presentCartSheet()}
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
@@ -1128,9 +1137,7 @@ const AddItems = () => {
                 contentContainerStyle={styles.cartList}
                 showsVerticalScrollIndicator={false}
                 onEndReached={() => {
-                  if (!loadingMore && hasNextPage) {
-                    fetchProducts(page + 1);
-                  }
+                  if (!loadingMore && hasNextPage) fetchProducts(page + 1);
                 }}
                 onEndReachedThreshold={0.3}
                 ListFooterComponent={() =>
@@ -1153,7 +1160,6 @@ const AddItems = () => {
           elevation={6}
         >
           <View style={styles.footerCompact}>
-            {/* Left: Totals */}
             <View style={styles.footerSummary}>
               <Text variant="labelMedium" style={styles.summaryValue}>
                 {totals.totalQuantity} items
@@ -1162,11 +1168,10 @@ const AddItems = () => {
                 variant="titleMedium"
                 style={[styles.totalValue, { color: theme.colors.primary }]}
               >
-                ₹{totals.totalAmount.toFixed(2)}
+                ₹{totals.totalDisplay.toFixed(2)}
               </Text>
             </View>
 
-            {/* Right: Actions */}
             <View style={styles.footerActions}>
               <Button
                 mode="text"
@@ -1199,6 +1204,7 @@ const AddItems = () => {
           </View>
         </Surface>
       </SafeAreaView>
+
       <CartBottomSheet
         ref={cartBottomSheetRef}
         cart={cart}
@@ -1220,6 +1226,8 @@ const AddItems = () => {
     </>
   );
 };
+
+export default AddPurchaseItems;
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
@@ -1286,7 +1294,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderBottomWidth: 1,
   },
-  dropdownItemMain: { flex: 1, paddingHorizontal: 16, paddingVertical: 6 },
+  dropdownItemMain: {
+    flex: 1,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    paddingRight: 150,
+  },
   productInfo: { flex: 1 },
   productHeader: {
     flexDirection: 'row',
@@ -1294,7 +1307,7 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   productName: {
-    width: '50%', // fixed 60% width
+    flex: 1, // fixed 60% width
     flexWrap: 'wrap', // allow wrapping
     lineHeight: 16, // make wrapped lines look clean
     marginRight: 8,
@@ -1382,5 +1395,3 @@ const styles = StyleSheet.create({
   submitButton: { flex: 2 },
   deleteButton: { marginLeft: 6 },
 });
-
-export default AddItems;
