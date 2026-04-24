@@ -198,21 +198,21 @@ export default function NewSale() {
   const initialValues =
     isEditMode && existingInvoice
       ? {
-        partyName: existingInvoice.customerName || '',
-        contactNumber: existingInvoice.customerMobile || '',
-        gstNumber: existingInvoice.customerGstNumber || '',
-        address: existingInvoice.customerAddress || '',
-        invoicePrefix: existingInvoice.invoiceNumber.split('-')[0] || 'INV',
-        invoiceNumber: existingInvoice.invoiceNumber,
-      }
+          partyName: existingInvoice.customerName || '',
+          contactNumber: existingInvoice.customerMobile || '',
+          gstNumber: existingInvoice.customerGstNumber || '',
+          address: existingInvoice.customerAddress || '',
+          invoicePrefix: existingInvoice.invoiceNumber.split('-')[0] || 'INV',
+          invoiceNumber: existingInvoice.invoiceNumber,
+        }
       : {
-        partyName: '',
-        contactNumber: '',
-        gstNumber: '',
-        address: '',
-        invoicePrefix: storedata?.settings?.invoicePrefix || 'INV',
-        invoiceNumber: storedata?.settings?.invoiceStartNumber || 1,
-      };
+          partyName: '',
+          contactNumber: '',
+          gstNumber: '',
+          address: '',
+          invoicePrefix: storedata?.settings?.invoicePrefix || 'INV',
+          invoiceNumber: storedata?.settings?.invoiceStartNumber || 1,
+        };
 
   const [alertConfig, setAlertConfig] = useState({
     visible: false,
@@ -243,7 +243,8 @@ export default function NewSale() {
             {
               label: 'No',
               mode: 'text',
-              onPress: () => setAlertConfig(prev => ({ ...prev, visible: false })),
+              onPress: () =>
+                setAlertConfig(prev => ({ ...prev, visible: false })),
             },
             {
               label: 'Yes',
@@ -258,7 +259,10 @@ export default function NewSale() {
         return true; // prevent immediate navigation
       };
 
-      const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+      const sub = BackHandler.addEventListener(
+        'hardwareBackPress',
+        onBackPress,
+      );
       return () => sub.remove();
     }, [navigation, theme.colors.error]),
   );
@@ -275,7 +279,7 @@ export default function NewSale() {
       fetchCustomers();
 
       // Optional cleanup
-      return () => { };
+      return () => {};
     }, []),
   );
 
@@ -394,9 +398,9 @@ export default function NewSale() {
               : true;
             const mobileMatch = m
               ? (c.mobile || '').includes(m) ||
-              (c.mobile || '')
-                .replace(/\D/g, '')
-                .includes(m.replace(/\D/g, ''))
+                (c.mobile || '')
+                  .replace(/\D/g, '')
+                  .includes(m.replace(/\D/g, ''))
               : true;
             // If both queries present, require BOTH to match (AND). If only one present, match that one.
             if (n && m) return nameMatch && mobileMatch;
@@ -772,7 +776,7 @@ export default function NewSale() {
         0,
         Number(
           invoiceCalculations?.roundedTotal -
-          invoiceCalculations?.discountTotal ?? 0,
+            invoiceCalculations?.discountTotal ?? 0,
         ),
       ),
     );
@@ -882,8 +886,8 @@ export default function NewSale() {
       payment.paid === 0 && payment.grandTotal > 0
         ? 'unpaid'
         : payment.due === 0 && payment.grandTotal > 0
-          ? 'paid'
-          : 'partial';
+        ? 'paid'
+        : 'partial';
     // Prepare invoice payload
     const invoiceData = {
       customerName: values.partyName,
@@ -970,8 +974,9 @@ export default function NewSale() {
         Toast.show({
           type: 'success',
           text1: isEditMode ? 'Invoice Updated!' : 'Invoice Created!',
-          text2: `Invoice #${invoiceData.invoiceNumber} has been successfully ${isEditMode ? 'updated' : 'created'
-            }.`,
+          text2: `Invoice #${invoiceData.invoiceNumber} has been successfully ${
+            isEditMode ? 'updated' : 'created'
+          }.`,
         });
         // Only update store invoice counters for NEW invoices. Do not modify invoice numbering on edit.
         if (!isEditMode) {
@@ -1085,6 +1090,9 @@ export default function NewSale() {
       },
     });
   };
+
+  console.log('old-->', existingInvoice?.invoiceNumber);
+  console.log('new --> ', nextInvoiceNo);
 
   // Initial form view (when no items added yet)
   return (
@@ -1242,7 +1250,7 @@ export default function NewSale() {
                   keyboardType="phone-pad"
                   error={Boolean(
                     formikRef.current?.touched?.contactNumber &&
-                    formikRef.current?.errors?.contactNumber,
+                      formikRef.current?.errors?.contactNumber,
                   )}
                 />
 
@@ -1372,8 +1380,8 @@ export default function NewSale() {
                 onSave={handleCustomerSave}
               /> */}
               {invoiceLoaded &&
-                showPreview &&
-                (invoiceCalculations.computedItems || cartItems).length > 0 ? (
+              showPreview &&
+              (invoiceCalculations.computedItems || cartItems).length > 0 ? (
                 <View style={{ flex: 1, position: 'relative' }}>
                   {/* <View style={{ flexDirection: 'row', gap: 8, marginHorizontal: 16 }}>
                         <Button
@@ -1431,7 +1439,7 @@ export default function NewSale() {
                     {invoiceLoaded &&
                       showPreview &&
                       (invoiceCalculations.computedItems || cartItems).length >
-                      0 && (
+                        0 && (
                         <>
                           <FAB
                             size="small"
@@ -1725,9 +1733,9 @@ export default function NewSale() {
                             setPaidAmount(
                               Number.isFinite(numeric)
                                 ? Math.max(
-                                  0,
-                                  Math.min(numeric, Math.max(0, gt)),
-                                )
+                                    0,
+                                    Math.min(numeric, Math.max(0, gt)),
+                                  )
                                 : 0,
                             );
                           }}

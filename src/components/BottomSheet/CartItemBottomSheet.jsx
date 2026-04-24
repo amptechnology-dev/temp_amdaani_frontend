@@ -142,7 +142,6 @@ const CartItemBottomSheet = forwardRef(({ item, onUpdate, purchase }, ref) => {
             value={String(sellingPrice)}
             onChangeText={val => setSellingPrice(Number(val) || 0)}
             mode="outlined"
-            disabled={true}
             keyboardType="numeric"
             style={styles.input}
           />

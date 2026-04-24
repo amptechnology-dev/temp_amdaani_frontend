@@ -389,10 +389,9 @@ export default function NewSale() {
       const currentFY = getFinancialYear();
 
       if (res?.success && res?.data?.invoiceNumber) {
-        // Increment from last invoice
+        // ✅ Pass the full invoice number, not just the prefix
         const newInvoice = incrementInvoiceNumber(res.data.invoiceNumber);
         setNextInvoiceNo(newInvoice);
-        // console.log('Next Invoice:', newInvoice);
         setAfterStoredata({
           address: res.data?.address,
           bankDetails: res.data?.bankDetails,
@@ -404,11 +403,10 @@ export default function NewSale() {
           signatureUrl: res.data?.signatureUrl,
         });
       } else {
-        // No invoice found → start fresh
+        // No invoice found → start fresh with correct prefix
         setNextInvoiceNo(`${prefix}-${currentFY}-${startNo}`);
       }
     } catch (err) {
-      // console.error('Failed to fetch last invoice:', err);
       const prefix = storedata?.settings?.invoicePrefix || 'INV';
       const startNo = storedata?.settings?.invoiceStartNumber || 1;
       const currentFY = getFinancialYear();
@@ -474,17 +472,19 @@ export default function NewSale() {
   }
 
   function incrementInvoiceNumber(currentInvoiceNo) {
-    const { prefix, financialYear, sequentialNo } =
+    const { financialYear, sequentialNo } =
       parseInvoiceNumber(currentInvoiceNo);
+
+    // ✅ Always use the CURRENT store prefix, not whatever was stored in the old invoice
+    const prefix = storedata?.settings?.invoicePrefix || 'INV';
     const currentFY = getFinancialYear();
 
-    // If financial year changed → reset to 1
+    // If financial year changed → reset to 1 with new prefix
     if (financialYear !== currentFY) {
       return `${prefix}-${currentFY}-1`;
     }
 
-    // Else increment sequence
-    return `${prefix}-${financialYear}-${sequentialNo + 1}`;
+    return `${prefix}-${currentFY}-${sequentialNo + 1}`;
   }
 
   // Search filter
@@ -957,10 +957,10 @@ export default function NewSale() {
       const currentFY = getFinancialYear();
 
       let newInvoiceNo;
-
       if (res?.success && res?.data?.invoiceNumber) {
         newInvoiceNo = incrementInvoiceNumber(res.data.invoiceNumber);
       } else {
+        // ✅ Use store prefix correctly
         newInvoiceNo = `${prefix}-${currentFY}-${startNo}`;
       }
 
@@ -1003,6 +1003,8 @@ export default function NewSale() {
 
     return isIgst;
   }
+
+  console.log('store data ', storedata);
 
   const createInvoice = async (values, { setSubmitting, resetForm }) => {
     const check = canCreateInvoice();
@@ -1286,6 +1288,9 @@ export default function NewSale() {
     }),
     [formikRef.current?.values],
   );
+
+  console.log('old-->', existingInvoice?.invoiceNumber);
+  console.log('new --> ', nextInvoiceNo);
 
   // Initial form view (when no items added yet)
   return (

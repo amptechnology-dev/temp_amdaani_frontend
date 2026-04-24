@@ -72,6 +72,8 @@ import UsersList from './src/screens/menu/UserList';
 import GstReport from './src/screens/report/GstReport';
 import AddPurchaseItems from './src/screens/Purchase/AddPurchaseItems';
 import AddPurchaseItem from './src/screens/Purchase/AddPurchaseItem';
+import ProfitLossReport from './src/screens/report/ProfitLossReport';
+import StockReport from './src/screens/report/StockReport';
 
 const Stack = createStackNavigator();
 
@@ -196,10 +198,12 @@ function RootNavigator() {
         <Stack.Screen name="Report" component={ReportScreen} />
         <Stack.Screen name="SalesReport" component={SalesReport} />
         <Stack.Screen name="ProductReport" component={ProductReport} />
+        <Stack.Screen name="ProfitLossReport" component={ProfitLossReport} />
         <Stack.Screen name="Feedback" component={Feedback} />
         <Stack.Screen name="VendorList" component={VendorList} />
         <Stack.Screen name="AddVendor" component={AddNewVendor} />
         <Stack.Screen name="Purchase" component={Purchase} />
+        <Stack.Screen name="StockReport" component={StockReport} />
       </Stack.Navigator>
       <Toast config={toastConfig} />
     </>

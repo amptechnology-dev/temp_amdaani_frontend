@@ -1261,6 +1261,8 @@ export default function Purchase() {
     );
   };
 
+  console.log('cart items for preview', cartItems);
+
   const handleAddItems = () => {
     const preparedCart = (cartItems || []).map((item, index) => ({
       ...item,

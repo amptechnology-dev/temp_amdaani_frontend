@@ -216,6 +216,8 @@ const Transactions = ({ isNavbar = true }) => {
     [allTransactions],
   );
 
+  console.log('All transactions count:', allTransactions);
+
   // Helper to build highlighted parts for matched text
   const renderHighlightedText = (text, key, matches = []) => {
     if (!text) return null;

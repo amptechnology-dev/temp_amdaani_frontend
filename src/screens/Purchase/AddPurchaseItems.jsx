@@ -36,6 +36,7 @@ import Fuse from 'fuse.js';
 import { ProductListSkeleton } from '../../components/Skeletons';
 import CartBottomSheet from '../../components/BottomSheet/CartBottomSheet';
 import { useAuth, permissions } from '../../context/AuthContext';
+import PurchaseCartItemBottomSheet from '../../components/BottomSheet/PurchaseCartItemBottomSheet';
 
 const { height: screenHeight } = Dimensions.get('window');
 
@@ -1216,8 +1217,7 @@ const AddPurchaseItems = () => {
         }}
         onCancel={() => closeCartSheet()}
       />
-
-      <CartItemBottomSheet
+      <PurchaseCartItemBottomSheet
         ref={itemBottomSheetRef}
         purchase={isPurchase}
         item={selectedCartItem}

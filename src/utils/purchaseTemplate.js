@@ -164,12 +164,7 @@ export const generatePurchaseHTML = ({
 
   const amountInWords =
     numberToWords
-      .toWords(
-        Math.round(
-          invoiceCalculations.grandTotal -
-            (invoiceCalculations?.discountTotal || 0),
-        ).toFixed(2),
-      )
+      .toWords(Math.round(invoiceCalculations.grandTotal).toFixed(2))
       .replace(/\b\w/g, c => c.toUpperCase()) + ' Rupees Only';
 
   const hasCustomerDetails =

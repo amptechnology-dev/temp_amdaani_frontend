@@ -45,9 +45,25 @@ const ReportScreen = () => {
       title: 'GST Report',
       description:
         'GST summary including tax collected, input credits, and filing details',
-      icon: 'money-bill',
+      icon: 'cash-multiple',
       route: 'GstReport',
     },
+    {
+      id: '7',
+      title: 'Stock Report',
+      description:
+        'Stock levels and movement analysis',
+      icon: 'package-variant',
+      route: 'StockReport',
+    },
+    {
+      id: '8',
+      title: 'Profit & Loss Report',
+      description:
+        'Profit and loss analysis for the selected period',
+      icon: 'chart-bar',
+      route: 'ProfitLossReport',
+    }
   ];
 
   const renderReportCard = ({ item }) => (

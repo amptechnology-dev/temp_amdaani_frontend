@@ -215,19 +215,29 @@ const Dashboard = () => {
   const calculateMetrics = () => {
     const today = new Date();
 
-    // Annual
-    const currentYear = today.getFullYear();
-    const annualInvoices = invoicesData.filter(
-      inv => new Date(inv.invoiceDate).getFullYear() === currentYear,
-    );
+    // ✅ Indian Financial Year: April 1 to March 31
+    const currentMonth = today.getMonth() + 1; // 1-based
+    const fyStartYear =
+      currentMonth >= 4 ? today.getFullYear() : today.getFullYear() - 1;
+    const fyStart = new Date(fyStartYear, 3, 1); // April 1
+    const fyEnd = new Date(fyStartYear + 1, 2, 31, 23, 59, 59, 999); // March 31
+
+    const annualInvoices = invoicesData.filter(inv => {
+      const d = new Date(inv.invoiceDate);
+      return d >= fyStart && d <= fyEnd;
+    });
     const annualSale = annualInvoices.reduce(
       (s, inv) => s + getNetAmount(inv),
       0,
     );
 
-    const lastYearInvoices = invoicesData.filter(
-      inv => new Date(inv.invoiceDate).getFullYear() === currentYear - 1,
-    );
+    // ✅ Last financial year for growth comparison
+    const lastFyStart = new Date(fyStartYear - 1, 3, 1);
+    const lastFyEnd = new Date(fyStartYear, 2, 31, 23, 59, 59, 999);
+    const lastYearInvoices = invoicesData.filter(inv => {
+      const d = new Date(inv.invoiceDate);
+      return d >= lastFyStart && d <= lastFyEnd;
+    });
     const lastYearSale = lastYearInvoices.reduce(
       (s, inv) => s + getNetAmount(inv),
       0,
@@ -236,7 +246,7 @@ const Dashboard = () => {
     const annualGrowth =
       lastYearSale > 0 ? ((annualSale - lastYearSale) / lastYearSale) * 100 : 0;
 
-    // Monthly
+    // Monthly (unchanged)
     const monthlyInvoices = invoicesData.filter(inv =>
       isSameMonth(new Date(inv.invoiceDate), today),
     );
@@ -259,29 +269,21 @@ const Dashboard = () => {
         ? ((monthlySale - lastMonthSale) / lastMonthSale) * 100
         : 0;
 
-    // Weekly
-    // Find start of current week (Sunday)
+    // Weekly (unchanged)
     const weekStart = new Date(today);
-    const dayOfWeek = weekStart.getDay(); // 0 = Sunday
-    weekStart.setDate(weekStart.getDate() - dayOfWeek);
-
-    // Filter invoices from Sunday to Today
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
     const weeklyInvoices = invoicesData.filter(inv => {
       const invDate = new Date(inv.invoiceDate);
       return invDate >= weekStart && invDate <= today;
     });
-
-    // Calculate Weekly Sale
     const weeklySale = weeklyInvoices.reduce(
       (s, inv) => s + getNetAmount(inv),
       0,
     );
-
-    // Weekly Average
     const weeklyAvg =
       weeklyInvoices.length > 0 ? weeklySale / weeklyInvoices.length : 0;
 
-    // Today
+    // Today (unchanged)
     const todayInvoices = invoicesData.filter(
       inv =>
         format(new Date(inv.invoiceDate), 'yyyy-MM-dd') ===
@@ -545,6 +547,8 @@ const Dashboard = () => {
       </ScrollView>
     );
   }
+
+  //console.log('annul data ===>', metrics.annualSale);
 
   return (
     <ScrollView

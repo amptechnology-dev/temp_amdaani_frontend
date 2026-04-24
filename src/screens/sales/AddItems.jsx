@@ -169,20 +169,6 @@ const AddItems = () => {
     });
 
     setCart(newCart);
-
-    // update UI
-    setFilteredProducts(prev =>
-      prev.map(p => {
-        const c = newCart.find(x => x._id === p._id);
-        if (!c) return p;
-        return {
-          ...p,
-          price: c.price,
-          sellingPrice: c.price,
-        };
-      }),
-    );
-
     setCartInitialized(false); // 🔥 Prevent further runs
   }, [products, cartInitialized]); // ✔ NO CART DEPENDENCY
 
@@ -228,6 +214,16 @@ const AddItems = () => {
       setLoadingMore(false);
     }
   };
+
+  const getCartKey = item =>
+    String(
+      item?._id ??
+        item?.productId ??
+        item?.product?._id ??
+        item?.name ??
+        item?.sku ??
+        '',
+    );
 
   const getPurchaseRate = product => {
     if (isPurchase) {
@@ -357,8 +353,11 @@ const AddItems = () => {
       const finalQty = currentQty > 0 ? currentQty : 1;
 
       setCart(prevCart => {
+        const productKey = getCartKey(product);
         const existingIndex = prevCart.findIndex(
-          i => i._id === product._id || i.name === product.name,
+          i =>
+            getCartKey(i) === productKey ||
+            String(i.name) === String(product.name),
         );
         const purchaseRate = getPurchaseRate(product);
         const { subtotal } = calculateItemTotals(
@@ -437,27 +436,19 @@ const AddItems = () => {
   console.log('products', products);
   // Remove from cart
   const removeFromCart = useCallback(identifier => {
+    const targetKey = String(identifier);
     setCart(prev =>
       prev.filter(
-        i => String(i._id) !== String(identifier) && i.name !== identifier,
+        i => getCartKey(i) !== targetKey && String(i.name) !== targetKey,
       ),
     );
 
     setDropdownQuantities(prev => {
       const next = { ...prev };
-
-      // remove direct key matches
-      delete next[identifier];
-      // remove stringified matches
+      delete next[targetKey];
       Object.keys(next).forEach(k => {
-        if (k === String(identifier)) delete next[k];
+        if (k === targetKey) delete next[k];
       });
-
-      // also remove any keys that are equal to a cart item's name (best-effort cleanup)
-      Object.keys(next).forEach(k => {
-        if (typeof k === 'string' && k === identifier) delete next[k];
-      });
-
       return next;
     });
   }, []);
@@ -476,8 +467,12 @@ const AddItems = () => {
 
       setCart(prev =>
         prev.map(item => {
-          if (item._id === productId || item.name === productId) {
-            // recompute subtotal (async-friendly microtask)
+          const itemKey = getCartKey(item);
+          const targetKey = String(productId);
+          if (
+            itemKey === targetKey ||
+            String(item.name) === String(productId)
+          ) {
             const { subtotal } = calculateItemTotals(item, newQty, item.price);
             return { ...item, qty: newQty, subtotal };
           }
@@ -505,44 +500,23 @@ const AddItems = () => {
       );
 
       setCart(prev =>
-        prev.map(c =>
-          c._id === updatedItem._id ? { ...updatedItem, subtotal } : c,
-        ),
+        prev.map(c => {
+          const existingKey = getCartKey(c);
+          const updatedKey = getCartKey(updatedItem);
+          return existingKey === updatedKey ||
+            String(c.name) === String(updatedItem.name)
+            ? { ...updatedItem, subtotal }
+            : c;
+        }),
       );
 
       setDropdownQuantities(prev => ({
         ...prev,
-        [updatedItem._id]: updatedItem.qty,
+        [getCartKey(updatedItem)]: updatedItem.qty,
       }));
 
-      setProducts(prev =>
-        prev.map(p =>
-          p._id === updatedItem._id
-            ? {
-                ...p,
-                sellingPrice: updatedItem.sellingPrice,
-                discountPrice: updatedItem.discountPrice,
-                discountPercent: updatedItem.discountPercent,
-                discountType: updatedItem.discountType,
-              }
-            : p,
-        ),
-      );
-
-      setFilteredProducts(prev =>
-        prev.map(p =>
-          p._id === updatedItem._id
-            ? {
-                ...p,
-                sellingPrice: updatedItem.sellingPrice,
-                discountPrice: updatedItem.discountPrice,
-                discountPercent: updatedItem.discountPercent,
-                discountType: updatedItem.discountType,
-              }
-            : p,
-        ),
-      );
-
+      // Do not mutate product master data when updating cart item pricing.
+      // Cart item prices should be tracked only in the cart state.
       closeItemSheet();
     },
     [closeItemSheet],
@@ -554,13 +528,18 @@ const AddItems = () => {
   const renderProductItem = useCallback(
     ({ item: product }) => {
       console.log('product', product.sellingPrice);
-      const visibleQty = dropdownQuantities[product._id] ?? 0;
+      const productKey = getCartKey(product);
+      const visibleQty = dropdownQuantities[productKey] ?? 0;
       const inCart = cart.some(
-        c => c._id === product._id || c.name === product.name,
+        c =>
+          getCartKey(c) === productKey ||
+          String(c.name) === String(product.name),
       );
 
       const cartItem = cart.find(
-        c => c._id === product._id || c.name === product.name,
+        c =>
+          getCartKey(c) === productKey ||
+          String(c.name) === String(product.name),
       );
       const displayQty = inCart ? cartItem.qty : visibleQty;
       const price = inCart ? cartItem.price : getPurchaseRate(product);
@@ -733,7 +712,8 @@ const AddItems = () => {
                   ) : null
                 ) : (
                   <>
-                    {product.discountPrice > 0 ? (
+                    {(inCart ? cartItem.discountPrice : product.discountPrice) >
+                    0 ? (
                       <>
                         <Text
                           style={[
@@ -743,11 +723,20 @@ const AddItems = () => {
                         >
                           ₹
                           {(
-                            product.sellingPrice - product.discountPrice
+                            (inCart
+                              ? cartItem.sellingPrice
+                              : product.sellingPrice) -
+                            (inCart
+                              ? cartItem.discountPrice
+                              : product.discountPrice)
                           ).toFixed(2)}
                         </Text>
                         <Text style={styles.originalPrice}>
-                          ₹{product.sellingPrice.toFixed(2)}
+                          ₹
+                          {(inCart
+                            ? cartItem.sellingPrice
+                            : product.sellingPrice
+                          ).toFixed(2)}
                         </Text>
                         <Text style={styles.perUnitText}>
                           {' '}
@@ -768,7 +757,7 @@ const AddItems = () => {
                         ₹{displayPrice.toFixed(2)}
                         <Text style={styles.perUnitText}>
                           {' '}
-                          per {product.unit || 'pcs'}
+                          per {(inCart ? cartItem.unit : product.unit) || 'pcs'}
                         </Text>
                       </Text>
                     )}
@@ -1108,6 +1097,7 @@ const AddItems = () => {
             ) : (
               <FlatList
                 data={filteredProducts}
+                extraData={[cart, dropdownQuantities]}
                 keyExtractor={item =>
                   item._id?.toString() || item.name || Math.random().toString()
                 }
