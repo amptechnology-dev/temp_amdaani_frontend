@@ -37,6 +37,17 @@ const PurchaseSummaryBox = ({ invoice }) => {
 
       <Row label="Subtotal" value={`₹${f(subtotal)}`} />
 
+      {Number(invoice?.discountTotal || 0) > 0 && (
+        <>
+          <Divider style={styles.divider} />
+          <Row
+            label="Extra Discount"
+            value={`-₹${f(invoice?.discountTotal)}`}
+            valueColor={theme.colors.error}
+          />
+        </>
+      )}
+
       <Divider style={styles.divider} />
 
       <Row

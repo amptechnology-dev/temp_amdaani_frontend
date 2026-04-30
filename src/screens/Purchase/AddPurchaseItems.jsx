@@ -490,6 +490,7 @@ const AddPurchaseItems = () => {
    */
   const onBottomSheetUpdate = useCallback(
     updatedItem => {
+      console.log('Bottom sheet update received:', updatedItem);
       updatedItem._manualDiscountApplied =
         Number(updatedItem.discountPrice) > 0 ||
         Number(updatedItem.discountPercent) > 0;
@@ -501,7 +502,13 @@ const AddPurchaseItems = () => {
         updatedItem.price,
       );
 
-      const finalItem = { ...updatedItem, subtotal };
+      const finalItem = {
+        ...updatedItem,
+        subtotal,
+        ...(isPurchase
+          ? { costPrice: Number(updatedItem.price ?? updatedItem.costPrice) }
+          : {}),
+      };
 
       setCart(prev => prev.map(c => (c._id === finalItem._id ? finalItem : c)));
       setDropdownQuantities(prev => ({
@@ -1375,7 +1382,7 @@ const styles = StyleSheet.create({
   footerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8, // works RN 0.71+, else replace with marginRight on first button
+    gap: 8,
   },
   footerButton: {
     // height: 36,

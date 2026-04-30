@@ -1113,7 +1113,7 @@ export default function NewSale() {
         ? await api.put(`/invoice/id/${existingInvoice._id}`, invoiceData)
         : await api.post('/invoice', invoiceData);
 
-      // console.log('Invoice API Response:', res);
+      console.log('Invoice API Response:', res);
 
       if (res?.success) {
         try {
@@ -1294,7 +1294,11 @@ export default function NewSale() {
 
   // Initial form view (when no items added yet)
   return (
-    <>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 80 : 0}
+    >
       <SafeAreaView
         style={[styles.container, { backgroundColor: theme.colors.background }]}
       >
@@ -2256,7 +2260,7 @@ export default function NewSale() {
           remarksSheetRef.current?.close?.();
         }}
       />
-    </>
+    </KeyboardAvoidingView>
   );
 }
 

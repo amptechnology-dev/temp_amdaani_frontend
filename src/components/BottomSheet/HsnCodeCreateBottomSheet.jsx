@@ -6,6 +6,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
 } from 'react-native';
 import {
   Text,
@@ -199,9 +200,14 @@ const AddHsnCodeBottomSheet = React.forwardRef(
       () => (
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 80}
           style={styles.formContainer}
         >
-          <View style={styles.form}>
+          <ScrollView
+            contentContainerStyle={styles.form}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
             <TextInput
               label="HSN Code *"
               mode="outlined"
@@ -316,41 +322,41 @@ const AddHsnCodeBottomSheet = React.forwardRef(
                 ))}
               </View>
             </View>
-          </View>
 
-          <View style={styles.actions}>
-            <Button
-              mode="contained"
-              onPress={handleSubmit}
-              disabled={!isFormValid || isSubmitting}
-              loading={isSubmitting}
-              style={[
-                styles.createButton,
-                {
-                  backgroundColor: isFormValid
-                    ? theme.colors.primary
-                    : theme.colors.outline,
-                },
-              ]}
-              contentStyle={styles.buttonContent}
-              labelStyle={[
-                styles.buttonLabel,
-                {
-                  color: isFormValid
-                    ? theme.colors.onPrimary
-                    : theme.colors.onSurface,
-                },
-              ]}
-            >
-              {isSubmitting
-                ? hsnCode
-                  ? 'Updating...'
-                  : 'Creating...'
-                : hsnCode
+            <View style={styles.actions}>
+              <Button
+                mode="contained"
+                onPress={handleSubmit}
+                disabled={!isFormValid || isSubmitting}
+                loading={isSubmitting}
+                style={[
+                  styles.createButton,
+                  {
+                    backgroundColor: isFormValid
+                      ? theme.colors.primary
+                      : theme.colors.outline,
+                  },
+                ]}
+                contentStyle={styles.buttonContent}
+                labelStyle={[
+                  styles.buttonLabel,
+                  {
+                    color: isFormValid
+                      ? theme.colors.onPrimary
+                      : theme.colors.onSurface,
+                  },
+                ]}
+              >
+                {isSubmitting
+                  ? hsnCode
+                    ? 'Updating...'
+                    : 'Creating...'
+                  : hsnCode
                   ? 'Update HSN Code'
                   : 'Create HSN Code'}
-            </Button>
-          </View>
+              </Button>
+            </View>
+          </ScrollView>
         </KeyboardAvoidingView>
       ),
       [
@@ -413,6 +419,7 @@ const styles = StyleSheet.create({
   form: {
     flex: 1,
     paddingHorizontal: 20,
+    paddingBottom: 24,
   },
   input: {
     marginBottom: 0,

@@ -48,6 +48,7 @@ export const generatePurchaseHTML = ({
 
   const itemsHTML = cartItems
     .map((item, index) => {
+      console.log('it-->', item);
       const qty = item.qty || item.quantity || 0;
       const price = item.price || 0;
       const baseRate = item.baseRate || 0;
@@ -58,9 +59,7 @@ export const generatePurchaseHTML = ({
       const isTaxInclusive =
         item.isPurchaseTaxInclusive || item.isTaxInclusive || false;
 
-      const mrp = isTaxInclusive
-        ? price
-        : baseRate + baseRate * (gstRate / 100);
+      const mrp = item.mrp;
 
       let perItemDiscount = Number(item.discount || 0);
       if (isTaxInclusive && gstRate > 0) {
@@ -162,9 +161,25 @@ export const generatePurchaseHTML = ({
     </tr>
   `;
 
+  const effectiveDiscountTotal = createdInvoice
+    ? Number(invoiceData?.discountTotal || 0)
+    : Number(invoiceCalculations?.discountTotal || 0);
+  const effectiveSubTotal = createdInvoice
+    ? Number(invoiceData?.subTotal || invoiceCalculations.subtotal)
+    : invoiceCalculations.subtotal;
+  const effectiveGstTotal = createdInvoice
+    ? Number(invoiceData?.gstTotal || totalGST)
+    : totalGST;
+  const effectiveRoundOff = createdInvoice
+    ? Number(invoiceData?.roundOff || 0)
+    : Number((Math.round(effectiveNetTotal) - effectiveNetTotal).toFixed(2));
+  const effectiveNetTotal = createdInvoice
+    ? Number(invoiceData?.grandTotal || 0)
+    : invoiceCalculations.grandTotal - effectiveDiscountTotal;
+
   const amountInWords =
     numberToWords
-      .toWords(Math.round(invoiceCalculations.grandTotal).toFixed(2))
+      .toWords(Math.round(effectiveNetTotal).toFixed(2))
       .replace(/\b\w/g, c => c.toUpperCase()) + ' Rupees Only';
 
   const hasCustomerDetails =
@@ -181,10 +196,11 @@ export const generatePurchaseHTML = ({
       storedata.bankDetails.branch ||
       storedata.bankDetails.upiId);
 
-  const rawGrandTotal =
-    invoiceCalculations.grandTotal - (invoiceCalculations?.discountTotal || 0);
+  const rawGrandTotal = createdInvoice
+    ? effectiveNetTotal
+    : invoiceCalculations.netTotal; // use netTotal (already has discount applied)
   const roundedGrandTotal = Math.round(rawGrandTotal);
-  const roundOffValue = (roundedGrandTotal - rawGrandTotal).toFixed(2);
+  const roundOffValue = effectiveRoundOff.toFixed(2);
 
   // sr + desc + qty + unit + rate + mrp + discount + taxable + gst = 9 cols, last 2 are label+amount
   const colspanCount = 8;
@@ -192,7 +208,7 @@ export const generatePurchaseHTML = ({
   const totalsRowCount =
     2 + // subtotal + total tax
     1 + // net total
-    ((invoiceCalculations?.discountTotal ?? 0) > 0 ? 1 : 0) +
+    (effectiveDiscountTotal > 0 ? 1 : 0) +
     (Number(roundOffValue) !== 0 ? 1 : 0) +
     (payment.status !== 'paid' || payment.due > 0 ? 2 : 0);
 
@@ -462,7 +478,7 @@ export const generatePurchaseHTML = ({
                     </tr>
 
                     ${
-                      (invoiceCalculations?.discountTotal ?? 0) > 0
+                      effectiveDiscountTotal > 0
                         ? `
                     <tr class="totals-row no-break">
                       <td class="label">Extra Discount</td>
@@ -475,27 +491,7 @@ export const generatePurchaseHTML = ({
                         : ''
                     }
 
-                    ${
-                      Number(roundOffValue) !== 0
-                        ? `
-                    <tr class="totals-row no-break">
-                      <td class="label">Round Off</td>
-                      <td class="amount" style="color:${
-                        Number(roundOffValue) < 0 ? '#e53935' : '#43a047'
-                      };">
-                        ${
-                          createdInvoice
-                            ? `${
-                                Number(invoiceData?.roundOff) >= 0 ? '+' : ''
-                              }${Number(invoiceData?.roundOff).toFixed(2)}`
-                            : `${
-                                Number(roundOffValue) < 0 ? '−' : '+'
-                              }₹${Math.abs(Number(roundOffValue)).toFixed(2)}`
-                        }
-                      </td>
-                    </tr>`
-                        : ''
-                    }
+                  
 
                     <tr class="grand-total-row no-break">
                       <td class="label">Net Total</td>

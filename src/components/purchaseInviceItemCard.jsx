@@ -138,7 +138,7 @@ const PurchaseInvoiceItemCard = ({ item }) => {
             <Divider style={{ marginVertical: 4 }} />
 
             {/* Cost price */}
-            <Row label="Cost Price" value={`₹${f(costPrice)} / unit`} />
+            <Row label="Purchase Rate" value={`₹${f(costPrice)} / unit`} />
 
             {/* Discount row — only if there is one */}
             {hasDiscount && (

@@ -159,7 +159,7 @@ const Menu = () => {
           description: 'Customer list and contact details',
         },
         hasPermission(permissions.CAN_MANAGE_USERS) &&
-          subscription?.planName !== 'Free' && {
+          subscription?.planName == 'Free' && {
             title: 'Users',
             icon: 'account-multiple',
             onPress: () => navigation.navigate('UserList'),

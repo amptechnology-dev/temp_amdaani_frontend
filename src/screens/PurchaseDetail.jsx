@@ -379,10 +379,15 @@ const PurchaseDetail = ({ route, navigation }) => {
       invoiceData: {
         ...purchase,
         isIgst,
-        subTotal: invoiceCalculations.subtotal,
-        discountTotal: invoiceCalculations.discountTotal,
-        roundOff: effectiveRoundOff,
-        grandTotal: invoiceCalculations.grandTotal,
+        subTotal: Number(purchase.subTotal ?? invoiceCalculations.subtotal),
+        discountTotal: Number(
+          purchase.discountTotal ?? invoiceCalculations.discountTotal,
+        ),
+        roundOff: Number(purchase.roundOff ?? effectiveRoundOff),
+        grandTotal: Number(
+          purchase.grandTotal ?? invoiceCalculations.grandTotal,
+        ),
+        gstTotal: Number(purchase.gstTotal ?? invoiceCalculations.gstTotal),
         paymentMethod,
         paymentNote,
         vendorHasGst,

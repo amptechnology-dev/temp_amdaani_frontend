@@ -6,7 +6,10 @@ import {
   Touchable,
   TouchableOpacity,
 } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import {
   Text,
   Card,
@@ -96,7 +99,11 @@ const UsersList = () => {
   const renderUserCard = ({ item }) => (
     <Card mode="outlined" style={styles.card} contentStyle={styles.cardContent}>
       <View style={styles.cardHeader}>
-        <Text variant="titleMedium" style={styles.userName}>
+        <Text
+          variant="titleMedium"
+          style={styles.userName}
+          numberOfLines={1} // ✅ truncate long names
+        >
           {item.name}
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -115,14 +122,25 @@ const UsersList = () => {
           )}
         </View>
       </View>
+
       <View style={styles.cardFooter}>
-        <View style={styles.contactInfo}>
+        {/* ✅ Key fix: flexShrink so contact info doesn't push tags out */}
+        <View
+          style={[styles.contactInfo, { flex: 1, flexShrink: 1, minWidth: 0 }]}
+        >
           <Icon
             source="phone"
             size={12}
             color={theme.colors.onSurfaceVariant}
           />
-          <Text style={styles.phoneText}>{item.phone}</Text>
+          <Text
+            style={[styles.phoneText, { flexShrink: 1 }]}
+            numberOfLines={1} // ✅ truncate long numbers
+            ellipsizeMode="tail"
+          >
+            {item.phone}
+          </Text>
+
           {item.email && (
             <>
               <Icon
@@ -130,7 +148,13 @@ const UsersList = () => {
                 size={12}
                 color={theme.colors.onSurfaceVariant}
               />
-              <Text style={styles.emailText}>{item.email}</Text>
+              <Text
+                style={[styles.emailText, { flexShrink: 1 }]}
+                numberOfLines={1} // ✅ truncate long emails
+                ellipsizeMode="tail"
+              >
+                {item.email}
+              </Text>
             </>
           )}
         </View>
@@ -141,6 +165,7 @@ const UsersList = () => {
               styles.roleTag,
               { backgroundColor: theme.colors.secondaryContainer },
             ]}
+            numberOfLines={1}
           >
             {item.role?.name?.toUpperCase()}
           </Text>
@@ -178,7 +203,10 @@ const UsersList = () => {
             data={users}
             keyExtractor={item => item._id}
             renderItem={renderUserCard}
-            contentContainerStyle={[styles.listContainer, { paddingBottom: 80 + bottom }]}
+            contentContainerStyle={[
+              styles.listContainer,
+              { paddingBottom: 80 + bottom },
+            ]}
             showsVerticalScrollIndicator={false}
           />
         )}
@@ -187,7 +215,10 @@ const UsersList = () => {
       <FAB
         icon="account-plus"
         color="white"
-        style={[styles.fab, { backgroundColor: theme.colors.primary, marginBottom: bottom }]}
+        style={[
+          styles.fab,
+          { backgroundColor: theme.colors.primary, marginBottom: bottom },
+        ]}
         onPress={() => addUserSheetRef.current?.present()}
       />
 
@@ -258,10 +289,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexWrap: 'nowrap',
+    overflow: 'hidden',
   },
   contactInfo: {
     flexDirection: 'row',
     alignItems: 'center',
+    flex: 1, // ✅ take available space but yield to tagsContainer
+    flexShrink: 1, // ✅ shrink when tags need space
+    minWidth: 0,
   },
   phoneText: {
     fontSize: 11,
@@ -271,6 +307,8 @@ const styles = StyleSheet.create({
   tagsContainer: {
     flexDirection: 'row',
     gap: 4,
+    flexShrink: 0,
+    marginLeft: 8,
   },
   roleTag: {
     paddingHorizontal: 6,

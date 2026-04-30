@@ -178,6 +178,7 @@ export default function Purchase() {
 
   // At top of NewSale.jsx state section
   const [paidAmount, setPaidAmount] = React.useState(0);
+  const [paidAmountText, setPaidAmountText] = React.useState('');
 
   // Keep paidAmount in sync with computed grand total by default (only when user hasn’t overridden)
   const hasUserEditedPaid = React.useRef(false);
@@ -216,6 +217,17 @@ export default function Purchase() {
     { label: 'Bank Transfer', value: 'bank_transfer', icon: 'bank' },
     { label: 'Cheque', value: 'cheque', icon: 'checkbook' },
   ];
+
+  React.useEffect(() => {
+    if (!hasUserEditedPaid.current) {
+      if (paidAmount === 0) {
+        setPaidAmountText('');
+      } else {
+        // ✅ Always show exactly 2 decimal places, no floating point artifacts
+        setPaidAmountText(parseFloat(paidAmount.toFixed(2)).toString());
+      }
+    }
+  }, [paidAmount]);
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', e => {
@@ -766,7 +778,11 @@ export default function Purchase() {
 
             // Load payment details from existing purchase
             setPurchaseDate(new Date(fullInvoice.date));
-            setPaidAmount(Number(fullInvoice.amountPaid ?? 0));
+            const loadedPaid = parseFloat(
+              Number(fullInvoice.amountPaid ?? 0).toFixed(2),
+            );
+            setPaidAmount(loadedPaid);
+            setPaidAmountText(loadedPaid === 0 ? '' : loadedPaid.toFixed(2));
             setPaymentMethod(fullInvoice.paymentMethod || 'cash');
             setPaymentNote(fullInvoice.paymentNote || '');
             if (fullInvoice.discountTotal && fullInvoice.discountTotal > 0) {
@@ -790,20 +806,17 @@ export default function Purchase() {
     loadInvoiceDetails();
   }, [isEditMode, existingPurchase]);
 
-  useEffect(() => {
-    if (isEditMode && existingPurchase) {
-      setMobileQuery(existingPurchase.customerMobile || '');
-    }
-  }, [isEditMode, existingPurchase]);
-
   React.useEffect(() => {
-    const gt = Number(
-      invoiceCalculations?.netTotalExclusiveOnly ??
-        invoiceCalculations?.netTotal ??
-        0,
+    const gt = parseFloat(
+      Number(
+        invoiceCalculations?.netTotalExclusiveOnly ??
+          invoiceCalculations?.netTotal ??
+          0,
+      ).toFixed(2), // ✅ clamp to 2 decimal places at source
     );
     if (!hasUserEditedPaid.current) {
       setPaidAmount(gt);
+      setPaidAmountText(gt === 0 ? '' : gt.toFixed(2)); // ✅ sync display too
     }
   }, [
     invoiceCalculations?.netTotalExclusiveOnly,
@@ -835,6 +848,7 @@ export default function Purchase() {
       const rawCostPrice = Number(item.costPrice ?? item.price ?? 0);
       const purchaseDiscount = Number(item.purchaseDiscount ?? 0);
       const netRate = Math.max(0, rawCostPrice - purchaseDiscount);
+      const mrp = item.mrp;
 
       const gstRate = Number(item.purchaseGstRate || 0);
       const isTaxInclusive = Boolean(item.isPurchaseTaxInclusive);
@@ -895,24 +909,25 @@ export default function Purchase() {
         gstAmount,
         qty,
         total: Number(totalAmount.toFixed(4)),
+        mrp,
       };
     });
 
     const grandTotalRaw = subtotal + totalTax;
 
-    const discountTotal = computedItems.reduce((sum, item) => {
-      const qty = Number(item.qty ?? 0);
-      const purchaseDiscount = Number(item.purchaseDiscount ?? 0);
-      return sum + purchaseDiscount * qty;
-    }, 0);
+    const invoiceDiscountTotal = (() => {
+      if (discount?.type === 'flat') {
+        return Number(discount?.value || 0);
+      }
+      if (discount?.type === 'percent') {
+        return grandTotalRaw * (Number(discount?.value || 0) / 100);
+      }
+      return 0;
+    })();
 
-    const netTotal = computedItems.reduce((s, item) => s + item.total, 0);
-
-    const grandTotalAfterDiscount = grandTotalRaw;
+    const netTotal = grandTotalRaw - invoiceDiscountTotal;
     const roundedTotal = Math.round(netTotal);
-    const roundOff = Number(
-      (roundedTotal - netTotal + Number.EPSILON).toFixed(2),
-    );
+    const roundOff = Number((roundedTotal - netTotal).toFixed(2));
     const netTotalExclusiveOnly = netTotal;
 
     const totalQuantity = computedItems.reduce(
@@ -926,10 +941,10 @@ export default function Purchase() {
       netTotalExclusiveOnly,
       roundOff,
       totalTax, // ✅ always return real tax amount
-      grandTotal: grandTotalAfterDiscount,
+      grandTotal: grandTotalRaw,
       roundedTotal,
       grandTotalRaw,
-      discountTotal: Number(discountTotal.toFixed(2)),
+      discountTotal: Number(invoiceDiscountTotal.toFixed(2)),
       totalQuantity,
       itemCount: computedItems.length,
       gstBreakdown: isGstInvoice ? gstBreakdown : {}, // breakdown only for GST invoices
@@ -942,12 +957,13 @@ export default function Purchase() {
   // console.log("computedItems", invoiceCalculations?.computedItems)
 
   React.useEffect(() => {
-    const gt = Number(invoiceCalculations?.netTotal ?? 0);
-    // Only auto-update if user hasn’t manually edited paid amount
+    const gt = parseFloat(
+      Number(invoiceCalculations?.netTotal ?? 0).toFixed(2),
+    ); // ✅
     if (!hasUserEditedPaid.current) {
       setPaidAmount(gt);
+      setPaidAmountText(gt === 0 ? '' : gt.toFixed(2)); // ✅ sync display too
     }
-    // Also auto-adjust if discount changes (but only if user didn’t override)
   }, [invoiceCalculations?.netTotal]);
 
   // Derived payment info
@@ -1991,6 +2007,7 @@ export default function Purchase() {
                         <TouchableWithoutFeedback
                           onPress={() => {
                             if (
+                              !isEditMode &&
                               !formikRef.current?.values?.vendorNumber?.trim()
                             ) {
                               Toast.show({
@@ -2004,6 +2021,7 @@ export default function Purchase() {
                         >
                           <View
                             pointerEvents={
+                              !isEditMode &&
                               !Boolean(selectedCustomer) &&
                               !Boolean(
                                 formikRef.current?.values?.vendorNumber?.trim()
@@ -2018,21 +2036,24 @@ export default function Purchase() {
                               dense
                               left={<TextInput.Icon icon="currency-inr" />}
                               right={
+                                !isEditMode &&
                                 !Boolean(selectedCustomer) &&
                                 !Boolean(
                                   formikRef.current?.values?.vendorNumber?.trim()
                                     ?.length >= 10,
-                                ) && (
+                                ) ? (
                                   <TextInput.Icon
                                     icon="lock"
                                     size={16}
                                     color={theme.colors.onSurfaceDisabled}
                                   />
-                                )
+                                ) : null
                               }
-                              value={paidAmount === 0 ? '' : String(paidAmount)}
+                              value={paidAmountText}
                               onChangeText={txt => {
+                                // ✅ Guard — block if not allowed to edit
                                 if (
+                                  !isEditMode &&
                                   !Boolean(selectedCustomer) &&
                                   !Boolean(
                                     formikRef.current?.values?.vendorNumber?.trim()
@@ -2042,50 +2063,73 @@ export default function Purchase() {
                                   return;
                                 }
 
-                                // Allow only numbers and one decimal point
-                                let cleanValue = txt
-                                  .replace(/[^0-9.]/g, '') // Remove non-numeric characters except decimal point
-                                  .replace(/^(\d*\.?\d{0,2}).*$/, '$1') // Limit to 2 decimal places
-                                  .replace(/^(\d+\.\d*)\./g, '$1'); // Remove extra decimal points
+                                // ✅ Strip non-numeric except dot
+                                const digits = txt.replace(/[^0-9.]/g, '');
 
-                                // If the value starts with a decimal, add a leading zero
+                                // ✅ Split on dot — enforce single dot + max 2 decimal digits
+                                const parts = digits.split('.');
+                                let cleanValue =
+                                  parts.length > 1
+                                    ? parts[0] + '.' + parts[1].slice(0, 2) // ✅ only first 2 decimal chars
+                                    : parts[0];
+
+                                // ✅ Handle leading dot
                                 if (cleanValue.startsWith('.')) {
                                   cleanValue = '0' + cleanValue;
                                 }
 
-                                // Parse to number and validate against max amount
-                                const numeric = parseFloat(cleanValue) || 0;
-                                const maxAmount = Number(
-                                  invoiceCalculations?.netTotal ?? 0,
+                                // ✅ Always update display text as-is (preserves "100." while typing)
+                                setPaidAmountText(cleanValue);
+                                hasUserEditedPaid.current = true;
+
+                                if (cleanValue === '' || cleanValue === '0.') {
+                                  setPaidAmount(0);
+                                  return;
+                                }
+
+                                const numeric = parseFloat(cleanValue);
+                                if (isNaN(numeric)) return;
+
+                                // ✅ Hard cap at netTotal — no more, no less
+                                const maxAmount = parseFloat(
+                                  Number(
+                                    invoiceCalculations?.netTotal ?? 0,
+                                  ).toFixed(2),
+                                );
+                                const clamped = Math.min(
+                                  Math.max(0, numeric),
+                                  maxAmount,
                                 );
 
-                                // Update state with validated and formatted value
-                                if (!isNaN(numeric)) {
-                                  const validatedValue = Math.min(
-                                    Math.max(0, numeric),
-                                    maxAmount,
-                                  );
-                                  setPaidAmount(
-                                    validatedValue === 0 ? 0 : validatedValue,
-                                  );
-                                  hasUserEditedPaid.current = true;
+                                setPaidAmount(clamped);
+
+                                // ✅ If user typed above max, snap display text to max too
+                                if (numeric > maxAmount) {
+                                  setPaidAmountText(maxAmount.toFixed(2));
                                 }
                               }}
                               onBlur={() => {
-                                // Format the value on blur
-                                if (paidAmount > 0) {
-                                  setPaidAmount(prev => {
-                                    const value = parseFloat(prev).toFixed(2);
-                                    return value.endsWith('.00')
-                                      ? parseInt(value)
-                                      : parseFloat(value);
-                                  });
+                                // ✅ On blur, clean up trailing dot and clamp to 2 decimals
+                                const maxAmount = parseFloat(
+                                  Number(
+                                    invoiceCalculations?.netTotal ?? 0,
+                                  ).toFixed(2),
+                                );
+
+                                if (!paidAmount || paidAmount <= 0) {
+                                  setPaidAmount(0);
+                                  setPaidAmountText('');
+                                  return;
                                 }
+
+                                const clamped = parseFloat(
+                                  Math.min(paidAmount, maxAmount).toFixed(2), // ✅ final 2-decimal clamp
+                                );
+                                setPaidAmount(clamped);
+                                setPaidAmountText(String(clamped));
                               }}
-                              // editable={Boolean(
-                              //   formikRef.current?.values?.vendorNumber?.trim(),
-                              // )}
                               editable={
+                                isEditMode || // ✅ always editable in edit mode
                                 Boolean(selectedCustomer) ||
                                 Boolean(
                                   formikRef.current?.values?.vendorNumber?.trim()

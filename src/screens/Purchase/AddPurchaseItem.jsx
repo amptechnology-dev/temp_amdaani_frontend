@@ -26,6 +26,7 @@ import {
   View,
   Platform,
   Keyboard,
+  BackHandler,
 } from 'react-native';
 import { Formik } from 'formik';
 import * as Yup from 'yup';
@@ -40,7 +41,11 @@ import unitsData from '../../assets/data/units.json';
 import categoriesData from '../../assets/data/categories.json';
 import DiscountTypeSelectorBottomSheet from '../../components/BottomSheet/DiscountTypeSelectorBottomSheet';
 import TaxRateSelectorBottomSheet from '../../components/BottomSheet/TaxRateSelectorBottomSheet';
-import { useNavigation, useRoute } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useNavigation,
+  useRoute,
+} from '@react-navigation/native';
 import api from '../../utils/api';
 import HsnCodeSelectorBottomSheet from '../../components/BottomSheet/HsnCodeSelectorBottomSheet';
 import AddHsnCodeBottomSheet from '../../components/BottomSheet/HsnCodeCreateBottomSheet';
@@ -138,6 +143,16 @@ const AddPurchaseItem = () => {
     [],
   );
 
+  const withTaxOption = useMemo(
+    () => ({
+      id: 'with_tax',
+      label: 'With Tax',
+      description: 'Price includes/applies tax',
+      icon: 'check-decagram',
+    }),
+    [],
+  );
+
   const defaultDiscountType = useMemo(
     () => ({
       id: 'amount',
@@ -161,6 +176,29 @@ const AddPurchaseItem = () => {
   const [selectedHsnCode, setSelectedHsnCode] = useState(null);
   const [hsnCodeRefreshKey, setHsnCodeRefreshKey] = useState(0);
   const [alertVisible, setAlertVisible] = useState(false);
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const onBackPress = () => {
+        const isDirty = formikRef.current?.dirty;
+
+        if (isDirty) {
+           setAlertVisible(true)
+          return true;
+        }
+
+        navigation.goBack();
+        return true;
+      };
+
+      const sub = BackHandler.addEventListener(
+        'hardwareBackPress',
+        onBackPress,
+      );
+
+      return () => sub.remove();
+    }, [navigation, theme.colors.error]),
+  );
 
   const { units } = unitsData;
 
@@ -335,24 +373,33 @@ const AddPurchaseItem = () => {
       setFieldValue('hsnCode', newHsn.code);
 
       if (newHsn.gstRate && Number(newHsn.gstRate) > 0) {
-        setFieldValue('selectedTaxRate', {
+        const taxRateObject = {
           rate: Number(newHsn.gstRate),
           label: `${newHsn.gstRate}% GST`,
-        });
-        setFieldValue('selectedTaxOption', {
+        };
+        const withTaxOption = {
           id: 'with_tax',
           label: 'With Tax',
           description: 'Price includes/applies tax',
           icon: 'check-decagram',
-        });
+        };
+
+        setFieldValue('selectedTaxRate', taxRateObject);
+        setFieldValue('selectedTaxOption', withTaxOption);
+        setFieldValue('selectedPurchaseTaxRate', taxRateObject);
+        setFieldValue('selectedPurchaseTaxOption', withTaxOption);
       } else {
-        setFieldValue('selectedTaxRate', null);
-        setFieldValue('selectedTaxOption', {
+        const withoutTaxOption = {
           id: 'without_tax',
           label: 'Without Tax',
           description: 'Price excludes taxes (tax will be added)',
           icon: 'minus-circle-outline',
-        });
+        };
+
+        setFieldValue('selectedTaxRate', null);
+        setFieldValue('selectedTaxOption', withoutTaxOption);
+        setFieldValue('selectedPurchaseTaxRate', null);
+        setFieldValue('selectedPurchaseTaxOption', withoutTaxOption);
       }
     }
 
@@ -575,6 +622,8 @@ const AddPurchaseItem = () => {
                 setFieldValue('hsnCode', '');
                 setFieldValue('selectedTaxRate', null);
                 setFieldValue('selectedTaxOption', defaultTaxOption);
+                setFieldValue('selectedPurchaseTaxRate', null);
+                setFieldValue('selectedPurchaseTaxOption', defaultTaxOption);
                 hsnBottomSheet.close();
                 return;
               }
@@ -589,22 +638,24 @@ const AddPurchaseItem = () => {
                   rate: Number(hsnCode.gstRate),
                   label: `${hsnCode.gstRate}% GST`,
                 };
-
-                // console.log('Setting tax rate:', taxRateObject);
-                setFieldValue('selectedTaxRate', taxRateObject);
-
-                // Also set tax option to 'with_tax' since we have a GST rate
                 const withTaxOption = {
                   id: 'with_tax',
                   label: 'With Tax',
                   description: 'Price includes/applies tax',
                   icon: 'check-decagram',
                 };
+
+                // console.log('Setting tax rate:', taxRateObject);
+                setFieldValue('selectedTaxRate', taxRateObject);
                 setFieldValue('selectedTaxOption', withTaxOption);
+                setFieldValue('selectedPurchaseTaxRate', taxRateObject);
+                setFieldValue('selectedPurchaseTaxOption', withTaxOption);
               } else {
                 // If no GST rate, set to without tax
                 setFieldValue('selectedTaxRate', null);
                 setFieldValue('selectedTaxOption', defaultTaxOption);
+                setFieldValue('selectedPurchaseTaxRate', null);
+                setFieldValue('selectedPurchaseTaxOption', defaultTaxOption);
               }
               hsnBottomSheet.close();
             };
@@ -624,6 +675,11 @@ const AddPurchaseItem = () => {
                   enableOnAndroid={true}
                   keyboardShouldPersistTaps="always"
                   keyboardDismissMode="on-drag"
+                  extraScrollHeight={120} // ✅ extra space above keyboard
+                  extraHeight={120} // ✅ for Android specifically
+                  keyboardOpeningTime={0} // ✅ no delay = smoother scroll
+                  enableAutomaticScroll={true} // ✅ ensure auto scroll is on
+                  scrollToOverflowEnabled={true}
                 >
                   <View style={styles.content}>
                     {/* Header Section */}
@@ -854,6 +910,7 @@ const AddPurchaseItem = () => {
                         <TouchableOpacity
                           style={StyleSheet.absoluteFill}
                           onPress={() => {
+                            Keyboard.dismiss();
                             hsnBottomSheet.expand();
                             // setTimeout(() => {
                             //   hsnBottomSheet.close();
@@ -876,7 +933,7 @@ const AddPurchaseItem = () => {
                       style={[styles.input]}
                       theme={{ roundness: 12 }}
                       contentStyle={styles.salesPriceInputContent}
-                      placeholder="Enter mrp rate"
+                      placeholder="Enter MRP Rate"
                       keyboardType="numeric"
                       maxLength={15}
                       error={touched.mrp && !!errors.mrp}
@@ -1670,9 +1727,11 @@ const AddPurchaseItem = () => {
                         val,
                       ) => {
                         if (val.id === 'without_tax') {
-                          setFieldValue('selectedTaxRate', null);
-                          setFieldTouched('selectedTaxRate', false);
-                          setFieldError('selectedTaxRate', undefined);
+                          if (!selectedHsnCode) {
+                            setFieldValue('selectedTaxRate', null);
+                            setFieldTouched('selectedTaxRate', false);
+                            setFieldError('selectedTaxRate', undefined);
+                          }
                         }
                       },
                     })
@@ -1697,9 +1756,17 @@ const AddPurchaseItem = () => {
                         val,
                       ) => {
                         if (val.id === 'without_tax') {
-                          setFieldValue('selectedPurchaseTaxRate', null);
-                          setFieldTouched('selectedPurchaseTaxRate', false);
-                          setFieldError('selectedPurchaseTaxRate', undefined);
+                          if (!selectedHsnCode) {
+                            setFieldValue('selectedPurchaseTaxRate', null);
+                            setFieldTouched('selectedPurchaseTaxRate', false);
+                            setFieldError('selectedPurchaseTaxRate', undefined);
+
+                            setFieldValue('selectedTaxRate', null);
+                            setFieldValue(
+                              'selectedTaxOption',
+                              defaultTaxOption,
+                            );
+                          }
                         }
                       },
                     })
@@ -1720,6 +1787,19 @@ const AddPurchaseItem = () => {
                         setFieldError,
                       },
                       closeFn: purchaseTaxRateSheet.close,
+                      extra: ({ setFieldValue }, selectedRate) => {
+                        if (!selectedHsnCode) {
+                          setFieldValue('selectedTaxRate', selectedRate);
+                          setFieldValue(
+                            'selectedTaxOption',
+                            selectedRate ? withTaxOption : defaultTaxOption,
+                          );
+                          setFieldValue(
+                            'selectedPurchaseTaxOption',
+                            selectedRate ? withTaxOption : defaultTaxOption,
+                          );
+                        }
+                      },
                     })
                   }
                 />
