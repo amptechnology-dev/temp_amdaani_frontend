@@ -48,7 +48,7 @@ export const generatePurchaseHTML = ({
 
   const itemsHTML = cartItems
     .map((item, index) => {
-      console.log('it-->', item);
+      // console.log('it-->', item);
       const qty = item.qty || item.quantity || 0;
       const price = item.price || 0;
       const baseRate = item.baseRate || 0;
@@ -491,19 +491,48 @@ export const generatePurchaseHTML = ({
                         : ''
                     }
 
+
+                    ${
+                      roundOffValue != 0
+                        ? `
+<tr class="totals-row no-break">
+  <td class="label">Round Off</td>
+  <td class="amount" style="color:${
+    roundOffValue < 0 ? '#e53935' : '#43a047'
+  };">
+    ${
+      createdInvoice
+        ? `${Number(invoiceData?.roundOff) >= 0 ? '+' : ''}${Number(
+            invoiceData?.roundOff,
+          ).toFixed(2)}`
+        : `${roundOffValue < 0 ? '−' : '+'}₹${Math.abs(roundOffValue).toFixed(
+            2,
+          )}`
+    }
+  </td>
+</tr>`
+                        : ''
+                    }
+
+                    
+
                   
 
                     <tr class="grand-total-row no-break">
                       <td class="label">Net Total</td>
-                      <td class="amount">₹${
-                        createdInvoice
-                          ? Number(invoiceData?.grandTotal).toFixed(2)
-                          : Number(rawGrandTotal).toFixed(2)
-                      }</td>
+                     <td class="amount">₹${
+                       createdInvoice
+                         ? Number(invoiceData?.grandTotal).toFixed(2)
+                         : (
+                             Number(rawGrandTotal) +
+                             Number(invoiceCalculations?.roundOff ?? 0)
+                           ).toFixed(2)
+                     }</td>
                     </tr>
 
                     ${
-                      payment.status !== 'paid' || payment.due > 0
+                      payment.status !== 'paid' ||
+                      Math.round(payment.due * 100) / 100 > 0.01
                         ? `
                     <tr class="payment-row no-break">
                       <td class="label">Paid Amount</td>
@@ -512,7 +541,9 @@ export const generatePurchaseHTML = ({
                     <tr class="payment-row no-break">
                       <td class="label">Due Amount</td>
                       <td class="amount" style="color:${
-                        payment.due > 0 ? '#e53935' : '#000'
+                        Math.round(payment.due * 100) / 100 > 0.01
+                          ? '#e53935'
+                          : '#000'
                       };">₹${payment.due.toFixed(2)}</td>
                     </tr>`
                         : ''

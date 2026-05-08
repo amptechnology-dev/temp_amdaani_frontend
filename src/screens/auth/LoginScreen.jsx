@@ -24,18 +24,40 @@ import TermsBottomSheet from '../../components/BottomSheet/TermsBottomSheet';
 
 const { width, height } = Dimensions.get('window');
 
+// flow steps
+const STEP_PHONE = 'PHONE'; // enter phone → send OTP
+const STEP_OTP = 'OTP'; // verify phone OTP
+const STEP_EMAIL = 'EMAIL'; // enter email (change-number flow)
+const STEP_EMAIL_OTP = 'EMAIL_OTP'; // verify email OTP
+const STEP_NEW_PHONE = 'NEW_PHONE'; // enter new phone number
+
 const LoginScreen = ({ navigation }) => {
-  const { sendOtp, verifyOtp } = useAuth();
+  const {
+    sendOtp,
+    verifyOtp,
+    sendEmailOtp,
+    verifyEmailOtp,
+    changePhoneNumber,
+  } = useAuth();
+
+  const [step, setStep] = useState(STEP_PHONE);
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
-  const [showOtpInput, setShowOtpInput] = useState(false);
+  const [email, setEmail] = useState('');
+  const [emailOtp, setEmailOtp] = useState('');
+  const [newPhone, setNewPhone] = useState('');
+
   const [timer, setTimer] = useState(60);
   const [timerActive, setTimerActive] = useState(false);
   const [phoneError, setPhoneError] = useState('');
+  const [emailError, setEmailError] = useState('');
+  const [newPhoneError, setNewPhoneError] = useState('');
   const [loading, setLoading] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
+
   const theme = useTheme();
   const otpRef = useRef(null);
+  const emailOtpRef = useRef(null);
   const lottieRef = useRef(null);
   const termsSheetRef = useRef(null);
 
@@ -69,7 +91,6 @@ const LoginScreen = ({ navigation }) => {
     ]).start();
   }, []);
 
-  // ✅ Keyboard listeners — collapse lottie when keyboard opens
   useEffect(() => {
     const showSub = Keyboard.addListener(
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
@@ -102,60 +123,130 @@ const LoginScreen = ({ navigation }) => {
   useEffect(() => {
     let interval;
     if (timerActive && timer > 0) {
-      interval = setInterval(() => {
-        setTimer(prev => prev - 1);
-      }, 1000);
+      interval = setInterval(() => setTimer(prev => prev - 1), 1000);
     } else if (timer === 0) {
       setTimerActive(false);
     }
     return () => clearInterval(interval);
   }, [timer, timerActive]);
 
-  const validatePhone = phone => {
-    if (!phone || phone.trim() === '') return 'Phone number is required';
-    const phoneRegex = /^[6-9][0-9]{9}$/;
-    if (!phoneRegex.test(phone)) return 'Invalid phone number';
+  // ─── Validators ──────────────────────────────────────────────────────────────
+  const validatePhone = p => {
+    if (!p || p.trim() === '') return 'Phone number is required';
+    if (!/^[6-9][0-9]{9}$/.test(p)) return 'Invalid phone number';
     return null;
   };
 
+  const validateEmail = e => {
+    if (!e || e.trim() === '') return 'Email is required';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) return 'Invalid email address';
+    return null;
+  };
+
+  // ─── Input handlers ───────────────────────────────────────────────────────────
   const handlePhoneChange = text => {
     const cleaned = text.replace(/[^0-9]/g, '');
     if (cleaned.length <= 10) setPhone(cleaned);
     if (phoneError) setPhoneError('');
   };
 
+  const handleNewPhoneChange = text => {
+    const cleaned = text.replace(/[^0-9]/g, '');
+    if (cleaned.length <= 10) setNewPhone(cleaned);
+    if (newPhoneError) setNewPhoneError('');
+  };
+
+  const handleEmailChange = text => {
+    setEmail(text);
+    if (emailError) setEmailError('');
+  };
+
+  // ─── Primary Continue button handler (adapts per step) ───────────────────────
   const handleContinue = async () => {
-    if (!showOtpInput) {
+    Keyboard.dismiss();
+
+    if (step === STEP_PHONE) {
       const error = validatePhone(phone);
       if (error) return setPhoneError(error);
-
-      Keyboard.dismiss();
       setLoading(true);
       const res = await sendOtp(phone);
       setLoading(false);
-
       if (res.success) {
-        setShowOtpInput(true);
+        setStep(STEP_OTP);
         setTimerActive(true);
         setTimer(60);
       }
-    } else {
+    } else if (step === STEP_OTP) {
       await handleVerifyOtp(otp);
-    }
-  };
+    } else if (step === STEP_EMAIL) {
+      const error = validateEmail(email);
+      if (error) return setEmailError(error);
+      setLoading(true);
+      const res = await sendEmailOtp(email); // call your API
+      setLoading(false);
+      if (res.success) {
+        setStep(STEP_EMAIL_OTP);
+        setTimerActive(true);
+        setTimer(60);
+      }
+    } else if (step === STEP_EMAIL_OTP) {
+      setLoading(true);
+      const res = await verifyEmailOtp(email, emailOtp); // call your API
+      setLoading(false);
+      if (res.success) {
+        setStep(STEP_NEW_PHONE);
+      } else {
+        setEmailOtp('');
+        if (emailOtpRef.current) emailOtpRef.current.setValue('');
+        Toast.show({
+          type: 'error',
+          text1: 'Invalid OTP',
+          text2: 'Please enter the correct OTP sent to your email.',
+          position: 'top',
+          visibilityTime: 2000,
+        });
+      }
+    } else if (step === STEP_NEW_PHONE) {
+      const error = validatePhone(newPhone);
+      if (error) return setNewPhoneError(error);
+      setLoading(true);
 
-  const handleAcceptTerms = () => {
-    setTermsAccepted(true);
-    setShowAcceptButton(false);
-    termsSheetRef.current?.close();
-    handleVerifyOtp(otp);
+      const res = await changePhoneNumber(newPhone);
+      setLoading(false);
+
+      if (res.success) {
+        // ✅ Reset entire flow state
+        setPhone('');
+        setOtp('');
+        setEmail('');
+        setEmailOtp('');
+        setNewPhone('');
+        setNewPhoneError('');
+        setPhoneError('');
+        setEmailError('');
+        setTimerActive(false);
+        setTimer(60);
+        if (otpRef.current) otpRef.current.setValue('');
+        if (emailOtpRef.current) emailOtpRef.current.setValue('');
+
+        Toast.show({
+          type: 'success',
+          text1: 'Number Changed!',
+          text2: `Your phone number has been updated to ${newPhone}`,
+          position: 'top',
+          visibilityTime: 2500,
+        });
+
+        // ✅ Navigate to first step (clean login screen)
+        setStep(STEP_PHONE);
+      }
+    }
   };
 
   const handleVerifyOtp = async enteredOtp => {
     setLoading(true);
     const res = await verifyOtp(phone, enteredOtp);
     setLoading(false);
-
     if (res.success) {
       Toast.show({
         type: 'success',
@@ -164,7 +255,6 @@ const LoginScreen = ({ navigation }) => {
         position: 'top',
         visibilityTime: 2000,
       });
-
       if (res.data?.tempToken) {
         navigation.navigate('RegisterSimple', {
           tempToken: res.data.tempToken,
@@ -184,11 +274,47 @@ const LoginScreen = ({ navigation }) => {
     }
   };
 
+  const handleAcceptTerms = () => {
+    setTermsAccepted(true);
+    setShowAcceptButton(false);
+    termsSheetRef.current?.close();
+    handleVerifyOtp(otp);
+  };
+
   const handleBackToPhone = () => {
-    setShowOtpInput(false);
+    setStep(STEP_PHONE);
     setOtp('');
     setTimerActive(false);
     setPhoneError('');
+  };
+
+  // "Change Number?" pressed — start email verify flow
+  const handleChangeNumberPress = () => {
+    setEmail('');
+    setEmailOtp('');
+    setEmailError('');
+    setStep(STEP_EMAIL);
+  };
+
+  // Back from email step → back to phone entry
+  const handleBackFromEmail = () => {
+    setStep(STEP_PHONE);
+    setEmail('');
+    setEmailError('');
+  };
+
+  // Back from email OTP step → back to email entry
+  const handleBackFromEmailOtp = () => {
+    setStep(STEP_EMAIL);
+    setEmailOtp('');
+    if (emailOtpRef.current) emailOtpRef.current.setValue('');
+  };
+
+  // Back from new phone step → back to email OTP (already verified, or restart)
+  const handleBackFromNewPhone = () => {
+    setStep(STEP_EMAIL_OTP);
+    setNewPhone('');
+    setNewPhoneError('');
   };
 
   const handleResendOTP = async () => {
@@ -199,6 +325,14 @@ const LoginScreen = ({ navigation }) => {
     if (otpRef.current) otpRef.current.setValue('');
   };
 
+  const handleResendEmailOTP = async () => {
+    const res = await sendEmailOtp(email);
+    setTimer(60);
+    setTimerActive(true);
+    setEmailOtp('');
+    if (emailOtpRef.current) emailOtpRef.current.setValue('');
+  };
+
   const formatTime = seconds => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -207,11 +341,373 @@ const LoginScreen = ({ navigation }) => {
       .padStart(2, '0')}`;
   };
 
-  const getMaskedPhone = phone => {
-    if (!phone || phone.length < 4) return phone;
-    return phone.replace(/.(?=.{4})/g, '*');
+  const getMaskedPhone = p => {
+    if (!p || p.length < 4) return p;
+    return p.replace(/.(?=.{4})/g, '*');
   };
 
+  const getMaskedEmail = e => {
+    if (!e || !e.includes('@')) return e;
+    const [local, domain] = e.split('@');
+    return `${local.slice(0, 2)}***@${domain}`;
+  };
+
+  // ─── Subtitle per step ────────────────────────────────────────────────────────
+  const getSubtitle = () => {
+    switch (step) {
+      case STEP_PHONE:
+        return 'Sign in to continue';
+      case STEP_OTP:
+        return `Verify OTP sent to ${getMaskedPhone(phone)}`;
+      case STEP_EMAIL:
+        return 'Verify your email to change number';
+      case STEP_EMAIL_OTP:
+        return `Enter OTP sent to ${getMaskedEmail(email)}`;
+      case STEP_NEW_PHONE:
+        return 'Enter your new phone number';
+      default:
+        return '';
+    }
+  };
+
+  // ─── Continue button label per step ──────────────────────────────────────────
+  const getButtonLabel = () => {
+    if (loading) return 'Please wait...';
+    switch (step) {
+      case STEP_PHONE:
+        return 'Send OTP';
+      case STEP_OTP:
+        return 'Verify & Continue';
+      case STEP_EMAIL:
+        return 'Send OTP to Email';
+      case STEP_EMAIL_OTP:
+        return 'Verify & Continue';
+      case STEP_NEW_PHONE:
+        return 'Update Number';
+      default:
+        return 'Continue';
+    }
+  };
+
+  // ─── Continue button disabled logic ──────────────────────────────────────────
+  const isContinueDisabled = () => {
+    if (loading) return true;
+    switch (step) {
+      case STEP_PHONE:
+        return phone.length !== 10;
+      case STEP_OTP:
+        return otp.length !== 6;
+      case STEP_EMAIL:
+        return email.trim() === '';
+      case STEP_EMAIL_OTP:
+        return emailOtp.length !== 6;
+      case STEP_NEW_PHONE:
+        return newPhone.length !== 10;
+      default:
+        return false;
+    }
+  };
+
+  // ─── Render form body per step ────────────────────────────────────────────────
+  const renderForm = () => {
+    // ── PHONE entry ──────────────────────────────────────────────────────────
+    if (step === STEP_PHONE)
+      return (
+        <>
+          <View style={styles.inputWrapper}>
+            <Text variant="labelLarge" style={styles.label}>
+              Phone Number
+            </Text>
+            <TextInput
+              mode="outlined"
+              placeholder="Enter 10-digit number"
+              keyboardType="number-pad"
+              returnKeyType="done"
+              value={phone}
+              onChangeText={handlePhoneChange}
+              onSubmitEditing={handleContinue}
+              maxLength={10}
+              error={!!phoneError}
+              style={[styles.input, { backgroundColor: theme.colors.surface }]}
+              outlineStyle={styles.inputOutline}
+              activeOutlineColor={theme.colors.primary}
+              left={
+                <TextInput.Icon icon="phone" color={theme.colors.primary} />
+              }
+              theme={{ roundness: 12 }}
+              right={
+                phone ? (
+                  <TextInput.Icon
+                    icon="close-circle"
+                    onPress={() => {
+                      setPhone('');
+                      setPhoneError('');
+                    }}
+                  />
+                ) : null
+              }
+            />
+            {phoneError ? (
+              <Text variant="bodySmall" style={styles.errorText}>
+                {phoneError}
+              </Text>
+            ) : null}
+          </View>
+
+          <TouchableOpacity
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              marginBottom: 12,
+            }}
+            activeOpacity={0.8}
+            onPress={handleChangeNumberPress}
+          >
+            <Icon source="chevron-left" size={22} />
+            <Text style={styles.linkText}>Change Number ?</Text>
+          </TouchableOpacity>
+        </>
+      );
+
+    // ── PHONE OTP verify ─────────────────────────────────────────────────────
+    if (step === STEP_OTP)
+      return (
+        <>
+          <Text variant="labelLarge" style={styles.label}>
+            Enter OTP
+          </Text>
+          <OtpInput
+            ref={otpRef}
+            numberOfDigits={6}
+            onTextChange={text => setOtp(text.replace(/[^0-9]/g, ''))}
+            theme={{
+              containerStyle: styles.otpContainer,
+              pinCodeContainerStyle: [
+                styles.otpBox,
+                {
+                  backgroundColor: theme.colors.surface,
+                  borderColor: theme.colors.outline,
+                },
+              ],
+              pinCodeTextStyle: [
+                styles.otpText,
+                { color: theme.colors.onSurface },
+              ],
+              focusStickStyle: { backgroundColor: theme.colors.primary },
+              focusedPinCodeContainerStyle: {
+                borderColor: '#667eea',
+                borderWidth: 2.5,
+              },
+            }}
+          />
+          <View style={styles.otpActions}>
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center' }}
+              activeOpacity={0.8}
+              onPress={handleBackToPhone}
+            >
+              <Icon source="chevron-left" size={22} />
+              <Text style={styles.linkText}>Wrong number?</Text>
+            </TouchableOpacity>
+            {timerActive ? (
+              <View
+                style={[
+                  styles.timerBadge,
+                  { backgroundColor: theme.colors.surfaceVariant },
+                ]}
+              >
+                <Text style={styles.timerText}>{formatTime(timer)}</Text>
+              </View>
+            ) : (
+              <TouchableOpacity onPress={handleResendOTP}>
+                <Text style={styles.linkText}>Resend OTP</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </>
+      );
+
+    // ── EMAIL entry (change-number flow) ─────────────────────────────────────
+    if (step === STEP_EMAIL)
+      return (
+        <>
+          <View style={styles.inputWrapper}>
+            <Text variant="labelLarge" style={styles.label}>
+              Email Address
+            </Text>
+            <TextInput
+              mode="outlined"
+              placeholder="Enter your registered email"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              returnKeyType="done"
+              value={email}
+              onChangeText={handleEmailChange}
+              onSubmitEditing={handleContinue}
+              error={!!emailError}
+              style={[styles.input, { backgroundColor: theme.colors.surface }]}
+              outlineStyle={styles.inputOutline}
+              activeOutlineColor={theme.colors.primary}
+              left={
+                <TextInput.Icon icon="email" color={theme.colors.primary} />
+              }
+              theme={{ roundness: 12 }}
+              right={
+                email ? (
+                  <TextInput.Icon
+                    icon="close-circle"
+                    onPress={() => {
+                      setEmail('');
+                      setEmailError('');
+                    }}
+                  />
+                ) : null
+              }
+            />
+            {emailError ? (
+              <Text variant="bodySmall" style={styles.errorText}>
+                {emailError}
+              </Text>
+            ) : null}
+          </View>
+
+          <TouchableOpacity
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              marginBottom: 12,
+            }}
+            activeOpacity={0.8}
+            onPress={handleBackFromEmail}
+          >
+            <Icon source="chevron-left" size={22} />
+            <Text style={styles.linkText}>Back to login</Text>
+          </TouchableOpacity>
+        </>
+      );
+
+    // ── EMAIL OTP verify ─────────────────────────────────────────────────────
+    if (step === STEP_EMAIL_OTP)
+      return (
+        <>
+          <Text variant="labelLarge" style={styles.label}>
+            Enter Email OTP
+          </Text>
+          <OtpInput
+            ref={emailOtpRef}
+            numberOfDigits={6}
+            onTextChange={text => setEmailOtp(text.replace(/[^0-9]/g, ''))}
+            theme={{
+              containerStyle: styles.otpContainer,
+              pinCodeContainerStyle: [
+                styles.otpBox,
+                {
+                  backgroundColor: theme.colors.surface,
+                  borderColor: theme.colors.outline,
+                },
+              ],
+              pinCodeTextStyle: [
+                styles.otpText,
+                { color: theme.colors.onSurface },
+              ],
+              focusStickStyle: { backgroundColor: theme.colors.primary },
+              focusedPinCodeContainerStyle: {
+                borderColor: '#667eea',
+                borderWidth: 2.5,
+              },
+            }}
+          />
+          <View style={styles.otpActions}>
+            <TouchableOpacity
+              style={{ flexDirection: 'row', alignItems: 'center' }}
+              activeOpacity={0.8}
+              onPress={handleBackFromEmailOtp}
+            >
+              <Icon source="chevron-left" size={22} />
+              <Text style={styles.linkText}>Wrong email?</Text>
+            </TouchableOpacity>
+            {timerActive ? (
+              <View
+                style={[
+                  styles.timerBadge,
+                  { backgroundColor: theme.colors.surfaceVariant },
+                ]}
+              >
+                <Text style={styles.timerText}>{formatTime(timer)}</Text>
+              </View>
+            ) : (
+              <TouchableOpacity onPress={handleResendEmailOTP}>
+                <Text style={styles.linkText}>Resend OTP</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </>
+      );
+
+    // ── NEW PHONE entry ──────────────────────────────────────────────────────
+    if (step === STEP_NEW_PHONE)
+      return (
+        <>
+          <View style={styles.inputWrapper}>
+            <Text variant="labelLarge" style={styles.label}>
+              New Phone Number
+            </Text>
+            <TextInput
+              mode="outlined"
+              placeholder="Enter new 10-digit number"
+              keyboardType="number-pad"
+              returnKeyType="done"
+              value={newPhone}
+              onChangeText={handleNewPhoneChange}
+              onSubmitEditing={handleContinue}
+              maxLength={10}
+              error={!!newPhoneError}
+              style={[styles.input, { backgroundColor: theme.colors.surface }]}
+              outlineStyle={styles.inputOutline}
+              activeOutlineColor={theme.colors.primary}
+              left={
+                <TextInput.Icon icon="phone" color={theme.colors.primary} />
+              }
+              theme={{ roundness: 12 }}
+              right={
+                newPhone ? (
+                  <TextInput.Icon
+                    icon="close-circle"
+                    onPress={() => {
+                      setNewPhone('');
+                      setNewPhoneError('');
+                    }}
+                  />
+                ) : null
+              }
+            />
+            {newPhoneError ? (
+              <Text variant="bodySmall" style={styles.errorText}>
+                {newPhoneError}
+              </Text>
+            ) : null}
+          </View>
+
+          <TouchableOpacity
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'flex-end',
+              marginBottom: 12,
+            }}
+            activeOpacity={0.8}
+            onPress={handleBackFromNewPhone}
+          >
+            <Icon source="chevron-left" size={22} />
+            <Text style={styles.linkText}>Back</Text>
+          </TouchableOpacity>
+        </>
+      );
+  };
+
+  // ─── Render ───────────────────────────────────────────────────────────────────
   return (
     <>
       <StatusBar
@@ -230,11 +726,10 @@ const LoginScreen = ({ navigation }) => {
         style={styles.gradient}
       >
         <SafeAreaView style={styles.safeArea} edges={['top']}>
-          {/* ✅ Dismiss keyboard when tapping outside */}
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <KeyboardAvoidingView
               style={styles.container}
-              behavior={Platform.OS === 'ios' ? 'padding' : 'height'} // ✅ 'height' for Android
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
               keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
             >
               <ScrollView
@@ -258,7 +753,6 @@ const LoginScreen = ({ navigation }) => {
                   </Text>
                 </View>
 
-                {/* ✅ Lottie collapses when keyboard opens */}
                 <Animated.View
                   style={[
                     styles.lottieContainer,
@@ -278,7 +772,7 @@ const LoginScreen = ({ navigation }) => {
                   />
                 </Animated.View>
 
-                {/* Card Container */}
+                {/* Card */}
                 <Animated.View
                   style={[
                     styles.card,
@@ -295,140 +789,18 @@ const LoginScreen = ({ navigation }) => {
                       Welcome to AMDAANI
                     </Text>
                     <Text variant="bodyLarge" style={styles.subtitle}>
-                      {showOtpInput
-                        ? `Verify OTP sent to ${getMaskedPhone(phone)}`
-                        : 'Sign in to continue'}
+                      {getSubtitle()}
                     </Text>
                   </View>
 
                   {/* Form */}
                   <View style={styles.formContainer}>
-                    {!showOtpInput ? (
-                      <>
-                        <View style={styles.inputWrapper}>
-                          <Text variant="labelLarge" style={styles.label}>
-                            Phone Number
-                          </Text>
-                          <TextInput
-                            mode="outlined"
-                            placeholder="Enter 10-digit number"
-                            keyboardType="number-pad" // ✅ number-pad works on ALL devices
-                            returnKeyType="done"
-                            value={phone}
-                            onChangeText={handlePhoneChange}
-                            onSubmitEditing={handleContinue}
-                            maxLength={10}
-                            error={!!phoneError}
-                            style={[
-                              styles.input,
-                              { backgroundColor: theme.colors.surface },
-                            ]}
-                            outlineStyle={styles.inputOutline}
-                            activeOutlineColor={theme.colors.primary}
-                            left={
-                              <TextInput.Icon
-                                icon="phone"
-                                color={theme.colors.primary}
-                              />
-                            }
-                            theme={{ roundness: 12 }}
-                            right={
-                              phone ? (
-                                <TextInput.Icon
-                                  icon="close-circle"
-                                  onPress={() => {
-                                    setPhone('');
-                                    setPhoneError('');
-                                  }}
-                                />
-                              ) : null
-                            }
-                          />
-                          {phoneError ? (
-                            <Text variant="bodySmall" style={styles.errorText}>
-                              {phoneError}
-                            </Text>
-                          ) : null}
-                        </View>
-                      </>
-                    ) : (
-                      <>
-                        <Text variant="labelLarge" style={styles.label}>
-                          Enter OTP
-                        </Text>
-                        <OtpInput
-                          ref={otpRef}
-                          numberOfDigits={6}
-                          onTextChange={text => {
-                            const cleaned = text.replace(/[^0-9]/g, '');
-                            setOtp(cleaned);
-                          }}
-                          theme={{
-                            containerStyle: styles.otpContainer,
-                            pinCodeContainerStyle: [
-                              styles.otpBox,
-                              {
-                                backgroundColor: theme.colors.surface,
-                                borderColor: theme.colors.outline,
-                              },
-                            ],
-                            pinCodeTextStyle: [
-                              styles.otpText,
-                              { color: theme.colors.onSurface },
-                            ],
-                            focusStickStyle: {
-                              backgroundColor: theme.colors.primary,
-                            },
-                            focusedPinCodeContainerStyle: {
-                              borderColor: '#667eea',
-                              borderWidth: 2.5,
-                            },
-                          }}
-                        />
+                    {renderForm()}
 
-                        <View style={styles.otpActions}>
-                          <TouchableOpacity
-                            style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                            }}
-                            activeOpacity={0.8}
-                            onPress={handleBackToPhone}
-                          >
-                            <Icon source="chevron-left" size={22} />
-                            <Text style={styles.linkText}>Wrong number?</Text>
-                          </TouchableOpacity>
-
-                          {timerActive ? (
-                            <View
-                              style={[
-                                styles.timerBadge,
-                                {
-                                  backgroundColor: theme.colors.surfaceVariant,
-                                },
-                              ]}
-                            >
-                              <Text style={styles.timerText}>
-                                {formatTime(timer)}
-                              </Text>
-                            </View>
-                          ) : (
-                            <TouchableOpacity onPress={handleResendOTP}>
-                              <Text style={styles.linkText}>Resend OTP</Text>
-                            </TouchableOpacity>
-                          )}
-                        </View>
-                      </>
-                    )}
-
-                    {/* Continue Button with Gradient */}
+                    {/* Continue Button */}
                     <TouchableOpacity
                       onPress={handleContinue}
-                      disabled={
-                        loading ||
-                        (showOtpInput && otp.length !== 6) ||
-                        (!showOtpInput && phone.length !== 10)
-                      }
+                      disabled={isContinueDisabled()}
                       activeOpacity={0.8}
                     >
                       <LinearGradient
@@ -437,10 +809,7 @@ const LoginScreen = ({ navigation }) => {
                         end={{ x: 1, y: 0 }}
                         style={[
                           styles.gradientButton,
-                          (loading ||
-                            (showOtpInput && otp.length !== 6) ||
-                            (!showOtpInput && phone.length !== 10)) &&
-                            styles.gradientButtonDisabled,
+                          isContinueDisabled() && styles.gradientButtonDisabled,
                         ]}
                       >
                         <Text
@@ -449,11 +818,7 @@ const LoginScreen = ({ navigation }) => {
                             { color: theme.colors.onPrimary },
                           ]}
                         >
-                          {loading
-                            ? 'Please wait...'
-                            : showOtpInput
-                            ? 'Verify & Continue'
-                            : 'Send OTP'}
+                          {getButtonLabel()}
                         </Text>
                       </LinearGradient>
                     </TouchableOpacity>
@@ -505,7 +870,6 @@ const LoginScreen = ({ navigation }) => {
         </SafeAreaView>
       </LinearGradient>
 
-      {/* ✅ Outside everything — renders at root level on all devices */}
       <TermsBottomSheet
         ref={termsSheetRef}
         showAcceptButton={showAcceptButton}
@@ -516,32 +880,19 @@ const LoginScreen = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  gradient: {
-    flex: 1,
-  },
-  safeArea: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-  },
+  gradient: { flex: 1 },
+  safeArea: { flex: 1 },
+  container: { flex: 1 },
+  scrollContent: { flexGrow: 1 },
 
-  // Lottie
   lottieContainer: {
     height: height * 0.35,
     justifyContent: 'center',
     alignItems: 'center',
     paddingTop: 20,
   },
-  lottie: {
-    width: width * 0.6,
-    height: width * 0.6,
-  },
+  lottie: { width: width * 0.6, height: width * 0.6 },
 
-  // Card
   card: {
     flex: 1,
     borderTopLeftRadius: 40,
@@ -550,7 +901,7 @@ const styles = StyleSheet.create({
     paddingTop: 20,
     paddingBottom: 20,
     marginTop: 5,
-    minHeight: height * 0.5, // ✅ ADD THIS LINE
+    minHeight: height * 0.5,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -10 },
     shadowOpacity: 0.15,
@@ -558,7 +909,6 @@ const styles = StyleSheet.create({
     elevation: 20,
   },
 
-  // App Header (Logo & Name)
   appHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -566,94 +916,38 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingTop: 12,
   },
-  appLogo: {
-    width: 50,
-    height: 50,
-  },
+  appLogo: { width: 50, height: 50 },
   appName: {
     fontWeight: '600',
     letterSpacing: 0.5,
     fontFamily: 'BagelFatOne-Regular',
   },
 
-  // Header
-  header: {
-    marginBottom: 18,
-    alignItems: 'center',
-  },
-  title: {
-    fontWeight: '800',
-    marginBottom: 8,
-    letterSpacing: 0.3,
-  },
-  subtitle: {
-    textAlign: 'center',
-    lineHeight: 24,
-  },
+  header: { marginBottom: 18, alignItems: 'center' },
+  title: { fontWeight: '800', marginBottom: 8, letterSpacing: 0.3 },
+  subtitle: { textAlign: 'center', lineHeight: 24 },
 
-  // Form
-  formContainer: {
-    marginBottom: 12,
-  },
-  inputWrapper: {
-    marginBottom: 8,
-  },
-  label: {
-    marginBottom: 10,
-    fontWeight: '600',
-  },
-  input: {
-    fontSize: 16,
-  },
-  inputOutline: {
-    borderRadius: 16,
-    borderWidth: 2,
-  },
-  errorText: {
-    color: '#ef4444',
-    marginTop: 6,
-    marginLeft: 4,
-  },
+  formContainer: { marginBottom: 12 },
+  inputWrapper: { marginBottom: 8 },
+  label: { marginBottom: 10, fontWeight: '600' },
+  input: { fontSize: 16 },
+  inputOutline: { borderRadius: 16, borderWidth: 2 },
+  errorText: { color: '#ef4444', marginTop: 6, marginLeft: 4 },
 
-  // OTP
-  otpContainer: {
-    marginTop: 8,
-    marginBottom: 12,
-    gap: 4,
-  },
-  otpBox: {
-    borderRadius: 16,
-    borderWidth: 2.5,
-    width: 45,
-    height: 55,
-  },
-  otpText: {
-    fontSize: 24,
-    fontWeight: '700',
-  },
+  otpContainer: { marginTop: 8, marginBottom: 12, gap: 4 },
+  otpBox: { borderRadius: 16, borderWidth: 2.5, width: 45, height: 55 },
+  otpText: { fontSize: 24, fontWeight: '700' },
 
-  // OTP Actions
   otpActions: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 12,
   },
-  linkText: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  timerBadge: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 20,
-  },
-  timerText: {
-    fontWeight: '600',
-    fontSize: 14,
-  },
+  linkText: { fontSize: 15, fontWeight: '600' },
+  timerBadge: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 20 },
+  timerText: { fontWeight: '600', fontSize: 14 },
 
-  // Gradient Button
   gradientButton: {
     height: 48,
     borderRadius: 16,
@@ -665,33 +959,19 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
-  gradientButtonDisabled: {
-    opacity: 0.5,
-  },
-  buttonText: {
-    fontSize: 17,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
+  gradientButtonDisabled: { opacity: 0.5 },
+  buttonText: { fontSize: 17, fontWeight: '700', letterSpacing: 0.5 },
 
-  // Footer
   footer: {
     flex: 1,
     justifyContent: 'flex-end',
     alignItems: 'center',
     paddingTop: 12,
+    marginBottom: 40,
   },
-  footerText: {
-    fontSize: 13,
-  },
-  footerLinks: {
-    flexDirection: 'row',
-    marginTop: 4,
-  },
-  footerLink: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
+  footerText: { fontSize: 13 },
+  footerLinks: { flexDirection: 'row', marginTop: 4 },
+  footerLink: { fontSize: 13, fontWeight: '600' },
 });
 
 export default LoginScreen;

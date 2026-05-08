@@ -1,4 +1,10 @@
-import React, { forwardRef, useState, useEffect, useCallback } from 'react';
+import React, {
+  forwardRef,
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+} from 'react';
 import { View, StyleSheet, TouchableOpacity, Keyboard } from 'react-native';
 import {
   TextInput,
@@ -10,6 +16,9 @@ import {
   ToggleButton,
 } from 'react-native-paper';
 import BaseBottomSheet from './BaseBottomSheet';
+import HsnCodeSelectorBottomSheet from './HsnCodeSelectorBottomSheet';
+import AddHsnCodeBottomSheet from './HsnCodeCreateBottomSheet';
+import { useBottomSheet } from '../../hook/useBottomSheet';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -52,6 +61,15 @@ const InfoRow = ({ label, value, theme }) => (
 const PurchaseCartItemBottomSheet = forwardRef(
   ({ item, onUpdate, purchase }, ref) => {
     const theme = useTheme();
+
+    // ── HSN Code state ─────────────────────────────────────────────────────
+    const [selectedHsnCode, setSelectedHsnCode] = useState(null);
+    const [hsnCodeText, setHsnCodeText] = useState('');
+    const [hsnCodeRefreshKey, setHsnCodeRefreshKey] = useState(0);
+
+    // ── HSN bottom sheet hooks ─────────────────────────────────────────────
+    const hsnSelectorSheet = useBottomSheet();
+    const hsnCreateSheet = useBottomSheet();
 
     // ── Selling Price ──────────────────────────────────────────────────────
     const initSellingPrice = parseFloat(
@@ -109,7 +127,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
     );
     const [purchaseTaxRate, setPurchaseTaxRate] = useState(initPurchaseTaxRate);
 
-    // ── Sell discount (only when purchase=true — for selling price side) ───
+    // ── Sell discount (only when purchase=true) ────────────────────────────
     const [sellDiscountType, setSellDiscountType] = useState('amount');
     const [sellDiscountValue, setSellDiscountValue] = useState('0');
     const [finalSellingPrice, setFinalSellingPrice] =
@@ -152,6 +170,18 @@ const PurchaseCartItemBottomSheet = forwardRef(
     // ── Sync when item changes ─────────────────────────────────────────────
     useEffect(() => {
       if (!item) return;
+
+      // ── Sync HSN from item ────────────────────────────────────────────
+      if (item.hsn) {
+        setHsnCodeText(item.hsn);
+        setSelectedHsnCode({
+          code: item.hsn,
+          gstRate: item.purchaseGstRate ?? item.gstRate ?? 0,
+        });
+      } else {
+        setHsnCodeText('');
+        setSelectedHsnCode(null);
+      }
 
       if (purchase) {
         const sp = parseFloat(
@@ -241,518 +271,715 @@ const PurchaseCartItemBottomSheet = forwardRef(
       setFinalSellingPrice(parseFloat(Math.max(0, base - disc).toFixed(2)));
     }, [sellDiscountValue, sellDiscountType, sellingPrice]);
 
+    // ── HSN select handler ─────────────────────────────────────────────────
+    const handleHsnCodeSelect = useCallback(
+      hsnCode => {
+        if (!hsnCode) {
+          // Deselect
+          setSelectedHsnCode(null);
+          setHsnCodeText('');
+          setPurchaseTaxRate(null);
+          setPurchaseTaxOption(defaultTaxOption);
+          setTaxRate(null);
+          setTaxOption(defaultTaxOption);
+          hsnSelectorSheet.close();
+          return;
+        }
+
+        setSelectedHsnCode(hsnCode);
+        setHsnCodeText(hsnCode.code);
+
+        if (hsnCode.gstRate && Number(hsnCode.gstRate) > 0) {
+          const rate = {
+            rate: Number(hsnCode.gstRate),
+            label: `${hsnCode.gstRate}% GST`,
+          };
+          setPurchaseTaxRate(rate);
+          setPurchaseTaxOption(withTaxOption);
+          setTaxRate(rate);
+          setTaxOption(withTaxOption);
+        } else {
+          setPurchaseTaxRate(null);
+          setPurchaseTaxOption(defaultTaxOption);
+          setTaxRate(null);
+          setTaxOption(defaultTaxOption);
+        }
+
+        hsnSelectorSheet.close();
+      },
+      [hsnSelectorSheet],
+    );
+
+    // ── HSN create handler ─────────────────────────────────────────────────
+    const handleHsnCodeCreated = useCallback(
+      newHsn => {
+        hsnCreateSheet.close();
+        setSelectedHsnCode(newHsn);
+        setHsnCodeText(newHsn.code);
+
+        if (newHsn.gstRate && Number(newHsn.gstRate) > 0) {
+          const rate = {
+            rate: Number(newHsn.gstRate),
+            label: `${newHsn.gstRate}% GST`,
+          };
+          setPurchaseTaxRate(rate);
+          setPurchaseTaxOption(withTaxOption);
+          setTaxRate(rate);
+          setTaxOption(withTaxOption);
+        } else {
+          setPurchaseTaxRate(null);
+          setPurchaseTaxOption(defaultTaxOption);
+          setTaxRate(null);
+          setTaxOption(defaultTaxOption);
+        }
+
+        // Refresh selector list with new entry
+        setHsnCodeRefreshKey(Date.now());
+      },
+      [hsnCreateSheet],
+    );
+
     // ── Tax rate helpers ───────────────────────────────────────────────────
     const TAX_RATES = [0, 5, 12, 18, 28];
-    const getTaxRateText = rate => (rate ? `${rate.rate}%` : 'No Tax');
 
     const discountNumeric = Number(discountValue) || 0;
     const isDiscountApplied = discountNumeric > 0;
 
     // ─── Render ──────────────────────────────────────────────────────────────
     return (
-      <BaseBottomSheet
-        ref={ref}
-        initialSnapIndex={-1}
-        contentType="scroll"
-        snapPoints={['60%', '95%']}
-        enablePanDownToClose
-        title={`Edit — ${item?.name || ''}`}
-      >
-        <View style={styles.container}>
-          {/* ── PRODUCT INFO ──────────────────────────────────────────────── */}
-          {item?.sku ? (
-            <InfoRow label="SKU" value={item.sku} theme={theme} />
-          ) : null}
-          {item?.hsn ? (
-            <InfoRow label="HSN/SAC" value={item.hsn} theme={theme} />
-          ) : null}
+      <>
+        <BaseBottomSheet
+          ref={ref}
+          initialSnapIndex={-1}
+          contentType="scroll"
+          snapPoints={['60%', '95%']}
+          enablePanDownToClose
+          title={`Edit — ${item?.name || ''}`}
+        >
+          <View style={styles.container}>
+            {/* ── PRODUCT INFO ────────────────────────────────────────────── */}
+            {item?.sku ? (
+              <InfoRow label="SKU" value={item.sku} theme={theme} />
+            ) : null}
 
-          {/* ── MRP ───────────────────────────────────────────────────────── */}
-          <SectionHeader icon="tag-outline" title="MRP" theme={theme} />
-          <TextInput
-            label="MRP"
-            value={mrp}
-            onChangeText={val => setMrp(val.replace(/[^0-9.]/g, ''))}
-            mode="outlined"
-            keyboardType="decimal-pad"
-            style={styles.input}
-          />
-
-          <Divider
-            style={[
-              styles.divider,
-              { backgroundColor: theme.colors.outlineVariant },
-            ]}
-          />
-
-          {/* ── PURCHASE PRICE SECTION ────────────────────────────────────── */}
-          {purchase && (
-            <>
-              <SectionHeader
-                icon="currency-inr"
-                title="Purchase Rate"
-                theme={theme}
-              />
-
-              {/* Purchase Price + Tax toggle */}
-              <View style={styles.priceRow}>
+            {/* ── HSN CODE ────────────────────────────────────────────────── */}
+            <SectionHeader
+              icon="barcode"
+              title="HSN / SAC Code"
+              theme={theme}
+            />
+            <View style={styles.hsnRow}>
+              <View style={{ flex: 1, position: 'relative' }}>
                 <TextInput
-                  label="Purchase Price"
-                  value={purchasePriceText}
-                  onChangeText={val => {
-                    const clean = clampDecimal(val);
-                    setPurchasePriceText(clean);
-                    setPurchasePrice(parseFloat(clean) || 0);
-                  }}
-                  onBlur={() => {
-                    const clamped = parseFloat(purchasePrice.toFixed(2));
-                    setPurchasePrice(clamped);
-                    setPurchasePriceText(clamped.toFixed(2));
+                  label="HSN / SAC Code"
+                  value={hsnCodeText}
+                  onChangeText={text => {
+                    // Allow manual typing too
+                    setHsnCodeText(text);
+                    if (!text) setSelectedHsnCode(null);
                   }}
                   mode="outlined"
-                  keyboardType="decimal-pad"
-                  style={[styles.input, { flex: 1 }]}
+                  style={styles.input}
+                  right={
+                    <TextInput.Icon
+                      icon={hsnCodeText ? 'close' : 'chevron-down'}
+                      onPress={() => {
+                        if (hsnCodeText) {
+                          // Clear
+                          setHsnCodeText('');
+                          setSelectedHsnCode(null);
+                          setPurchaseTaxRate(null);
+                          setPurchaseTaxOption(defaultTaxOption);
+                          setTaxRate(null);
+                          setTaxOption(defaultTaxOption);
+                        } else {
+                          Keyboard.dismiss();
+                          hsnSelectorSheet.expand();
+                        }
+                      }}
+                    />
+                  }
+                  placeholder="Search or select HSN"
                 />
+                {/* Invisible overlay to open selector on tap */}
                 <TouchableOpacity
-                  style={[
-                    styles.taxBadge,
-                    {
-                      backgroundColor:
-                        purchaseTaxOption?.id === 'with_tax'
-                          ? theme.colors.primary
-                          : theme.colors.surfaceVariant,
-                      borderColor:
-                        purchaseTaxOption?.id === 'with_tax'
-                          ? theme.colors.primary
-                          : theme.colors.outline,
-                    },
-                  ]}
-                  onPress={() =>
-                    setPurchaseTaxOption(prev =>
-                      prev?.id === 'with_tax'
-                        ? defaultTaxOption
-                        : withTaxOption,
-                    )
-                  }
-                >
-                  <Icon
-                    source={
-                      purchaseTaxOption?.id === 'with_tax'
-                        ? 'check-decagram'
-                        : 'minus-circle-outline'
-                    }
-                    size={13}
-                    color={
-                      purchaseTaxOption?.id === 'with_tax'
-                        ? theme.colors.onPrimary
-                        : theme.colors.onSurfaceVariant
-                    }
-                  />
-                  <Text
-                    style={[
-                      styles.taxBadgeText,
-                      {
-                        color:
-                          purchaseTaxOption?.id === 'with_tax'
-                            ? theme.colors.onPrimary
-                            : theme.colors.onSurfaceVariant,
-                      },
-                    ]}
-                  >
-                    {purchaseTaxOption?.label ?? 'No Tax'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Purchase Discount */}
-              <View style={styles.discountRow}>
-                <ToggleButton.Row
-                  value={discountType}
-                  onValueChange={val => {
-                    if (!val || val === discountType) return;
-                    const base = Number(purchasePrice || 0);
-                    const current = Number(discountValue) || 0;
-                    let next = current;
-                    if (val === 'percent' && discountType === 'amount') {
-                      next = base > 0 ? (current / base) * 100 : current;
-                    } else if (val === 'amount' && discountType === 'percent') {
-                      next = (base * current) / 100;
-                    }
-                    setDiscountType(val);
-                    setDiscountValue(parseFloat(next.toFixed(2)).toString());
+                  style={StyleSheet.absoluteFill}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    hsnSelectorSheet.expand();
                   }}
-                >
-                  <ToggleButton icon="currency-inr" value="amount" />
-                  <ToggleButton icon="percent" value="percent" />
-                </ToggleButton.Row>
-
-                <TextInput
-                  label={
-                    discountType === 'percent' ? 'Discount (%)' : 'Discount (₹)'
-                  }
-                  value={discountValue}
-                  onChangeText={val => setDiscountValue(clampDecimal(val))}
-                  onBlur={() => {
-                    const cleaned = parseFloat(
-                      Number(discountValue || 0).toFixed(2),
-                    );
-                    setDiscountValue(isNaN(cleaned) ? '0' : cleaned.toString());
-                  }}
-                  mode="outlined"
-                  keyboardType="decimal-pad"
-                  style={{ flex: 1 }}
-                  outlineColor={
-                    isDiscountApplied ? theme.colors.primary : undefined
-                  }
                 />
               </View>
 
-              {/* Purchase Tax Rate picker */}
-              <View style={styles.taxRateRow}>
+              {/* Add New HSN button */}
+              <TouchableOpacity
+                style={[
+                  styles.hsnAddButton,
+                  { backgroundColor: theme.colors.primaryContainer },
+                ]}
+                onPress={() => {
+                  hsnSelectorSheet.close();
+                  setTimeout(() => hsnCreateSheet.expand(), 300);
+                }}
+                activeOpacity={0.8}
+              >
+                <Icon
+                  source="plus"
+                  size={18}
+                  color={theme.colors.onPrimaryContainer}
+                />
                 <Text
                   style={[
-                    styles.taxRateLabel,
-                    { color: theme.colors.onSurfaceVariant },
+                    styles.hsnAddButtonText,
+                    { color: theme.colors.onPrimaryContainer },
                   ]}
                 >
-                  Purchase Tax Rate:
+                  New
                 </Text>
-                <View style={styles.taxRateChips}>
-                  {TAX_RATES.map(r => {
-                    const isSelected =
-                      r === 0 ? !purchaseTaxRate : purchaseTaxRate?.rate === r;
-                    return (
-                      <TouchableOpacity
-                        key={r}
-                        style={[
-                          styles.taxChip,
-                          {
-                            backgroundColor: isSelected
-                              ? theme.colors.primary
-                              : theme.colors.surfaceVariant,
-                            borderColor: isSelected
-                              ? theme.colors.primary
-                              : theme.colors.outline,
-                          },
-                        ]}
-                        onPress={() => {
-                          if (r === 0) {
-                            setPurchaseTaxRate(null);
-                          } else {
-                            setPurchaseTaxRate({ rate: r, label: `${r}% GST` });
-                            if (purchaseTaxOption?.id !== 'with_tax') {
-                              setPurchaseTaxOption(withTaxOption);
-                            }
-                          }
-                        }}
-                      >
-                        <Text
-                          style={{
-                            fontSize: 12,
-                            fontWeight: '600',
-                            color: isSelected
-                              ? theme.colors.onPrimary
-                              : theme.colors.onSurfaceVariant,
-                          }}
-                        >
-                          {r === 0 ? 'None' : `${r}%`}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </View>
+              </TouchableOpacity>
+            </View>
 
-              {/* Price after discount */}
-              <InfoRow
-                label="Purchase Price (after discount)"
-                value={`₹ ${price.toFixed(2)}`}
-                theme={theme}
-              />
-
-              <Divider
-                style={[
-                  styles.divider,
-                  { backgroundColor: theme.colors.outlineVariant },
-                ]}
-              />
-            </>
-          )}
-
-          {/* ── SELLING PRICE SECTION ─────────────────────────────────────── */}
-          <SectionHeader
-            icon="tag-multiple-outline"
-            title="Selling Price"
-            theme={theme}
-          />
-
-          {/* Selling Price + Tax toggle */}
-          <View style={styles.priceRow}>
-            <TextInput
-              label="Selling Price"
-              value={sellingPriceText}
-              onChangeText={val => {
-                const clean = clampDecimal(val);
-                setSellingPriceText(clean);
-                setSellingPrice(parseFloat(clean) || 0);
-              }}
-              onBlur={() => {
-                const clamped = parseFloat(sellingPrice.toFixed(2));
-                setSellingPrice(clamped);
-                setSellingPriceText(clamped.toFixed(2));
-              }}
-              mode="outlined"
-              // In non-purchase mode editing selling price changes the discount base
-              disabled={!purchase ? true : false}
-              keyboardType="decimal-pad"
-              style={[styles.input, { flex: 1 }]}
-            />
-            <TouchableOpacity
-              style={[
-                styles.taxBadge,
-                {
-                  backgroundColor:
-                    taxOption?.id === 'with_tax'
-                      ? theme.colors.primary
-                      : theme.colors.surfaceVariant,
-                  borderColor:
-                    taxOption?.id === 'with_tax'
-                      ? theme.colors.primary
-                      : theme.colors.outline,
-                },
-              ]}
-              onPress={() =>
-                setTaxOption(prev =>
-                  prev?.id === 'with_tax' ? defaultTaxOption : withTaxOption,
-                )
-              }
-            >
-              <Icon
-                source={
-                  taxOption?.id === 'with_tax'
-                    ? 'check-decagram'
-                    : 'minus-circle-outline'
-                }
-                size={13}
-                color={
-                  taxOption?.id === 'with_tax'
-                    ? theme.colors.onPrimary
-                    : theme.colors.onSurfaceVariant
-                }
-              />
+            {/* Show selected HSN gstRate as a hint */}
+            {selectedHsnCode && selectedHsnCode.gstRate > 0 && (
               <Text
                 style={[
-                  styles.taxBadgeText,
-                  {
-                    color:
-                      taxOption?.id === 'with_tax'
-                        ? theme.colors.onPrimary
-                        : theme.colors.onSurfaceVariant,
-                  },
+                  styles.hsnHint,
+                  { color: theme.colors.onSurfaceVariant },
                 ]}
               >
-                {taxOption?.label ?? 'No Tax'}
+                GST auto-set to {selectedHsnCode.gstRate}% from HSN
               </Text>
-            </TouchableOpacity>
-          </View>
+            )}
 
-          {/* Sell-side discount (purchase mode only — lets you set a customer discount on the selling price) */}
-          {purchase && (
-            <>
-              <View style={styles.discountRow}>
-                <ToggleButton.Row
-                  value={sellDiscountType}
-                  onValueChange={val => {
-                    if (!val || val === sellDiscountType) return;
-                    const base = Number(sellingPrice || 0);
-                    const current = Number(sellDiscountValue) || 0;
-                    let next = current;
-                    if (val === 'percent' && sellDiscountType === 'amount') {
-                      next = base > 0 ? (current / base) * 100 : current;
-                    } else if (
-                      val === 'amount' &&
+            <Divider
+              style={[
+                styles.divider,
+                { backgroundColor: theme.colors.outlineVariant },
+              ]}
+            />
+
+            {/* ── MRP ─────────────────────────────────────────────────────── */}
+            <SectionHeader icon="tag-outline" title="MRP" theme={theme} />
+            <TextInput
+              label="MRP"
+              value={mrp}
+              onChangeText={val => setMrp(val.replace(/[^0-9.]/g, ''))}
+              mode="outlined"
+              keyboardType="decimal-pad"
+              style={styles.input}
+            />
+
+            <Divider
+              style={[
+                styles.divider,
+                { backgroundColor: theme.colors.outlineVariant },
+              ]}
+            />
+
+            {/* ── PURCHASE PRICE SECTION ──────────────────────────────────── */}
+            {purchase && (
+              <>
+                <SectionHeader
+                  icon="currency-inr"
+                  title="Purchase Rate"
+                  theme={theme}
+                />
+
+                {/* Purchase Price + Tax toggle */}
+                <View style={styles.priceRow}>
+                  <TextInput
+                    label="Purchase Price"
+                    value={purchasePriceText}
+                    onChangeText={val => {
+                      const clean = clampDecimal(val);
+                      setPurchasePriceText(clean);
+                      setPurchasePrice(parseFloat(clean) || 0);
+                    }}
+                    onBlur={() => {
+                      const clamped = parseFloat(purchasePrice.toFixed(2));
+                      setPurchasePrice(clamped);
+                      setPurchasePriceText(clamped.toFixed(2));
+                    }}
+                    mode="outlined"
+                    keyboardType="decimal-pad"
+                    style={[styles.input, { flex: 1 }]}
+                  />
+                  <TouchableOpacity
+                    style={[
+                      styles.taxBadge,
+                      {
+                        backgroundColor:
+                          purchaseTaxOption?.id === 'with_tax'
+                            ? theme.colors.primary
+                            : theme.colors.surfaceVariant,
+                        borderColor:
+                          purchaseTaxOption?.id === 'with_tax'
+                            ? theme.colors.primary
+                            : theme.colors.outline,
+                      },
+                    ]}
+                    onPress={() =>
+                      setPurchaseTaxOption(prev =>
+                        prev?.id === 'with_tax'
+                          ? defaultTaxOption
+                          : withTaxOption,
+                      )
+                    }
+                  >
+                    <Icon
+                      source={
+                        purchaseTaxOption?.id === 'with_tax'
+                          ? 'check-decagram'
+                          : 'minus-circle-outline'
+                      }
+                      size={13}
+                      color={
+                        purchaseTaxOption?.id === 'with_tax'
+                          ? theme.colors.onPrimary
+                          : theme.colors.onSurfaceVariant
+                      }
+                    />
+                    <Text
+                      style={[
+                        styles.taxBadgeText,
+                        {
+                          color:
+                            purchaseTaxOption?.id === 'with_tax'
+                              ? theme.colors.onPrimary
+                              : theme.colors.onSurfaceVariant,
+                        },
+                      ]}
+                    >
+                      {purchaseTaxOption?.label ?? 'No Tax'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Purchase Discount */}
+                <View style={styles.discountRow}>
+                  <ToggleButton.Row
+                    value={discountType}
+                    onValueChange={val => {
+                      if (!val || val === discountType) return;
+                      const base = Number(purchasePrice || 0);
+                      const current = Number(discountValue) || 0;
+                      let next = current;
+                      if (val === 'percent' && discountType === 'amount') {
+                        next = base > 0 ? (current / base) * 100 : current;
+                      } else if (
+                        val === 'amount' &&
+                        discountType === 'percent'
+                      ) {
+                        next = (base * current) / 100;
+                      }
+                      setDiscountType(val);
+                      setDiscountValue(parseFloat(next.toFixed(2)).toString());
+                    }}
+                  >
+                    <ToggleButton icon="currency-inr" value="amount" />
+                    <ToggleButton icon="percent" value="percent" />
+                  </ToggleButton.Row>
+
+                  <TextInput
+                    label={
+                      discountType === 'percent'
+                        ? 'Discount (%)'
+                        : 'Discount (₹)'
+                    }
+                    value={discountValue}
+                    onChangeText={val => setDiscountValue(clampDecimal(val))}
+                    onBlur={() => {
+                      const cleaned = parseFloat(
+                        Number(discountValue || 0).toFixed(2),
+                      );
+                      setDiscountValue(
+                        isNaN(cleaned) ? '0' : cleaned.toString(),
+                      );
+                    }}
+                    mode="outlined"
+                    keyboardType="decimal-pad"
+                    style={{ flex: 1 }}
+                    outlineColor={
+                      isDiscountApplied ? theme.colors.primary : undefined
+                    }
+                  />
+                </View>
+
+                {/* Purchase Tax Rate picker */}
+                <View style={styles.taxRateRow}>
+                  <Text
+                    style={[
+                      styles.taxRateLabel,
+                      { color: theme.colors.onSurfaceVariant },
+                    ]}
+                  >
+                    Purchase Tax Rate:
+                  </Text>
+                  <View style={styles.taxRateChips}>
+                    {TAX_RATES.map(r => {
+                      const isSelected =
+                        r === 0
+                          ? !purchaseTaxRate
+                          : purchaseTaxRate?.rate === r;
+                      return (
+                        <TouchableOpacity
+                          key={r}
+                          style={[
+                            styles.taxChip,
+                            {
+                              backgroundColor: isSelected
+                                ? theme.colors.primary
+                                : theme.colors.surfaceVariant,
+                              borderColor: isSelected
+                                ? theme.colors.primary
+                                : theme.colors.outline,
+                            },
+                          ]}
+                          onPress={() => {
+                            if (r === 0) {
+                              setPurchaseTaxRate(null);
+                            } else {
+                              setPurchaseTaxRate({
+                                rate: r,
+                                label: `${r}% GST`,
+                              });
+                              if (purchaseTaxOption?.id !== 'with_tax') {
+                                setPurchaseTaxOption(withTaxOption);
+                              }
+                            }
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              fontWeight: '600',
+                              color: isSelected
+                                ? theme.colors.onPrimary
+                                : theme.colors.onSurfaceVariant,
+                            }}
+                          >
+                            {r === 0 ? 'None' : `${r}%`}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+
+                {/* Price after discount */}
+                <InfoRow
+                  label="Purchase Price (after discount)"
+                  value={`₹ ${price.toFixed(2)}`}
+                  theme={theme}
+                />
+
+                <Divider
+                  style={[
+                    styles.divider,
+                    { backgroundColor: theme.colors.outlineVariant },
+                  ]}
+                />
+              </>
+            )}
+
+            {/* ── SELLING PRICE SECTION ───────────────────────────────────── */}
+            <SectionHeader
+              icon="tag-multiple-outline"
+              title="Selling Price"
+              theme={theme}
+            />
+
+            <View style={styles.priceRow}>
+              <TextInput
+                label="Selling Price"
+                value={sellingPriceText}
+                onChangeText={val => {
+                  const clean = clampDecimal(val);
+                  setSellingPriceText(clean);
+                  setSellingPrice(parseFloat(clean) || 0);
+                }}
+                onBlur={() => {
+                  const clamped = parseFloat(sellingPrice.toFixed(2));
+                  setSellingPrice(clamped);
+                  setSellingPriceText(clamped.toFixed(2));
+                }}
+                mode="outlined"
+                disabled={!purchase}
+                keyboardType="decimal-pad"
+                style={[styles.input, { flex: 1 }]}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.taxBadge,
+                  {
+                    backgroundColor:
+                      taxOption?.id === 'with_tax'
+                        ? theme.colors.primary
+                        : theme.colors.surfaceVariant,
+                    borderColor:
+                      taxOption?.id === 'with_tax'
+                        ? theme.colors.primary
+                        : theme.colors.outline,
+                  },
+                ]}
+                onPress={() =>
+                  setTaxOption(prev =>
+                    prev?.id === 'with_tax' ? defaultTaxOption : withTaxOption,
+                  )
+                }
+              >
+                <Icon
+                  source={
+                    taxOption?.id === 'with_tax'
+                      ? 'check-decagram'
+                      : 'minus-circle-outline'
+                  }
+                  size={13}
+                  color={
+                    taxOption?.id === 'with_tax'
+                      ? theme.colors.onPrimary
+                      : theme.colors.onSurfaceVariant
+                  }
+                />
+                <Text
+                  style={[
+                    styles.taxBadgeText,
+                    {
+                      color:
+                        taxOption?.id === 'with_tax'
+                          ? theme.colors.onPrimary
+                          : theme.colors.onSurfaceVariant,
+                    },
+                  ]}
+                >
+                  {taxOption?.label ?? 'No Tax'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Sell-side discount (purchase mode only) */}
+            {purchase && (
+              <>
+                <View style={styles.discountRow}>
+                  <ToggleButton.Row
+                    value={sellDiscountType}
+                    onValueChange={val => {
+                      if (!val || val === sellDiscountType) return;
+                      const base = Number(sellingPrice || 0);
+                      const current = Number(sellDiscountValue) || 0;
+                      let next = current;
+                      if (val === 'percent' && sellDiscountType === 'amount') {
+                        next = base > 0 ? (current / base) * 100 : current;
+                      } else if (
+                        val === 'amount' &&
+                        sellDiscountType === 'percent'
+                      ) {
+                        next = (base * current) / 100;
+                      }
+                      setSellDiscountType(val);
+                      setSellDiscountValue(
+                        parseFloat(next.toFixed(2)).toString(),
+                      );
+                    }}
+                  >
+                    <ToggleButton icon="currency-inr" value="amount" />
+                    <ToggleButton icon="percent" value="percent" />
+                  </ToggleButton.Row>
+
+                  <TextInput
+                    label={
                       sellDiscountType === 'percent'
-                    ) {
-                      next = (base * current) / 100;
+                        ? 'Sell Discount (%)'
+                        : 'Sell Discount (₹)'
                     }
-                    setSellDiscountType(val);
-                    setSellDiscountValue(
-                      parseFloat(next.toFixed(2)).toString(),
-                    );
-                  }}
-                >
-                  <ToggleButton icon="currency-inr" value="amount" />
-                  <ToggleButton icon="percent" value="percent" />
-                </ToggleButton.Row>
-
-                <TextInput
-                  label={
-                    sellDiscountType === 'percent'
-                      ? 'Sell Discount (%)'
-                      : 'Sell Discount (₹)'
-                  }
-                  value={sellDiscountValue}
-                  onChangeText={val => setSellDiscountValue(clampDecimal(val))}
-                  onBlur={() => {
-                    const cleaned = parseFloat(
-                      Number(sellDiscountValue || 0).toFixed(2),
-                    );
-                    setSellDiscountValue(
-                      isNaN(cleaned) ? '0' : cleaned.toString(),
-                    );
-                  }}
-                  mode="outlined"
-                  keyboardType="decimal-pad"
-                  style={{ flex: 1 }}
-                  outlineColor={
-                    Number(sellDiscountValue) > 0
-                      ? theme.colors.primary
-                      : undefined
-                  }
-                />
-              </View>
-
-              <InfoRow
-                label="Selling Price (after discount)"
-                value={`₹ ${finalSellingPrice.toFixed(2)}`}
-                theme={theme}
-              />
-            </>
-          )}
-
-          {/* Non-purchase mode: discount on selling price */}
-          {!purchase && (
-            <>
-              <View style={styles.discountRow}>
-                <ToggleButton.Row
-                  value={discountType}
-                  onValueChange={val => {
-                    if (!val || val === discountType) return;
-                    const base = Number(sellingPrice || 0);
-                    const current = Number(discountValue) || 0;
-                    let next = current;
-                    if (val === 'percent' && discountType === 'amount') {
-                      next = base > 0 ? (current / base) * 100 : current;
-                    } else if (val === 'amount' && discountType === 'percent') {
-                      next = (base * current) / 100;
+                    value={sellDiscountValue}
+                    onChangeText={val =>
+                      setSellDiscountValue(clampDecimal(val))
                     }
-                    setDiscountType(val);
-                    setDiscountValue(parseFloat(next.toFixed(2)).toString());
-                  }}
-                >
-                  <ToggleButton icon="currency-inr" value="amount" />
-                  <ToggleButton icon="percent" value="percent" />
-                </ToggleButton.Row>
+                    onBlur={() => {
+                      const cleaned = parseFloat(
+                        Number(sellDiscountValue || 0).toFixed(2),
+                      );
+                      setSellDiscountValue(
+                        isNaN(cleaned) ? '0' : cleaned.toString(),
+                      );
+                    }}
+                    mode="outlined"
+                    keyboardType="decimal-pad"
+                    style={{ flex: 1 }}
+                    outlineColor={
+                      Number(sellDiscountValue) > 0
+                        ? theme.colors.primary
+                        : undefined
+                    }
+                  />
+                </View>
 
-                <TextInput
-                  label={
-                    discountType === 'percent' ? 'Discount (%)' : 'Discount (₹)'
-                  }
-                  value={discountValue}
-                  onChangeText={val => setDiscountValue(clampDecimal(val))}
-                  onBlur={() => {
-                    const cleaned = parseFloat(
-                      Number(discountValue || 0).toFixed(2),
-                    );
-                    setDiscountValue(isNaN(cleaned) ? '0' : cleaned.toString());
-                  }}
-                  mode="outlined"
-                  keyboardType="decimal-pad"
-                  style={{ flex: 1 }}
-                  outlineColor={
-                    isDiscountApplied ? theme.colors.primary : undefined
-                  }
+                <InfoRow
+                  label="Selling Price (after discount)"
+                  value={`₹ ${finalSellingPrice.toFixed(2)}`}
+                  theme={theme}
                 />
-              </View>
+              </>
+            )}
 
-              <InfoRow
-                label="Selling Price (after discount)"
-                value={`₹ ${price.toFixed(2)}`}
-                theme={theme}
-              />
-            </>
-          )}
+            {/* Non-purchase mode: discount on selling price */}
+            {!purchase && (
+              <>
+                <View style={styles.discountRow}>
+                  <ToggleButton.Row
+                    value={discountType}
+                    onValueChange={val => {
+                      if (!val || val === discountType) return;
+                      const base = Number(sellingPrice || 0);
+                      const current = Number(discountValue) || 0;
+                      let next = current;
+                      if (val === 'percent' && discountType === 'amount') {
+                        next = base > 0 ? (current / base) * 100 : current;
+                      } else if (
+                        val === 'amount' &&
+                        discountType === 'percent'
+                      ) {
+                        next = (base * current) / 100;
+                      }
+                      setDiscountType(val);
+                      setDiscountValue(parseFloat(next.toFixed(2)).toString());
+                    }}
+                  >
+                    <ToggleButton icon="currency-inr" value="amount" />
+                    <ToggleButton icon="percent" value="percent" />
+                  </ToggleButton.Row>
 
-          {/* Sales Tax Rate chips */}
+                  <TextInput
+                    label={
+                      discountType === 'percent'
+                        ? 'Discount (%)'
+                        : 'Discount (₹)'
+                    }
+                    value={discountValue}
+                    onChangeText={val => setDiscountValue(clampDecimal(val))}
+                    onBlur={() => {
+                      const cleaned = parseFloat(
+                        Number(discountValue || 0).toFixed(2),
+                      );
+                      setDiscountValue(
+                        isNaN(cleaned) ? '0' : cleaned.toString(),
+                      );
+                    }}
+                    mode="outlined"
+                    keyboardType="decimal-pad"
+                    style={{ flex: 1 }}
+                    outlineColor={
+                      isDiscountApplied ? theme.colors.primary : undefined
+                    }
+                  />
+                </View>
 
-          <Divider
-            style={[
-              styles.divider,
-              { backgroundColor: theme.colors.outlineVariant },
-            ]}
-          />
+                <InfoRow
+                  label="Selling Price (after discount)"
+                  value={`₹ ${price.toFixed(2)}`}
+                  theme={theme}
+                />
+              </>
+            )}
 
-          {/* ── QUANTITY ─────────────────────────────────────────────────── */}
-          <SectionHeader
-            icon="package-variant"
-            title="Quantity"
-            theme={theme}
-          />
-          <TextInput
-            label="Quantity"
-            value={qtyInput}
-            onChangeText={val => setQtyInput(val.replace(/[^0-9]/g, ''))}
-            mode="outlined"
-            keyboardType="numeric"
-            style={styles.input}
-          />
+            <Divider
+              style={[
+                styles.divider,
+                { backgroundColor: theme.colors.outlineVariant },
+              ]}
+            />
 
-          {/* ── UPDATE ───────────────────────────────────────────────────── */}
-          <Button
-            mode="contained"
-            disabled={qtyNumber <= 0}
-            style={styles.updateButton}
-            contentStyle={styles.updateButtonContent}
-            onPress={() => {
-              const baseForDiscount = purchase ? purchasePrice : sellingPrice;
-              const discountAmount =
-                discountType === 'percent'
-                  ? (baseForDiscount * discountNumeric) / 100
-                  : discountNumeric;
+            {/* ── QUANTITY ──────────────────────────────────────────────── */}
+            <SectionHeader
+              icon="package-variant"
+              title="Quantity"
+              theme={theme}
+            />
+            <TextInput
+              label="Quantity"
+              value={qtyInput}
+              onChangeText={val => setQtyInput(val.replace(/[^0-9]/g, ''))}
+              mode="outlined"
+              keyboardType="numeric"
+              style={styles.input}
+            />
 
-              const sellDiscNum = Number(sellDiscountValue) || 0;
-              const sellDiscountAmt =
-                sellDiscountType === 'percent'
-                  ? (sellingPrice * sellDiscNum) / 100
-                  : sellDiscNum;
+            {/* ── UPDATE ──────────────────────────────────────────────────── */}
+            <Button
+              mode="contained"
+              disabled={qtyNumber <= 0}
+              style={styles.updateButton}
+              contentStyle={styles.updateButtonContent}
+              onPress={() => {
+                const baseForDiscount = purchase ? purchasePrice : sellingPrice;
+                const discountAmount =
+                  discountType === 'percent'
+                    ? (baseForDiscount * discountNumeric) / 100
+                    : discountNumeric;
 
-              onUpdate({
-                ...item,
-                mrp: Number(mrp) || 0,
-                // Price stored in cart depends on mode
-                price: purchase ? Number(purchasePrice) : Number(price),
-                sellingPrice: Number(sellingPrice),
-                qty: qtyNumber,
+                const sellDiscNum = Number(sellDiscountValue) || 0;
+                const sellDiscountAmt =
+                  sellDiscountType === 'percent'
+                    ? (sellingPrice * sellDiscNum) / 100
+                    : sellDiscNum;
 
-                // Purchase-side discount
-                ...(purchase && {
-                  purchaseDiscount: parseFloat(discountAmount.toFixed(2)),
-                }),
-                discountPrice: parseFloat(discountAmount.toFixed(2)),
-                discountPercent:
-                  discountType === 'percent' ? discountNumeric : 0,
-                discountType,
+                onUpdate({
+                  ...item,
+                  // ✅ Pass updated HSN code back to cart
+                  hsn: hsnCodeText || item?.hsn || '',
 
-                // Selling-side discount (purchase mode)
-                ...(purchase && {
-                  sellDiscount: parseFloat(sellDiscountAmt.toFixed(2)),
-                  sellDiscountType,
-                  sellDiscountPercent:
-                    sellDiscountType === 'percent' ? sellDiscNum : 0,
-                }),
+                  mrp: Number(mrp) || 0,
+                  price: purchase ? Number(purchasePrice) : Number(price),
+                  sellingPrice: Number(sellingPrice),
+                  qty: qtyNumber,
 
-                // Tax
-                gstRate: taxRate?.rate ?? 0,
-                isTaxInclusive: taxOption?.id === 'with_tax',
-                purchaseGstRate: purchaseTaxRate?.rate ?? 0,
-                isPurchaseTaxInclusive: purchaseTaxOption?.id === 'with_tax',
-              });
-            }}
-          >
-            Update Item
-          </Button>
-        </View>
-      </BaseBottomSheet>
+                  ...(purchase && {
+                    purchaseDiscount: parseFloat(discountAmount.toFixed(2)),
+                  }),
+                  discountPrice: parseFloat(discountAmount.toFixed(2)),
+                  discountPercent:
+                    discountType === 'percent' ? discountNumeric : 0,
+                  discountType,
+
+                  ...(purchase && {
+                    sellDiscount: parseFloat(sellDiscountAmt.toFixed(2)),
+                    sellDiscountType,
+                    sellDiscountPercent:
+                      sellDiscountType === 'percent' ? sellDiscNum : 0,
+                  }),
+
+                  gstRate: taxRate?.rate ?? 0,
+                  isTaxInclusive: taxOption?.id === 'with_tax',
+                  purchaseGstRate: purchaseTaxRate?.rate ?? 0,
+                  isPurchaseTaxInclusive: purchaseTaxOption?.id === 'with_tax',
+                });
+              }}
+            >
+              Update Item
+            </Button>
+          </View>
+        </BaseBottomSheet>
+
+        {/* ── HSN Selector Sheet (rendered outside main sheet) ─────────────── */}
+        <HsnCodeSelectorBottomSheet
+          ref={hsnSelectorSheet.bottomSheetRef}
+          selectedHsnCode={selectedHsnCode}
+          onHsnCodeSelect={handleHsnCodeSelect}
+          onAddNewHsnCode={() => {
+            hsnSelectorSheet.close();
+            setTimeout(() => hsnCreateSheet.expand(), 300);
+          }}
+          refreshKey={hsnCodeRefreshKey}
+        />
+
+        {/* ── HSN Create Sheet ──────────────────────────────────────────────── */}
+        <AddHsnCodeBottomSheet
+          ref={hsnCreateSheet.bottomSheetRef}
+          onCreateHsnCode={handleHsnCodeCreated}
+        />
+      </>
     );
   },
 );
@@ -768,7 +995,6 @@ const styles = StyleSheet.create({
     gap: 10,
   },
 
-  // Section header
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -782,24 +1008,47 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
 
-  // Divider
   divider: {
     marginVertical: 6,
   },
 
-  // Inputs
   input: {
     backgroundColor: 'transparent',
   },
 
-  // Price row (price input + tax badge side by side)
+  // ── HSN row ──────────────────────────────────────────────────────────────
+  hsnRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  hsnAddButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    minWidth: 64,
+    justifyContent: 'center',
+    marginTop: 4,
+  },
+  hsnAddButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  hsnHint: {
+    fontSize: 11,
+    marginTop: -4,
+    marginLeft: 4,
+  },
+
   priceRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
 
-  // Tax option badge/button
   taxBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -816,14 +1065,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // Discount row (toggle + input)
   discountRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
 
-  // Tax rate chips
   taxRateRow: {
     gap: 6,
   },
@@ -843,7 +1090,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
 
-  // Info row (read-only summary)
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -860,7 +1106,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Update button
   updateButton: {
     marginTop: 6,
     borderRadius: 10,

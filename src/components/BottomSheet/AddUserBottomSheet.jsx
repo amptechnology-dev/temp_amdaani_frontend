@@ -140,7 +140,7 @@ const AddUserBottomSheet = forwardRef(({ onSubmit }, ref) => {
     <BaseBottomSheet
       ref={ref}
       title="Add User"
-      snapPoints={['65%']}
+      snapPoints={['80%']}
       initialSnapIndex={-1}
       showHeader
       contentType="scroll"
@@ -296,9 +296,12 @@ const styles = StyleSheet.create({
   wrapper: {
     flex: 1,
     justifyContent: 'space-between',
+    flexDirection: 'column',
   },
   container: {
     flex: 1,
+    justifyContent: 'space-between',
+    flexDirection: 'column',
   },
   formContent: {
     paddingHorizontal: 20,
@@ -312,6 +315,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 12,
     marginTop: 8,
+    marginBottom: 200,
   },
   footer: {
     flexDirection: 'row',
@@ -320,7 +324,10 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     paddingBottom: 24,
     gap: 12,
-    borderTopWidth: 1,
+    // marginBottom: 100,
+    // backgroundColor: '#000',
+
+    // borderTopWidth: 1,
     //borderTopColor: '#f0f0f0',
     // backgroundColor: 'white',
   },

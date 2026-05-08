@@ -736,6 +736,8 @@ export default function Purchase() {
       if (isEditMode && existingPurchase?._id) {
         try {
           const res = await api.get(`/purchase/id/${existingPurchase._id}`);
+
+          console.log('Fetched purchase details:', res);
           if (res?.success && res?.data) {
             const fullInvoice = res.data;
 
@@ -764,7 +766,7 @@ export default function Purchase() {
               unit: item.unit ?? 'Piece',
               total: Number(item.total ?? 0),
               _id: item._id || item.product,
-              productId: item.product || item._id,
+              productId: item.product,
             }));
 
             setCartItems(normalizedItems);
@@ -809,10 +811,8 @@ export default function Purchase() {
   React.useEffect(() => {
     const gt = parseFloat(
       Number(
-        invoiceCalculations?.netTotalExclusiveOnly ??
-          invoiceCalculations?.netTotal ??
-          0,
-      ).toFixed(2), // ✅ clamp to 2 decimal places at source
+        invoiceCalculations?.roundedTotal ?? invoiceCalculations?.netTotal ?? 0,
+      ).toFixed(2),
     );
     if (!hasUserEditedPaid.current) {
       setPaidAmount(gt);
@@ -910,6 +910,8 @@ export default function Purchase() {
         qty,
         total: Number(totalAmount.toFixed(4)),
         mrp,
+        previousQty: item.previousQty ?? qty,
+        product: item.product || item.productId,
       };
     });
 
@@ -952,19 +954,19 @@ export default function Purchase() {
     };
   }, [cartItems, isGstInvoice, vendorHasGst, discount, isIgst]);
 
-  console.log('net ===>', invoiceCalculations);
-
   // console.log("computedItems", invoiceCalculations?.computedItems)
 
   React.useEffect(() => {
     const gt = parseFloat(
-      Number(invoiceCalculations?.netTotal ?? 0).toFixed(2),
-    ); // ✅
+      Number(
+        invoiceCalculations?.roundedTotal ?? invoiceCalculations?.netTotal ?? 0,
+      ).toFixed(2),
+    );
     if (!hasUserEditedPaid.current) {
       setPaidAmount(gt);
       setPaidAmountText(gt === 0 ? '' : gt.toFixed(2)); // ✅ sync display too
     }
-  }, [invoiceCalculations?.netTotal]);
+  }, [cartItems]);
 
   // Derived payment info
   const payment = React.useMemo(() => {
@@ -972,9 +974,7 @@ export default function Purchase() {
     // isPurchaseTaxInclusive: false → show WITH tax (GST added on top)
     // Mixed cart: each item handled individually in netTotalExclusiveOnly
     const grandTotal = Number(
-      invoiceCalculations?.netTotalExclusiveOnly ??
-        invoiceCalculations?.netTotal ??
-        0,
+      invoiceCalculations?.roundedTotal ?? invoiceCalculations?.netTotal ?? 0,
     );
 
     const paid = Math.max(0, Number.isFinite(paidAmount) ? paidAmount : 0);
@@ -994,7 +994,7 @@ export default function Purchase() {
   ]);
 
   console.log('invoice --->', invoiceCalculations.computedItems);
-  console.log('==>nat', invoiceCalculations.totalTax);
+  // console.log('==>nat', invoiceCalculations.totalTax);
 
   // Helper chip for status colors
   const getStatusStyle = (status, theme) => {
@@ -1019,6 +1019,8 @@ export default function Purchase() {
         };
     }
   };
+
+  console.log('hsbswfyh', cartItems);
 
   const handleSubmit = async (values, formikHelpers) => {
     formikHelpers.setSubmitting(true);
@@ -1072,6 +1074,8 @@ export default function Purchase() {
 
     return isIgst;
   }
+
+  console.log('payment details', cartItems);
 
   const createPurchase = async (values, { setSubmitting, resetForm }) => {
     console.log('====>purcsj', values);
@@ -1153,7 +1157,7 @@ export default function Purchase() {
       date: format(new Date(), 'yyyy-MM-dd'),
 
       items: invoiceCalculations.computedItems.map(item => ({
-        product: item._id || item.productId,
+        product: item.product,
         name: item.name,
         hsn: item.hsn || '',
         unit: item.unit || 'Piece',
@@ -1162,7 +1166,7 @@ export default function Purchase() {
         // ✅ raw costPrice (before purchase discount)
         rate: Number(item.costPrice ?? item.price ?? 0),
         costPrice: Number(item.costPrice ?? item.price ?? 0),
-
+        previousQuantity: Number(item.previousQty ?? item.qty ?? 0),
         // ✅ purchase-specific discount per unit
         purchaseDiscount: Number(item.purchaseDiscount ?? 0),
         discount: Number(item.purchaseDiscount ?? 0),
@@ -1200,7 +1204,11 @@ export default function Purchase() {
       //    inclusive items → netRate × qty (GST not added again)
       //    exclusive items → (netRate + tax) × qty
       //    then − bill discount
-      grandTotal: Number(invoiceCalculations.netTotal.toFixed(2)),
+      grandTotal: Number(
+        (
+          invoiceCalculations.roundedTotal ?? invoiceCalculations.netTotal
+        ).toFixed(2),
+      ),
 
       paymentStatus,
       amountPaid: Number(payment.paid.toFixed(2)),
@@ -1277,7 +1285,7 @@ export default function Purchase() {
     );
   };
 
-  console.log('cart items for preview', cartItems);
+  console.log('cart items for preview', invoiceCalculations?.computedItems);
 
   const handleAddItems = () => {
     const preparedCart = (cartItems || []).map((item, index) => ({
@@ -1286,13 +1294,17 @@ export default function Purchase() {
       sellingPrice: item.price ?? item.sellingPrice ?? 0,
       qty: item.qty ?? item.quantity ?? 0,
       subtotal: item.total ?? item.subtotal ?? 0,
+      // ✅ Freeze previousQty here — this is the qty before user edits in AddPurchaseItems
+      previousQty: item.previousQty ?? item.qty ?? item.quantity ?? 0,
     }));
-
     navigation.push('AddPurchaseItems', {
       purchase: true,
       existingCart: preparedCart,
       onItemsSelected: newCart => {
+        // ✅ Fully replace cart with what came back — no merging
         setCartItems(newCart);
+
+        hasUserEditedPaid.current = false;
         setShowPreview(true);
       },
     });
@@ -1311,6 +1323,10 @@ export default function Purchase() {
     }),
     [formikRef.current?.values],
   );
+
+  console.log('-->customerData', customerData);
+  console.log('--> ede', invoiceCalculations?.computedItems);
+  console.log('cart items before preview  --', cartItems);
 
   // Initial form view (when no items added yet)
   return (
@@ -2093,7 +2109,9 @@ export default function Purchase() {
                                 // ✅ Hard cap at netTotal — no more, no less
                                 const maxAmount = parseFloat(
                                   Number(
-                                    invoiceCalculations?.netTotal ?? 0,
+                                    invoiceCalculations?.roundedTotal ??
+                                      invoiceCalculations?.netTotal ??
+                                      0,
                                   ).toFixed(2),
                                 );
                                 const clamped = Math.min(
@@ -2112,7 +2130,9 @@ export default function Purchase() {
                                 // ✅ On blur, clean up trailing dot and clamp to 2 decimals
                                 const maxAmount = parseFloat(
                                   Number(
-                                    invoiceCalculations?.netTotal ?? 0,
+                                    invoiceCalculations?.roundedTotal ??
+                                      invoiceCalculations?.netTotal ??
+                                      0,
                                   ).toFixed(2),
                                 );
 

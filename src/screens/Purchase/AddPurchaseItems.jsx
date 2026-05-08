@@ -74,6 +74,7 @@ const AddPurchaseItems = () => {
 
   const limit = 500;
   const searchInputRef = useRef(null);
+  const previousQtyMap = useRef({});
 
   // ─── 1. getPurchaseRate ───────────────────────────────────────────────────
   // Returns the RAW cost price (before discount). Discount is never applied here.
@@ -196,15 +197,16 @@ const AddPurchaseItems = () => {
     if (!route?.params?.existingCart) return;
 
     const existing = route.params.existingCart || [];
+    const now = Date.now(); // ✅ single timestamp for all items
 
-    const normalized = existing.map(item => {
+    const normalized = existing.map((item, index) => {
       const qty = item.qty ?? item.quantity ?? item.qtySold ?? 0;
       const id =
         item._id ??
         item.productId ??
         (item.product && (item.product._id || item.product.id)) ??
         null;
-      // Store RAW costPrice as price — discount is re-applied in calculateItemTotals
+
       const price = isPurchase
         ? Number(
             item.costPrice > 0
@@ -213,7 +215,26 @@ const AddPurchaseItems = () => {
           )
         : Number(item.sellingPrice ?? item.price ?? 0);
 
-      return { ...item, _id: id, qty, price };
+      // ✅ Use stable lineId — prefer existing, else generate once
+      const lineId = item._lineId || `${id}-${index}-${now}`;
+
+      return {
+        ...item,
+        _id: id,
+        qty,
+        price,
+        _lineId: lineId,
+        // ✅ Carry forward previousQty if already set (from Purchase.jsx handleAddItems)
+        previousQty: item.previousQty ?? qty,
+      };
+    });
+
+    // ✅ Seed previousQtyMap — use previousQty from item (frozen at Purchase.jsx level)
+    normalized.forEach(item => {
+      const key = item._lineId ?? item._id;
+      if (key && previousQtyMap.current[key] === undefined) {
+        previousQtyMap.current[key] = item.previousQty ?? item.qty;
+      }
     });
 
     setCart(normalized);
@@ -245,21 +266,31 @@ const AddPurchaseItems = () => {
       if (!prod) return item;
 
       const qty = item.qty ?? 0;
+
+      // ✅ Preserve user-edited price — only fall back to product price if item has no price
       const rawPrice = isPurchase
-        ? Number(item.price ?? prod.costPrice ?? prod.lastPurchasePrice ?? 0)
-        : Number(item.price ?? prod.sellingPrice ?? 0);
+        ? Number(
+            item.costPrice > 0
+              ? item.costPrice // ✅ keep edited costPrice
+              : item.price > 0
+              ? item.price
+              : prod.costPrice ?? prod.lastPurchasePrice ?? 0,
+          )
+        : Number(item.price > 0 ? item.price : prod.sellingPrice ?? 0);
 
       const merged = {
-        ...item,
-        ...prod,
-        price: rawPrice, // always raw
-        costPrice: prod.costPrice,
+        ...prod, // base from product catalog
+        ...item, // ✅ item on top — preserves all user edits (purchaseDiscount, gstRate, etc.)
+        price: rawPrice,
+        costPrice: rawPrice,
         qty,
-        ...(isPurchase && {
-          discountPrice: 0,
-          discountPercent: 0,
-          discountType: 'amount',
-        }),
+        // ✅ Only reset discount fields if item has no prior edits
+        ...(isPurchase &&
+          !item._manualDiscountApplied && {
+            discountPrice: item.discountPrice ?? 0,
+            discountPercent: item.discountPercent ?? 0,
+            discountType: item.discountType ?? 'amount',
+          }),
       };
 
       const { subtotal } = calculateItemTotals(merged, qty, rawPrice);
@@ -366,91 +397,80 @@ const AddPurchaseItems = () => {
   // ─── 4. selectItem ────────────────────────────────────────────────────────
   const selectItem = useCallback(
     product => {
+      // ✅ If already in cart, just increment quantity instead of adding a new line
+      const existingItem = cart.find(
+        c => c._id === product._id || c.name === product.name,
+      );
+
+      if (existingItem) {
+        const newQty = (existingItem.qty || 0) + 1;
+        updateCartQuantity(existingItem._lineId ?? existingItem._id, newQty);
+        return; // ← stop here, don't add a new line
+      }
+
+      // Not in cart — original logic below unchanged
       const currentQty = dropdownQuantities[product._id] || 0;
       const finalQty = currentQty > 0 ? currentQty : 1;
 
-      setCart(prevCart => {
-        const existingIndex = prevCart.findIndex(
-          i => i._id === product._id || i.name === product.name,
-        );
+      const rawPrice = getPurchaseRate(product);
+      const { subtotal } = calculateItemTotals(product, finalQty, rawPrice);
+      const lineId = `${product._id}-${Date.now()}`;
+      const newItem = {
+        ...product,
+        qty: finalQty,
+        price: rawPrice,
+        costPrice: rawPrice,
+        previousQty: 0,
+        subtotal,
+        hsn: product.hsn || '',
+        _lineId: `${product._id}-${Date.now()}`,
+        ...(isPurchase && {
+          purchaseDiscount: 0,
+          discountPrice: 0,
+          discountPercent: 0,
+          discountType: 'amount',
+          _manualDiscountApplied: false,
+        }),
+      };
 
-        // Always use RAW costPrice — discount applied inside calculateItemTotals
-        const rawPrice = getPurchaseRate(product);
-        const { subtotal } = calculateItemTotals(product, finalQty, rawPrice);
+      previousQtyMap.current[lineId] = 0;
 
-        let cartItemForSheet = null;
+      setCart(prev => [...prev, newItem]);
+      setQtyForProduct(product._id, finalQty);
 
-        if (existingIndex >= 0) {
-          const updated = [...prevCart];
-          const updatedItem = {
-            ...updated[existingIndex],
-            qty: finalQty,
-            price: rawPrice,
-            costPrice: rawPrice,
-            subtotal,
-            hsn: product.hsn || updated[existingIndex].hsn || '',
-            ...(isPurchase && {
-              discountPrice: 0,
-              discountPercent: 0,
-              discountType: 'amount',
-              _manualDiscountApplied: false,
-            }),
-          };
-          updated[existingIndex] = cartItemForSheet = updatedItem;
-          setQtyForProduct(product._id, finalQty);
-          if (isPurchase) {
-            setSelectedCartItem(cartItemForSheet);
-            presentItemSheet();
-          }
-          return updated;
-        } else {
-          const newItem = {
-            ...product,
-            qty: finalQty,
-            price: rawPrice,
-            costPrice: rawPrice,
-            subtotal,
-            hsn: product.hsn || '',
-            ...(isPurchase && {
-              discountPrice: 0,
-              discountPercent: 0,
-              discountType: 'amount',
-              _manualDiscountApplied: false,
-            }),
-          };
-          cartItemForSheet = newItem;
-          setQtyForProduct(product._id, finalQty);
-          if (isPurchase) {
-            setSelectedCartItem(cartItemForSheet);
-            presentItemSheet();
-          }
-          return [...prevCart, newItem];
-        }
-      });
+      if (isPurchase) {
+        setSelectedCartItem({
+          ...newItem,
+          previousQty: 0,
+        });
+        presentItemSheet();
+      }
     },
     [
+      cart, // ✅ add cart to dependency array
       dropdownQuantities,
       setQtyForProduct,
       isPurchase,
       presentItemSheet,
       getPurchaseRate,
       calculateItemTotals,
+      updateCartQuantity, // ✅ add this too
     ],
   );
 
   // ─── 5. removeFromCart ────────────────────────────────────────────────────
   const removeFromCart = useCallback(identifier => {
     setCart(prev =>
-      prev.filter(
-        i => String(i._id) !== String(identifier) && i.name !== identifier,
-      ),
+      prev.filter(i => {
+        // ✅ If identifier is a _lineId, match by that first
+        if (i._lineId && i._lineId === identifier) return false;
+        // Fallback: match by _id or name
+        return String(i._id) !== String(identifier) && i.name !== identifier;
+      }),
     );
     setDropdownQuantities(prev => {
       const next = { ...prev };
       delete next[identifier];
-      Object.keys(next).forEach(k => {
-        if (k === String(identifier)) delete next[k];
-      });
       return next;
     });
   }, []);
@@ -458,21 +478,26 @@ const AddPurchaseItems = () => {
   // ─── 6. updateCartQuantity ────────────────────────────────────────────────
   // item.price is always RAW — discount re-applied inside calculateItemTotals
   const updateCartQuantity = useCallback(
-    (productId, newQty) => {
+    (lineId, newQty) => {
       if (newQty <= 0) {
-        removeFromCart(productId);
+        removeFromCart(lineId);
         return;
       }
-      setDropdownQuantities(prev => ({ ...prev, [productId]: newQty }));
       setCart(prev =>
         prev.map(item => {
-          if (item._id === productId || item.name === productId) {
+          // ✅ Match by _lineId first, fallback to _id/name
+          const isMatch =
+            (item._lineId && item._lineId === lineId) ||
+            item._id === lineId ||
+            item.name === lineId;
+          if (isMatch) {
             const { subtotal } = calculateItemTotals(item, newQty, item.price);
             return { ...item, qty: newQty, subtotal };
           }
           return item;
         }),
       );
+      setDropdownQuantities(prev => ({ ...prev, [lineId]: newQty }));
     },
     [removeFromCart, calculateItemTotals],
   );
@@ -490,12 +515,10 @@ const AddPurchaseItems = () => {
    */
   const onBottomSheetUpdate = useCallback(
     updatedItem => {
-      console.log('Bottom sheet update received:', updatedItem);
       updatedItem._manualDiscountApplied =
         Number(updatedItem.discountPrice) > 0 ||
         Number(updatedItem.discountPercent) > 0;
 
-      // updatedItem.price = raw costPrice; purchaseDiscount applied inside
       const { subtotal } = calculateItemTotals(
         updatedItem,
         updatedItem.qty,
@@ -505,18 +528,26 @@ const AddPurchaseItems = () => {
       const finalItem = {
         ...updatedItem,
         subtotal,
+        previousQty: undefined,
         ...(isPurchase
           ? { costPrice: Number(updatedItem.price ?? updatedItem.costPrice) }
           : {}),
       };
 
-      setCart(prev => prev.map(c => (c._id === finalItem._id ? finalItem : c)));
+      setCart(prev =>
+        prev.map(c => {
+          // ✅ Match by _lineId first
+          const isMatch =
+            (c._lineId && c._lineId === finalItem._lineId) ||
+            c._id === finalItem._id;
+          return isMatch ? finalItem : c;
+        }),
+      );
       setDropdownQuantities(prev => ({
         ...prev,
-        [finalItem._id]: finalItem.qty,
+        [finalItem._lineId ?? finalItem._id]: finalItem.qty,
       }));
 
-      // Sync discount fields back to product list (sales mode only)
       if (!isPurchase) {
         const syncFields = {
           sellingPrice: finalItem.sellingPrice,
@@ -540,10 +571,12 @@ const AddPurchaseItems = () => {
     },
     [closeItemSheet, calculateItemTotals, isPurchase],
   );
-
   // ─── 8. renderProductItem ─────────────────────────────────────────────────
   const renderProductItem = useCallback(
     ({ item: product }) => {
+      const cartLines = cart.filter(
+        c => c._id === product._id || c.name === product.name,
+      );
       const visibleQty = dropdownQuantities[product._id] ?? 0;
       const inCart = cart.some(
         c => c._id === product._id || c.name === product.name,
@@ -562,7 +595,7 @@ const AddPurchaseItems = () => {
         : getPurchaseRate(product);
 
       const subtotal = inCart
-        ? cartItem.subtotal ?? 0
+        ? cartLines.reduce((s, c) => s + (c.subtotal ?? 0), 0)
         : calculateItemTotals(
             product,
             displayQty || 0,
@@ -709,7 +742,10 @@ const AddPurchaseItems = () => {
           <TouchableRipple
             onPress={() => {
               if (inCart) {
-                setSelectedCartItem(cartItem);
+                // ✅ Freeze qty BEFORE any edit into the map
+                previousQtyMap.current[cartItem._lineId ?? cartItem._id] =
+                  cartItem.qty;
+                setSelectedCartItem({ ...cartItem, previousQty: cartItem.qty });
                 presentItemSheet();
               } else {
                 selectItem(product);
@@ -862,7 +898,11 @@ const AddPurchaseItems = () => {
                 onPress={() => {
                   const targetQty = (displayQty || 0) - 1;
                   if (inCart) {
-                    updateCartQuantity(product._id || product.name, targetQty);
+                    // ✅ Use cartItem._lineId
+                    updateCartQuantity(
+                      cartItem._lineId ?? cartItem._id,
+                      targetQty,
+                    );
                   } else {
                     setDropdownQuantities(prev => ({
                       ...prev,
@@ -906,7 +946,11 @@ const AddPurchaseItems = () => {
                 onPress={() => {
                   const targetQty = (displayQty || 0) + 1;
                   if (inCart) {
-                    updateCartQuantity(product._id || product.name, targetQty);
+                    // ✅ Use cartItem._lineId so updateCartQuantity can find the right line
+                    updateCartQuantity(
+                      cartItem._lineId ?? cartItem._id,
+                      targetQty,
+                    );
                   } else {
                     setDropdownQuantities(prev => ({
                       ...prev,
@@ -981,8 +1025,22 @@ const AddPurchaseItems = () => {
       });
       return;
     }
+
     const onItemsSelected = route?.params?.onItemsSelected;
-    if (onItemsSelected) onItemsSelected(cart);
+    if (onItemsSelected) {
+      // ✅ Attach frozen previousQty from ref map onto each item
+      const cartWithPrevQty = cart.map(item => {
+        const key = item._lineId ?? item._id;
+        const prevQty = previousQtyMap.current[key] ?? item.qty; // fallback to current if not tracked
+        return {
+          ...item,
+          previousQty: prevQty,
+          product: item.product ?? item.productId ?? item._id ?? null,
+          productId: item.productId ?? item.product ?? item._id ?? null,
+        };
+      });
+      onItemsSelected(cartWithPrevQty);
+    }
     navigation.pop();
   }, [cart, navigation, route?.params]);
 

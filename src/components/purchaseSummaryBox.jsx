@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { Surface, Text, Divider, useTheme } from 'react-native-paper';
 
@@ -7,16 +7,23 @@ const f = v => {
   return n % 1 === 0 ? n.toString() : n.toFixed(2);
 };
 
-const PurchaseSummaryBox = ({ invoice }) => {
+const PurchaseSummaryBox = ({ invoice, onRoundOffChange }) => {
   const theme = useTheme();
-
-  console.log('nettotal', invoice?.netTotal);
-
-  console.log('summry', invoice);
 
   const subtotal = Number(invoice?.subtotal || 0);
   const gross = Number(invoice?.grandTotalRaw || 0);
   const netTotal = Number(invoice?.netTotal || gross);
+
+  // Auto-compute round off: Math.round(netTotal) - netTotal
+  const roundOff = Number((Math.round(netTotal) - netTotal).toFixed(2));
+  const afterRoundOff = netTotal + roundOff;
+
+  // Notify parent whenever roundOff changes
+  useEffect(() => {
+    onRoundOffChange?.(roundOff);
+  }, [roundOff]);
+
+  const roundOffSign = roundOff >= 0 ? '+' : '';
 
   return (
     <Surface
@@ -50,9 +57,35 @@ const PurchaseSummaryBox = ({ invoice }) => {
 
       <Divider style={styles.divider} />
 
+      {/* Total row */}
       <Row
-        label="Net Total"
+        label="Total"
         value={`₹${f(netTotal)}`}
+        bold
+        large
+        valueColor={theme.colors.primary}
+      />
+
+      {/* Round Off row — auto computed, display only */}
+      {roundOff !== 0 && (
+        <>
+          <Divider style={styles.divider} />
+          <Row
+            label="Round Off"
+            value={`${roundOffSign}₹${Math.abs(roundOff).toFixed(2)}`}
+            valueColor={
+              roundOff >= 0 ? theme.colors.primary : theme.colors.error
+            }
+          />
+        </>
+      )}
+
+      <Divider style={styles.divider} />
+
+      {/* Net Payable — after round off */}
+      <Row
+        label="Net Payable"
+        value={`₹${f(afterRoundOff)}`}
         bold
         large
         valueColor={theme.colors.primary}

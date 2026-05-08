@@ -352,6 +352,8 @@ export const AuthProvider = ({ children }) => {
         };
       }
 
+      console.log('Completing registration with tempToken:', tempToken);
+
       const res = await api.post('/auth/register', formData, {
         headers: {
           'Content-Type': 'multipart/form-data',
@@ -385,6 +387,100 @@ export const AuthProvider = ({ children }) => {
       setHasCompletedOnboarding(true);
     } catch (error) {
       console.error('[Onboarding] Error saving status:', error);
+    }
+  };
+
+  const sendEmailOtp = async email => {
+    try {
+      const res = await api.post('/auth/phone-recovery/send-otp', { email });
+      if (res.success) {
+        // ✅ Store emailVerifyToken from response
+        const updatedAuth = {
+          ...authState,
+          emailVerifyToken: res.data?.token ?? null,
+        };
+        setAuthState(updatedAuth);
+        await AsyncStorage.setItem('auth', JSON.stringify(updatedAuth));
+        Toast.show({ type: 'success', text1: 'OTP sent to email' });
+      }
+      return res;
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Failed', text2: err.message });
+      return { success: false, message: err.message };
+    }
+  };
+
+  const verifyEmailOtp = async (email, otp) => {
+    try {
+      // ✅ Read emailVerifyToken from state and send in header
+      const storedAuth = await AsyncStorage.getItem('auth');
+      const emailVerifyToken = storedAuth
+        ? JSON.parse(storedAuth).emailVerifyToken
+        : authState.emailVerifyToken;
+
+      const res = await api.post(
+        '/auth/phone-recovery/verify-otp',
+        { email, otp },
+        {
+          headers: emailVerifyToken
+            ? { Authorization: `Bearer ${emailVerifyToken}` }
+            : {},
+        },
+      );
+
+      if (res.success) {
+        // ✅ Store changeNumberToken from response for use in changePhoneNumber
+        const updatedAuth = {
+          ...authState,
+          emailVerifyToken: null, // clear used token
+          changeNumberToken: res.data?.token ?? null,
+        };
+        setAuthState(updatedAuth);
+        await AsyncStorage.setItem('auth', JSON.stringify(updatedAuth));
+      }
+      return res;
+    } catch (err) {
+      return { success: false, message: err.message };
+    }
+  };
+
+  const changePhoneNumber = async newPhone => {
+    try {
+      console.log('phon no', newPhone);
+      // ✅ Read changeNumberToken and send in header
+      const storedAuth = await AsyncStorage.getItem('auth');
+      const changeNumberToken = storedAuth
+        ? JSON.parse(storedAuth).changeNumberToken
+        : authState.changeNumberToken;
+
+      const res = await api.post(
+        '/auth/phone-recovery/update-phone',
+        { newPhone: newPhone },
+        {
+          headers: changeNumberToken
+            ? { Authorization: `Bearer ${changeNumberToken}` }
+            : {},
+        },
+      );
+
+      if (res.success) {
+        // ✅ Clear changeNumberToken after use
+        const updatedAuth = {
+          ...authState,
+          changeNumberToken: null,
+          user: {
+            ...authState.user,
+            phone: newPhone,
+          },
+        };
+        setAuthState(updatedAuth);
+        await AsyncStorage.setItem('auth', JSON.stringify(updatedAuth));
+        Toast.show({ type: 'success', text1: 'Phone number changed!' });
+      }
+      return res;
+    } catch (err) {
+      Toast.show({ type: 'error', text1: 'Failed', text2: err.message });
+      return { success: false, message: err.message };
     }
   };
 
@@ -455,6 +551,9 @@ export const AuthProvider = ({ children }) => {
       getUserPreference,
       isStockEnabled,
       isPurchaseOrderEnabled,
+      sendEmailOtp,
+      verifyEmailOtp,
+      changePhoneNumber,
     }),
     [
       authState,

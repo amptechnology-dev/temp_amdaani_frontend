@@ -622,7 +622,6 @@ const RegisterScreen = () => {
       // console.log('Form Data preview', formData);
       // console.log('Signature before submit:', values.signature);
 
-
       // Append tempToken from AuthContext
       const res = await completeRegistration(formData);
       // console.log('Registration API Response:', res);
@@ -791,7 +790,7 @@ const RegisterScreen = () => {
         mode="outlined"
         style={styles.input}
         theme={{ roundness: 12 }}
-      // placeholder="e.g. Quality groceries at your doorstep"
+        // placeholder="e.g. Quality groceries at your doorstep"
       />
 
       <TextInput
@@ -901,7 +900,7 @@ const RegisterScreen = () => {
           style={[styles.input, styles.halfInput]}
           theme={{ roundness: 12 }}
           editable={false}
-        // placeholder="India"
+          // placeholder="India"
         />
       </View>
       <View style={styles.row}>
@@ -1061,7 +1060,7 @@ const RegisterScreen = () => {
         mode="outlined"
         style={styles.input}
         theme={{ roundness: 12 }}
-      // placeholder="Andheri West, Mumbai"
+        // placeholder="Andheri West, Mumbai"
       />
 
       <TextInput
@@ -1409,8 +1408,8 @@ const RegisterScreen = () => {
                   imageTarget === 'logo'
                     ? 'Logo: choose a source'
                     : imageTarget === 'signature'
-                      ? 'Signature: choose a source'
-                      : ''
+                    ? 'Signature: choose a source'
+                    : ''
                 }
                 onSelect={option =>
                   handleImagePickerSelect(option, setFieldValue)
@@ -1430,7 +1429,8 @@ const RegisterScreen = () => {
                     const fileObj = {
                       uri: signatureData.uri,
                       type: signatureData.type || 'image/png',
-                      fileName: signatureData.fileName || `signature_${Date.now()}.png`,
+                      fileName:
+                        signatureData.fileName || `signature_${Date.now()}.png`,
                       size: signatureData.size || 0, // Add size if available
                       width: signatureData.width,
                       height: signatureData.height,
@@ -1438,18 +1438,19 @@ const RegisterScreen = () => {
                     setFieldValueRef.current?.('signature', fileObj);
                     // console.log('✅ Signature set in Formik:', fileObj);
                   } else {
-                    console.warn('⚠️ Signature data missing uri:', signatureData);
+                    console.warn(
+                      '⚠️ Signature data missing uri:',
+                      signatureData,
+                    );
                   }
                   setShowSignaturePad(false);
                   imagePickerRef.close();
                   setImageTarget(null);
                 }}
-
                 onCancel={() => {
                   setShowSignaturePad(false);
                 }}
               />
-
             </>
           );
         }}
