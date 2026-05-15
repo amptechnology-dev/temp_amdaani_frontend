@@ -94,6 +94,8 @@ const AddPurchaseItems = () => {
     [isPurchase],
   );
 
+  console.log('selected istsm', selectedCartItem);
+
   // ─── 2. calculateItemTotals ───────────────────────────────────────────────
   /**
    * CALCULATION RULES
@@ -115,6 +117,8 @@ const AddPurchaseItems = () => {
    * KEY RULE: overridePrice must always be the RAW costPrice (before discount).
    * purchaseDiscount is always read from product/cartItem — never pre-baked into price.
    */
+
+  console.log('fix it product ', products);
   const calculateItemTotals = useCallback(
     (product, qty, overridePrice) => {
       const vendorHasGst = !isPurchase || !!route?.params?.vendorGstNumber;
@@ -131,6 +135,7 @@ const AddPurchaseItems = () => {
       let netRate = rawRate;
       if (isPurchase) {
         const purchaseDiscount = Number(product.purchaseDiscount ?? 0);
+
         if (purchaseDiscount > 0) {
           netRate = Math.max(0, rawRate - purchaseDiscount);
         }
@@ -192,11 +197,16 @@ const AddPurchaseItems = () => {
     fetchProducts();
   }, []);
 
+  // const existing = route.params.existingCart;
+
+  //console.log('exinsing cart', existing);
+
   // ─── Initialize cart from route params ───────────────────────────────────
   useEffect(() => {
     if (!route?.params?.existingCart) return;
 
     const existing = route.params.existingCart || [];
+
     const now = Date.now(); // ✅ single timestamp for all items
 
     const normalized = existing.map((item, index) => {
@@ -424,13 +434,13 @@ const AddPurchaseItems = () => {
         subtotal,
         hsn: product.hsn || '',
         _lineId: `${product._id}-${Date.now()}`,
-        ...(isPurchase && {
-          purchaseDiscount: 0,
-          discountPrice: 0,
-          discountPercent: 0,
-          discountType: 'amount',
-          _manualDiscountApplied: false,
-        }),
+        // ...(isPurchase && {
+        //   purchaseDiscount: 0,
+        //   discountPrice: 0,
+        //   discountPercent: 0,
+        //   discountType: 'amount',
+        //   _manualDiscountApplied: false,
+        // }),
       };
 
       previousQtyMap.current[lineId] = 0;
@@ -515,6 +525,7 @@ const AddPurchaseItems = () => {
    */
   const onBottomSheetUpdate = useCallback(
     updatedItem => {
+      console.log('updated items', updatedItem);
       updatedItem._manualDiscountApplied =
         Number(updatedItem.discountPrice) > 0 ||
         Number(updatedItem.discountPercent) > 0;
@@ -989,6 +1000,8 @@ const AddPurchaseItems = () => {
       searchQuery,
     ],
   );
+
+  console.log('reson', cart);
   // ─── Totals ───────────────────────────────────────────────────────────────
   const totals = useMemo(() => {
     const itemCount = cart.length;
@@ -1027,6 +1040,7 @@ const AddPurchaseItems = () => {
     }
 
     const onItemsSelected = route?.params?.onItemsSelected;
+
     if (onItemsSelected) {
       // ✅ Attach frozen previousQty from ref map onto each item
       const cartWithPrevQty = cart.map(item => {

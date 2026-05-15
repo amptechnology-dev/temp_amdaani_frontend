@@ -62,206 +62,205 @@ const PurchaseCartItemBottomSheet = forwardRef(
   ({ item, onUpdate, purchase }, ref) => {
     const theme = useTheme();
 
+    const defaultTaxOption = { id: 'without_tax', label: 'No Tax' };
+    const withTaxOption = { id: 'with_tax', label: 'With Tax' };
+
     // ── HSN Code state ─────────────────────────────────────────────────────
     const [selectedHsnCode, setSelectedHsnCode] = useState(null);
     const [hsnCodeText, setHsnCodeText] = useState('');
     const [hsnCodeRefreshKey, setHsnCodeRefreshKey] = useState(0);
 
-    // ── HSN bottom sheet hooks ─────────────────────────────────────────────
     const hsnSelectorSheet = useBottomSheet();
     const hsnCreateSheet = useBottomSheet();
 
     // ── Selling Price ──────────────────────────────────────────────────────
-    const initSellingPrice = parseFloat(
-      Number(
-        purchase
-          ? item?.productOriginalPrice ?? item?.sellingPrice ?? 0
-          : item?.sellingPrice ?? item?.price ?? 0,
-      ).toFixed(2),
-    );
-    const [sellingPrice, setSellingPrice] = useState(initSellingPrice);
-    const [sellingPriceText, setSellingPriceText] = useState(
-      toFixed2(initSellingPrice),
-    );
+    const [sellingPrice, setSellingPrice] = useState(0);
+    const [sellingPriceText, setSellingPriceText] = useState('0.00');
 
-    // ── Purchase Price ─────────────────────────────────────────────────────
-    const initPurchasePrice = parseFloat(
-      Number(
-        item?.price ?? item?.lastPurchasePrice ?? item?.costPrice ?? 0,
-      ).toFixed(2),
-    );
-    const [purchasePrice, setPurchasePrice] = useState(initPurchasePrice);
-    const [purchasePriceText, setPurchasePriceText] = useState(
-      toFixed2(initPurchasePrice),
-    );
+    // ── Purchase Price (raw costPrice, before discount) ────────────────────
+    const [purchasePrice, setPurchasePrice] = useState(0);
+    const [purchasePriceText, setPurchasePriceText] = useState('0.00');
 
     // ── MRP ───────────────────────────────────────────────────────────────
-    const [mrp, setMrp] = useState(String(item?.mrp || ''));
+    const [mrp, setMrp] = useState('');
 
-    // ── Tax Options ────────────────────────────────────────────────────────
-    const defaultTaxOption = { id: 'without_tax', label: 'No Tax' };
-    const withTaxOption = { id: 'with_tax', label: 'With Tax' };
+    // ── Tax options ────────────────────────────────────────────────────────
+    const [taxOption, setTaxOption] = useState(defaultTaxOption);
+    const [taxRate, setTaxRate] = useState(null);
+    const [purchaseTaxOption, setPurchaseTaxOption] =
+      useState(defaultTaxOption);
+    const [purchaseTaxRate, setPurchaseTaxRate] = useState(null);
 
-    const initTaxOption = item?.isTaxInclusive
-      ? withTaxOption
-      : defaultTaxOption;
-    const initTaxRate =
-      item?.gstRate && Number(item.gstRate) > 0
-        ? { rate: Number(item.gstRate), label: `${item.gstRate}% GST` }
-        : null;
-    const initPurchaseTaxOption = item?.isPurchaseTaxInclusive
-      ? withTaxOption
-      : defaultTaxOption;
-    const initPurchaseTaxRate =
-      item?.purchaseGstRate && Number(item.purchaseGstRate) > 0
-        ? {
-            rate: Number(item.purchaseGstRate),
-            label: `${item.purchaseGstRate}% GST`,
-          }
-        : null;
-
-    const [taxOption, setTaxOption] = useState(initTaxOption);
-    const [taxRate, setTaxRate] = useState(initTaxRate);
-    const [purchaseTaxOption, setPurchaseTaxOption] = useState(
-      initPurchaseTaxOption,
-    );
-    const [purchaseTaxRate, setPurchaseTaxRate] = useState(initPurchaseTaxRate);
-
-    // ── Sell discount (only when purchase=true) ────────────────────────────
+    // ── Selling discount (purchase mode) ──────────────────────────────────
+    // Source field: item.discountPrice (flat ₹ amount on sellingPrice)
     const [sellDiscountType, setSellDiscountType] = useState('amount');
     const [sellDiscountValue, setSellDiscountValue] = useState('0');
-    const [finalSellingPrice, setFinalSellingPrice] =
-      useState(initSellingPrice);
+    const [finalSellingPrice, setFinalSellingPrice] = useState(0);
 
     // ── Purchase discount ──────────────────────────────────────────────────
-    const [discountType, setDiscountType] = useState(
-      item?.discountType || (item?.discountPercent ? 'percent' : 'amount'),
-    );
-    const [discountValue, setDiscountValue] = useState(() => {
-      const raw =
-        item?.discountType === 'percent'
-          ? Number(item?.discountPercent ?? 0)
-          : Number(item?.discountPrice ?? item?.discount ?? 0);
-      return toFixed2(raw);
-    });
+    // Source field: item.purchaseDiscount (flat ₹ per unit, ex-tax)
+    const [discountType, setDiscountType] = useState('amount');
+    const [discountValue, setDiscountValue] = useState('0');
 
-    // ── Price after discount ───────────────────────────────────────────────
-    const [price, setPrice] = useState(() => {
-      const base = parseFloat(
-        Number(
-          purchase
-            ? item?.price ?? item?.lastPurchasePrice ?? item?.costPrice ?? 0
-            : item?.sellingPrice ?? item?.price ?? 0,
-        ).toFixed(2),
-      );
-      const flat = Number(item?.discountPrice ?? item?.discount ?? 0);
-      const pct = Number(item?.discountPercent ?? 0);
-      const result =
-        pct > 0
-          ? Math.max(0, base - (base * pct) / 100)
-          : Math.max(0, base - flat);
-      return parseFloat(result.toFixed(2));
-    });
+    // ── Price after purchase discount (display only) ───────────────────────
+    const [price, setPrice] = useState(0);
 
     // ── Quantity ───────────────────────────────────────────────────────────
-    const [qtyInput, setQtyInput] = useState(String(item?.qty || 1));
+    const [qtyInput, setQtyInput] = useState('1');
     const qtyNumber = Number(qtyInput) || 0;
 
-    // ── Sync when item changes ─────────────────────────────────────────────
+    // ── Sync ALL fields when item changes ─────────────────────────────────
     useEffect(() => {
       if (!item) return;
 
-      // ── Sync HSN from item ────────────────────────────────────────────
+      // ── 1. Purchase price (raw costPrice — field may be costPrice or price) ──
+      // costPrice is the canonical field; price is the alias used in cart items
+      const pp = parseFloat(
+        Number(
+          item.costPrice > 0
+            ? item.costPrice
+            : item.price > 0
+            ? item.price
+            : item.lastPurchasePrice ?? 0,
+        ).toFixed(2),
+      );
+      setPurchasePrice(pp);
+      setPurchasePriceText(toFixed2(pp));
+
+      // ── 2. Selling price ──────────────────────────────────────────────────
+      // productOriginalPrice is set when item comes from AddPurchaseItems
+      const sp = parseFloat(
+        Number(
+          item.productOriginalPrice > 0
+            ? item.productOriginalPrice
+            : item.sellingPrice > 0
+            ? item.sellingPrice
+            : 0,
+        ).toFixed(2),
+      );
+      setSellingPrice(sp);
+      setSellingPriceText(toFixed2(sp));
+
+      // ── 3. MRP ────────────────────────────────────────────────────────────
+      setMrp(String(item.mrp || ''));
+
+      // ── 4. Quantity ───────────────────────────────────────────────────────
+      setQtyInput(String(item.qty || 1));
+
+      // ── 5. Purchase discount ──────────────────────────────────────────────
+      // purchaseDiscount is a flat per-unit ₹ ex-tax amount stored on the item.
+      // In purchase mode we always use 'amount' type for purchase discount.
+      const rawPurchaseDiscType = item.purchaseDiscountType || 'amount';
+      const normPurchaseDiscType =
+        rawPurchaseDiscType === 'percentage' ? 'percent' : rawPurchaseDiscType;
+
+      let pdRaw = 0;
+      if (normPurchaseDiscType === 'percent') {
+        // Use purchaseDiscountPercentage field for the % value
+        pdRaw = Number(
+          item.purchaseDiscountPercentage ?? item.purchaseDiscountPercent ?? 0,
+        );
+      } else {
+        // Use flat ₹ amount
+        pdRaw = Number(
+          item.purchaseDiscount ?? item.purchaseDiscountAmount ?? 0,
+        );
+      }
+
+      setDiscountType(normPurchaseDiscType);
+      setDiscountValue(toFixed2(pdRaw));
+
+      const pdAmt =
+        normPurchaseDiscType === 'percent' ? (pp * pdRaw) / 100 : pdRaw;
+      setPrice(parseFloat(Math.max(0, pp - pdAmt).toFixed(2)));
+
+      // ── 6. Selling discount ───────────────────────────────────────────────
+      // discountPrice = flat ₹ discount on sellingPrice (for selling side)
+      // discountPercent = percent discount on sellingPrice
+      // We read whichever is set — prefer explicit discountType if present.
+      const rawSellDiscType =
+        item.sellDiscountType || item.discountType || 'amount';
+      const normSellDiscType =
+        rawSellDiscType === 'percentage' ? 'percent' : rawSellDiscType;
+
+      let sdRaw = 0;
+      if (normSellDiscType === 'percent') {
+        // Prefer sellDiscountPercent → discountPercentage → discountPercent
+        sdRaw = Number(
+          item.sellDiscountPercent ??
+            item.discountPercentage ??
+            item.discountPercent ??
+            0,
+        );
+      } else {
+        // Prefer sellDiscount → discountPrice
+        sdRaw = Number(
+          item.sellDiscount > 0 ? item.sellDiscount : item.discountPrice ?? 0,
+        );
+      }
+
+      setSellDiscountType(normSellDiscType);
+      setSellDiscountValue(toFixed2(sdRaw));
+
+      const sdAmt = normSellDiscType === 'percent' ? (sp * sdRaw) / 100 : sdRaw;
+      setFinalSellingPrice(parseFloat(Math.max(0, sp - sdAmt).toFixed(2)));
+
+      // ── 7. HSN / GST ──────────────────────────────────────────────────────
+      // GST rate: purchaseGstRate is the purchase-side rate; gstRate is selling-side.
+      const purchaseGst = Number(item.purchaseGstRate ?? item.gstRate ?? 0);
+      const sellingGst = Number(item.gstRate ?? item.purchaseGstRate ?? 0);
+
       if (item.hsn) {
         setHsnCodeText(item.hsn);
-        setSelectedHsnCode({
-          code: item.hsn,
-          gstRate: item.purchaseGstRate ?? item.gstRate ?? 0,
-        });
+        setSelectedHsnCode({ code: item.hsn, gstRate: purchaseGst });
       } else {
         setHsnCodeText('');
         setSelectedHsnCode(null);
       }
 
-      if (purchase) {
-        const sp = parseFloat(
-          Number(item?.productOriginalPrice ?? item?.sellingPrice ?? 0).toFixed(
-            2,
-          ),
-        );
-        const pp = parseFloat(
-          Number(
-            item?.price ?? item?.lastPurchasePrice ?? item?.costPrice ?? 0,
-          ).toFixed(2),
-        );
-        setSellingPrice(sp);
-        setSellingPriceText(toFixed2(sp));
-        setPurchasePrice(pp);
-        setPurchasePriceText(toFixed2(pp));
-        setDiscountType('amount');
-        setDiscountValue(toFixed2(item.purchaseDiscount ?? 0));
-        setPrice(
-          parseFloat(Math.max(0, pp - (item.purchaseDiscount ?? 0)).toFixed(2)),
+      // ── 8. Purchase tax inclusive flag ────────────────────────────────────
+      // isPurchaseTaxInclusive is the purchase-side flag.
+      // Fallback to isTaxInclusive only if isPurchaseTaxInclusive is undefined.
+      const purchaseTaxInclusive = Boolean(
+        item.isPurchaseTaxInclusive != null
+          ? item.isPurchaseTaxInclusive
+          : item.isTaxInclusive ?? false,
+      );
+
+      if (purchaseGst > 0) {
+        setPurchaseTaxRate({ rate: purchaseGst, label: `${purchaseGst}% GST` });
+        setPurchaseTaxOption(
+          purchaseTaxInclusive ? withTaxOption : defaultTaxOption,
         );
       } else {
-        const sp = parseFloat(
-          Number(item?.sellingPrice ?? item?.price ?? 0).toFixed(2),
-        );
-        setSellingPrice(sp);
-        setSellingPriceText(toFixed2(sp));
-        const flat = Number(item?.discountPrice ?? item?.discount ?? 0);
-        const pct = Number(item?.discountPercent ?? 0);
-        setDiscountType(item?.discountType || (pct > 0 ? 'percent' : 'amount'));
-        setDiscountValue(
-          item?.discountType === 'percent' ? toFixed2(pct) : toFixed2(flat),
-        );
-        setPrice(
-          parseFloat(
-            (pct > 0
-              ? Math.max(0, sp - (sp * pct) / 100)
-              : Math.max(0, sp - flat)
-            ).toFixed(2),
-          ),
+        setPurchaseTaxRate(null);
+        setPurchaseTaxOption(
+          purchaseTaxInclusive ? withTaxOption : defaultTaxOption,
         );
       }
 
-      setMrp(String(item?.mrp || ''));
-      setQtyInput(String(item?.qty || 1));
-      setTaxOption(item?.isTaxInclusive ? withTaxOption : defaultTaxOption);
-      setTaxRate(
-        item?.gstRate && Number(item.gstRate) > 0
-          ? { rate: Number(item.gstRate), label: `${item.gstRate}% GST` }
-          : null,
-      );
-      setPurchaseTaxOption(
-        item?.isPurchaseTaxInclusive ? withTaxOption : defaultTaxOption,
-      );
-      setPurchaseTaxRate(
-        item?.purchaseGstRate && Number(item.purchaseGstRate) > 0
-          ? {
-              rate: Number(item.purchaseGstRate),
-              label: `${item.purchaseGstRate}% GST`,
-            }
-          : null,
-      );
-      setSellDiscountType('amount');
-      setSellDiscountValue('0');
-      setFinalSellingPrice(
-        item?.productOriginalPrice ?? item?.sellingPrice ?? 0,
-      );
+      // ── 9. Selling tax inclusive flag ─────────────────────────────────────
+      // isTaxInclusive is the selling-side flag.
+      const sellingTaxInclusive = Boolean(item.isTaxInclusive ?? false);
+
+      if (sellingGst > 0) {
+        setTaxRate({ rate: sellingGst, label: `${sellingGst}% GST` });
+        setTaxOption(sellingTaxInclusive ? withTaxOption : defaultTaxOption);
+      } else {
+        setTaxRate(null);
+        setTaxOption(sellingTaxInclusive ? withTaxOption : defaultTaxOption);
+      }
     }, [item]);
 
-    // ── Recompute price after purchase discount ────────────────────────────
+    // ── Recompute "price after purchase discount" whenever inputs change ───
     useEffect(() => {
-      const base = purchase
-        ? Number(purchasePrice || 0)
-        : Number(sellingPrice || 0);
+      const base = Number(purchasePrice || 0);
       const value = Number(discountValue) || 0;
       const disc = discountType === 'percent' ? (base * value) / 100 : value;
       setPrice(parseFloat(Math.max(0, base - disc).toFixed(2)));
-    }, [discountValue, discountType, purchase ? purchasePrice : sellingPrice]);
+    }, [discountValue, discountType, purchasePrice]);
 
-    // ── Recompute final selling price (purchase mode) ──────────────────────
+    // ── Recompute final selling price ──────────────────────────────────────
     useEffect(() => {
       if (!purchase) return;
       const base = Number(sellingPrice || 0);
@@ -269,19 +268,16 @@ const PurchaseCartItemBottomSheet = forwardRef(
       const disc =
         sellDiscountType === 'percent' ? (base * value) / 100 : value;
       setFinalSellingPrice(parseFloat(Math.max(0, base - disc).toFixed(2)));
-    }, [sellDiscountValue, sellDiscountType, sellingPrice]);
+    }, [sellDiscountValue, sellDiscountType, sellingPrice, purchase]);
 
     // ── HSN select handler ─────────────────────────────────────────────────
     const handleHsnCodeSelect = useCallback(
       hsnCode => {
         if (!hsnCode) {
-          // Deselect
           setSelectedHsnCode(null);
           setHsnCodeText('');
           setPurchaseTaxRate(null);
-          setPurchaseTaxOption(defaultTaxOption);
           setTaxRate(null);
-          setTaxOption(defaultTaxOption);
           hsnSelectorSheet.close();
           return;
         }
@@ -333,17 +329,17 @@ const PurchaseCartItemBottomSheet = forwardRef(
           setTaxOption(defaultTaxOption);
         }
 
-        // Refresh selector list with new entry
         setHsnCodeRefreshKey(Date.now());
       },
       [hsnCreateSheet],
     );
 
-    // ── Tax rate helpers ───────────────────────────────────────────────────
     const TAX_RATES = [0, 5, 12, 18, 28];
 
     const discountNumeric = Number(discountValue) || 0;
     const isDiscountApplied = discountNumeric > 0;
+
+    console.log('++', item);
 
     // ─── Render ──────────────────────────────────────────────────────────────
     return (
@@ -357,12 +353,12 @@ const PurchaseCartItemBottomSheet = forwardRef(
           title={`Edit — ${item?.name || ''}`}
         >
           <View style={styles.container}>
-            {/* ── PRODUCT INFO ────────────────────────────────────────────── */}
+            {/* ── PRODUCT INFO ─────────────────────────────────────────── */}
             {item?.sku ? (
               <InfoRow label="SKU" value={item.sku} theme={theme} />
             ) : null}
 
-            {/* ── HSN CODE ────────────────────────────────────────────────── */}
+            {/* ── HSN CODE ─────────────────────────────────────────────── */}
             <SectionHeader
               icon="barcode"
               title="HSN / SAC Code"
@@ -374,7 +370,6 @@ const PurchaseCartItemBottomSheet = forwardRef(
                   label="HSN / SAC Code"
                   value={hsnCodeText}
                   onChangeText={text => {
-                    // Allow manual typing too
                     setHsnCodeText(text);
                     if (!text) setSelectedHsnCode(null);
                   }}
@@ -385,7 +380,6 @@ const PurchaseCartItemBottomSheet = forwardRef(
                       icon={hsnCodeText ? 'close' : 'chevron-down'}
                       onPress={() => {
                         if (hsnCodeText) {
-                          // Clear
                           setHsnCodeText('');
                           setSelectedHsnCode(null);
                           setPurchaseTaxRate(null);
@@ -401,7 +395,6 @@ const PurchaseCartItemBottomSheet = forwardRef(
                   }
                   placeholder="Search or select HSN"
                 />
-                {/* Invisible overlay to open selector on tap */}
                 <TouchableOpacity
                   style={StyleSheet.absoluteFill}
                   activeOpacity={0.7}
@@ -412,7 +405,6 @@ const PurchaseCartItemBottomSheet = forwardRef(
                 />
               </View>
 
-              {/* Add New HSN button */}
               <TouchableOpacity
                 style={[
                   styles.hsnAddButton,
@@ -440,7 +432,6 @@ const PurchaseCartItemBottomSheet = forwardRef(
               </TouchableOpacity>
             </View>
 
-            {/* Show selected HSN gstRate as a hint */}
             {selectedHsnCode && selectedHsnCode.gstRate > 0 && (
               <Text
                 style={[
@@ -459,7 +450,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
               ]}
             />
 
-            {/* ── MRP ─────────────────────────────────────────────────────── */}
+            {/* ── MRP ───────────────────────────────────────────────────── */}
             <SectionHeader icon="tag-outline" title="MRP" theme={theme} />
             <TextInput
               label="MRP"
@@ -477,7 +468,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
               ]}
             />
 
-            {/* ── PURCHASE PRICE SECTION ──────────────────────────────────── */}
+            {/* ── PURCHASE PRICE SECTION ────────────────────────────────── */}
             {purchase && (
               <>
                 <SectionHeader
@@ -486,7 +477,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
                   theme={theme}
                 />
 
-                {/* Purchase Price + Tax toggle */}
+                {/* Purchase Price + Tax inclusive toggle */}
                 <View style={styles.priceRow}>
                   <TextInput
                     label="Purchase Price"
@@ -505,6 +496,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
                     keyboardType="decimal-pad"
                     style={[styles.input, { flex: 1 }]}
                   />
+                  {/* isPurchaseTaxInclusive toggle */}
                   <TouchableOpacity
                     style={[
                       styles.taxBadge,
@@ -551,12 +543,14 @@ const PurchaseCartItemBottomSheet = forwardRef(
                         },
                       ]}
                     >
-                      {purchaseTaxOption?.label ?? 'No Tax'}
+                      {purchaseTaxOption?.id === 'with_tax'
+                        ? 'Tax Incl.'
+                        : 'No Tax'}
                     </Text>
                   </TouchableOpacity>
                 </View>
 
-                {/* Purchase Discount */}
+                {/* Purchase Discount — always 'amount' type (₹ per unit, ex-tax) */}
                 <View style={styles.discountRow}>
                   <ToggleButton.Row
                     value={discountType}
@@ -584,8 +578,8 @@ const PurchaseCartItemBottomSheet = forwardRef(
                   <TextInput
                     label={
                       discountType === 'percent'
-                        ? 'Discount (%)'
-                        : 'Discount (₹)'
+                        ? 'Purchase Discount (%)'
+                        : 'Purchase Discount (₹)'
                     }
                     value={discountValue}
                     onChangeText={val => setDiscountValue(clampDecimal(val))}
@@ -614,7 +608,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
                       { color: theme.colors.onSurfaceVariant },
                     ]}
                   >
-                    Purchase Tax Rate:
+                    Purchase GST Rate:
                   </Text>
                   <View style={styles.taxRateChips}>
                     {TAX_RATES.map(r => {
@@ -667,7 +661,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
                   </View>
                 </View>
 
-                {/* Price after discount */}
+                {/* Price after purchase discount */}
                 <InfoRow
                   label="Purchase Price (after discount)"
                   value={`₹ ${price.toFixed(2)}`}
@@ -683,7 +677,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
               </>
             )}
 
-            {/* ── SELLING PRICE SECTION ───────────────────────────────────── */}
+            {/* ── SELLING PRICE SECTION ─────────────────────────────────── */}
             <SectionHeader
               icon="tag-multiple-outline"
               title="Selling Price"
@@ -709,6 +703,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
                 keyboardType="decimal-pad"
                 style={[styles.input, { flex: 1 }]}
               />
+              {/* isTaxInclusive toggle (selling side) */}
               <TouchableOpacity
                 style={[
                   styles.taxBadge,
@@ -753,7 +748,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
                     },
                   ]}
                 >
-                  {taxOption?.label ?? 'No Tax'}
+                  {taxOption?.id === 'with_tax' ? 'Tax Incl.' : 'No Tax'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -884,6 +879,61 @@ const PurchaseCartItemBottomSheet = forwardRef(
               </>
             )}
 
+            {/* Selling Tax Rate chips (shown in both modes) */}
+            <View style={styles.taxRateRow}>
+              <Text
+                style={[
+                  styles.taxRateLabel,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
+              >
+                Selling GST Rate:
+              </Text>
+              <View style={styles.taxRateChips}>
+                {TAX_RATES.map(r => {
+                  const isSelected = r === 0 ? !taxRate : taxRate?.rate === r;
+                  return (
+                    <TouchableOpacity
+                      key={r}
+                      style={[
+                        styles.taxChip,
+                        {
+                          backgroundColor: isSelected
+                            ? theme.colors.primary
+                            : theme.colors.surfaceVariant,
+                          borderColor: isSelected
+                            ? theme.colors.primary
+                            : theme.colors.outline,
+                        },
+                      ]}
+                      onPress={() => {
+                        if (r === 0) {
+                          setTaxRate(null);
+                        } else {
+                          setTaxRate({ rate: r, label: `${r}% GST` });
+                          if (taxOption?.id !== 'with_tax') {
+                            setTaxOption(withTaxOption);
+                          }
+                        }
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 12,
+                          fontWeight: '600',
+                          color: isSelected
+                            ? theme.colors.onPrimary
+                            : theme.colors.onSurfaceVariant,
+                        }}
+                      >
+                        {r === 0 ? 'None' : `${r}%`}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+
             <Divider
               style={[
                 styles.divider,
@@ -906,19 +956,21 @@ const PurchaseCartItemBottomSheet = forwardRef(
               style={styles.input}
             />
 
-            {/* ── UPDATE ──────────────────────────────────────────────────── */}
+            {/* ── UPDATE ────────────────────────────────────────────────── */}
             <Button
               mode="contained"
               disabled={qtyNumber <= 0}
               style={styles.updateButton}
               contentStyle={styles.updateButtonContent}
               onPress={() => {
+                // Compute final purchase discount amount
                 const baseForDiscount = purchase ? purchasePrice : sellingPrice;
                 const discountAmount =
                   discountType === 'percent'
                     ? (baseForDiscount * discountNumeric) / 100
                     : discountNumeric;
 
+                // Compute final sell discount amount
                 const sellDiscNum = Number(sellDiscountValue) || 0;
                 const sellDiscountAmt =
                   sellDiscountType === 'percent'
@@ -927,31 +979,39 @@ const PurchaseCartItemBottomSheet = forwardRef(
 
                 onUpdate({
                   ...item,
-                  // ✅ Pass updated HSN code back to cart
                   hsn: hsnCodeText || item?.hsn || '',
-
                   mrp: Number(mrp) || 0,
+
+                  // Purchase side
                   price: purchase ? Number(purchasePrice) : Number(price),
+                  costPrice: purchase ? Number(purchasePrice) : undefined,
+
+                  // Selling side
                   sellingPrice: Number(sellingPrice),
+                  productOriginalPrice: Number(sellingPrice),
+
                   qty: qtyNumber,
 
+                  // Purchase discount (flat ₹ per unit, ex-tax)
                   ...(purchase && {
                     purchaseDiscount: parseFloat(discountAmount.toFixed(2)),
                   }),
-                  discountPrice: parseFloat(discountAmount.toFixed(2)),
+
+                  // Selling discount
+                  discountPrice: parseFloat(sellDiscountAmt.toFixed(2)),
                   discountPercent:
-                    discountType === 'percent' ? discountNumeric : 0,
-                  discountType,
+                    sellDiscountType === 'percent' ? sellDiscNum : 0,
+                  discountType: sellDiscountType,
+                  sellDiscount: parseFloat(sellDiscountAmt.toFixed(2)),
+                  sellDiscountType,
+                  sellDiscountPercent:
+                    sellDiscountType === 'percent' ? sellDiscNum : 0,
 
-                  ...(purchase && {
-                    sellDiscount: parseFloat(sellDiscountAmt.toFixed(2)),
-                    sellDiscountType,
-                    sellDiscountPercent:
-                      sellDiscountType === 'percent' ? sellDiscNum : 0,
-                  }),
-
+                  // Selling GST
                   gstRate: taxRate?.rate ?? 0,
                   isTaxInclusive: taxOption?.id === 'with_tax',
+
+                  // Purchase GST
                   purchaseGstRate: purchaseTaxRate?.rate ?? 0,
                   isPurchaseTaxInclusive: purchaseTaxOption?.id === 'with_tax',
                 });
@@ -962,7 +1022,6 @@ const PurchaseCartItemBottomSheet = forwardRef(
           </View>
         </BaseBottomSheet>
 
-        {/* ── HSN Selector Sheet (rendered outside main sheet) ─────────────── */}
         <HsnCodeSelectorBottomSheet
           ref={hsnSelectorSheet.bottomSheetRef}
           selectedHsnCode={selectedHsnCode}
@@ -974,7 +1033,6 @@ const PurchaseCartItemBottomSheet = forwardRef(
           refreshKey={hsnCodeRefreshKey}
         />
 
-        {/* ── HSN Create Sheet ──────────────────────────────────────────────── */}
         <AddHsnCodeBottomSheet
           ref={hsnCreateSheet.bottomSheetRef}
           onCreateHsnCode={handleHsnCodeCreated}
@@ -986,15 +1044,12 @@ const PurchaseCartItemBottomSheet = forwardRef(
 
 export default PurchaseCartItemBottomSheet;
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: 16,
     paddingBottom: 24,
     gap: 10,
   },
-
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1007,16 +1062,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.3,
   },
-
   divider: {
     marginVertical: 6,
   },
-
   input: {
     backgroundColor: 'transparent',
   },
-
-  // ── HSN row ──────────────────────────────────────────────────────────────
   hsnRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1042,13 +1093,11 @@ const styles = StyleSheet.create({
     marginTop: -4,
     marginLeft: 4,
   },
-
   priceRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-
   taxBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1064,13 +1113,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-
   discountRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
-
   taxRateRow: {
     gap: 6,
   },
@@ -1089,7 +1136,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     borderWidth: 1,
   },
-
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1105,7 +1151,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-
   updateButton: {
     marginTop: 6,
     borderRadius: 10,

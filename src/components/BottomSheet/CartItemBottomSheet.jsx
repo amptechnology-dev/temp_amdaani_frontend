@@ -13,6 +13,8 @@ import BaseBottomSheet from './BaseBottomSheet';
 const CartItemBottomSheet = forwardRef(({ item, onUpdate, purchase }, ref) => {
   const theme = useTheme();
 
+  console.log('itms--->', item);
+
   const initialSellingPrice = purchase
     ? Number(item?.productOriginalPrice ?? item?.sellingPrice ?? 0)
     : Number(item?.sellingPrice ?? item?.price ?? 0);
@@ -50,20 +52,32 @@ const CartItemBottomSheet = forwardRef(({ item, onUpdate, purchase }, ref) => {
       ? Number(item?.price ?? item?.lastPurchasePrice ?? item?.costPrice ?? 0)
       : Number(item?.sellingPrice ?? item?.price ?? 0);
     const flat = Number(item?.discountPrice ?? item?.discount ?? 0);
-    const pct = Number(item?.discountPercent ?? 0);
+    // FIX: read discountPercentage first (API field), fallback to discountPercent
+    const pct = Number(item?.discountPercentage ?? item?.discountPercent ?? 0);
+    const type = item?.discountType ?? 'amount';
 
-    return pct > 0
-      ? Math.max(0, base - (base * pct) / 100)
-      : Math.max(0, base - flat);
+    if (type === 'percentage' || type === 'percent') {
+      return Math.max(0, base - (base * pct) / 100);
+    }
+    return Math.max(0, base - flat);
   });
 
+  const normaliseDiscountType = raw => {
+    if (raw === 'percentage' || raw === 'percent') return 'percent';
+    return 'amount';
+  };
+
   const [discountType, setDiscountType] = useState(
-    item?.discountType || (item?.discountPercent ? 'percent' : 'amount'),
+    normaliseDiscountType(item?.discountType),
   );
 
   const [discountValue, setDiscountValue] = useState(() => {
-    if (item?.discountType === 'percent')
-      return String(item?.discountPercent ?? 0);
+    if (!item) return '0';
+    // API sends 'percentage', UI toggle uses 'percent' — normalise both
+    const type = item?.discountType ?? 'amount';
+    if (type === 'percentage' || type === 'percent') {
+      return String(item?.discountPercentage ?? item?.discountPercent ?? 0);
+    }
     return String(item?.discountPrice ?? item?.discount ?? 0);
   });
 
@@ -86,9 +100,11 @@ const CartItemBottomSheet = forwardRef(({ item, onUpdate, purchase }, ref) => {
       );
     }
 
-    const base = item?.price ?? item?.sellingPrice ?? 0;
+    const base = Number(item?.sellingPrice ?? item?.price ?? 0);
     const flat = Number(item?.discountPrice ?? item?.discount ?? 0);
-    const pct = Number(item?.discountPercent ?? 0);
+
+    // FIX: read discountPercentage (API field) not discountPercent
+    const pct = Number(item?.discountPercentage ?? item?.discountPercent ?? 0);
 
     setQtyInput(String(item.qty || 1));
 
@@ -97,16 +113,18 @@ const CartItemBottomSheet = forwardRef(({ item, onUpdate, purchase }, ref) => {
       setDiscountValue('0');
       setPrice(base);
     } else {
-      setDiscountType(item?.discountType || (pct > 0 ? 'percent' : 'amount'));
-      setDiscountValue(
-        item?.discountType === 'percent' ? String(pct) : String(flat),
-      );
+      // FIX: normalise 'percentage' → 'percent' for ToggleButton
+      const normType = normaliseDiscountType(item?.discountType);
+      setDiscountType(normType);
 
-      setPrice(
-        pct > 0
-          ? Math.max(0, base - (base * pct) / 100)
-          : Math.max(0, base - flat),
-      );
+      // FIX: if percentage, show the % number; if amount, show the ₹ number
+      if (normType === 'percent') {
+        setDiscountValue(String(pct));
+        setPrice(Math.max(0, base - (base * pct) / 100));
+      } else {
+        setDiscountValue(String(flat));
+        setPrice(Math.max(0, base - flat));
+      }
     }
   }, [item]);
 
@@ -198,17 +216,18 @@ const CartItemBottomSheet = forwardRef(({ item, onUpdate, purchase }, ref) => {
           mode="contained"
           disabled={qtyNumber <= 0}
           onPress={() => {
+            const isPercent = discountType === 'percent';
             onUpdate({
               ...item,
               price: Number(price),
               sellingPrice: Number(sellingPrice),
               qty: qtyNumber,
-              discountPrice:
-                discountType === 'percent'
-                  ? (sellingPrice * discountNumeric) / 100
-                  : discountNumeric,
-              discountPercent: discountType === 'percent' ? discountNumeric : 0,
-              discountType,
+              discountPrice: isPercent
+                ? (sellingPrice * discountNumeric) / 100 // computed flat ₹
+                : discountNumeric,
+              discountPercent: isPercent ? discountNumeric : 0,
+              discountPercentage: isPercent ? discountNumeric : 0, // ← ADD: matches API field name
+              discountType: isPercent ? 'percentage' : 'amount', // ← normalise back to API format
             });
           }}
         >

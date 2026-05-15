@@ -76,13 +76,24 @@ const validationSchema = Yup.object().shape({
     .min(0, 'Discount price cannot be negative')
     .typeError('Discount must be a valid number'),
   selectedDiscountType: Yup.object().nullable(),
+  discountType: Yup.string().oneOf(['percentage', 'amount']),
+  discountPercentage: Yup.number()
+    .typeError('Discount percentage must be a number')
+    .min(0, 'Discount percentage cannot be negative')
+    .max(100, 'Discount percentage cannot be more than 100'),
+  purchaseDiscountType: Yup.string().oneOf(['percentage', 'amount']),
+  purchaseDiscountPercentage: Yup.number()
+    .typeError('Purchase discount percentage must be a number')
+    .min(0, 'Purchase discount percentage cannot be negative')
+    .max(100, 'Purchase discount percentage cannot be more than 100'),
 });
 
 const AddItem = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const itemToEdit = route.params?.item || null;
-  // console.log('item log:', itemToEdit);
+
+  console.log('item log:', itemToEdit);
 
   const isEditMode = Boolean(itemToEdit);
   const { authState, isStockEnabled, hasPermission } = useAuth();
@@ -91,8 +102,7 @@ const AddItem = () => {
 
   const theme = useTheme();
   const formikRef = useRef(null);
-
-
+  const [serverError, setServerError] = useState(null);
 
   // Bottom Sheet Hooks
   const unitSheet = useBottomSheet();
@@ -213,40 +223,82 @@ const AddItem = () => {
       ? mapCategoryFromItem(itemToEdit.category)
       : null;
 
-    // Tax option (with/without) comes directly from isTaxInclusive
     const taxOption = itemToEdit?.isTaxInclusive
       ? {
-        id: 'with_tax',
-        label: 'With Tax',
-        description: 'Price includes/applies tax',
-        icon: 'check-decagram',
-      }
+          id: 'with_tax',
+          label: 'With Tax',
+          description: 'Price includes/applies tax',
+          icon: 'check-decagram',
+        }
       : defaultTaxOption;
 
-    // Tax rate comes directly from gstRate
     const taxRate =
       itemToEdit?.gstRate && Number(itemToEdit.gstRate) > 0
         ? {
-          rate: Number(itemToEdit.gstRate),
-          label: `${itemToEdit.gstRate}% GST`,
-        }
+            rate: Number(itemToEdit.gstRate),
+            label: `${itemToEdit.gstRate}% GST`,
+          }
         : null;
 
+    // ── Selling discount prefill ───────────────────────────────────────────────
+    const savedDiscountType = itemToEdit?.discountType ?? 'amount';
+    const savedDiscountPercentage = Number(itemToEdit?.discountPercentage ?? 0);
+    const savedDiscountPrice = Number(itemToEdit?.discountPrice ?? 0);
+
+    // If type is 'percentage', show the percentage number in the input (e.g. "10")
+    // If type is 'amount', show the flat ₹ discount (e.g. "50")
+    const discountPriceDisplay =
+      savedDiscountType === 'percentage'
+        ? savedDiscountPercentage > 0
+          ? String(savedDiscountPercentage)
+          : ''
+        : savedDiscountPrice > 0
+        ? String(savedDiscountPrice)
+        : '';
+
+    // selectedDiscountType object must match the saved discountType string
+    const selectedDiscountType =
+      savedDiscountType === 'percentage'
+        ? {
+            id: 'percentage',
+            label: 'Percentage',
+            icon: 'percent',
+            symbol: '%',
+          }
+        : defaultDiscountType; // id: 'amount'
+
+    // ── Purchase discount prefill ─────────────────────────────────────────────
+    const savedPurchaseDiscountType =
+      itemToEdit?.purchaseDiscountType ?? 'amount';
+    const savedPurchaseDiscountPercentage = Number(
+      itemToEdit?.purchaseDiscountPercentage ?? 0,
+    );
+
     return {
+      // FIX: use sellingPrice (API field) with fallback to price
       itemName: itemToEdit?.name || '',
       itemCode: itemToEdit?.sku || '',
       hsnCode: itemToEdit?.hsn || '',
-      salesPrice: itemToEdit?.price ? String(itemToEdit.price) : '',
+      salesPrice: itemToEdit?.sellingPrice
+        ? String(itemToEdit.sellingPrice)
+        : itemToEdit?.price
+        ? String(itemToEdit.price)
+        : '',
       purchasePrice: itemToEdit?.costPrice ? String(itemToEdit.costPrice) : '',
       selectedUnit: unitMapped,
       selectedCategory: categoryMapped,
-      selectedTaxOption: taxOption, // ✅ directly from isTaxInclusive
-      selectedTaxRate: taxRate, // ✅ directly from gstRate
-      discountPrice:
-        itemToEdit?.discountPrice != null && itemToEdit.discountPrice !== ''
-          ? String(itemToEdit.discountPrice)
-          : '',
-      selectedDiscountType: defaultDiscountType,
+      selectedTaxOption: taxOption,
+      selectedTaxRate: taxRate,
+
+      // discount input shows percentage number OR flat amount depending on type
+      discountPrice: discountPriceDisplay,
+      selectedDiscountType, // ← object in sync with discountType string below
+
+      // 4 raw fields sent to API
+      discountType: savedDiscountType,
+      discountPercentage: savedDiscountPercentage,
+      purchaseDiscountType: savedPurchaseDiscountType,
+      purchaseDiscountPercentage: savedPurchaseDiscountPercentage,
     };
   }, [
     itemToEdit,
@@ -356,18 +408,44 @@ const AddItem = () => {
   };
 
   // Submit Form (Create or Update)
-  const handleSubmitForm = async (values, { resetForm, setSubmitting }) => {
+  const handleSubmitForm = async (
+    values,
+    { resetForm, setSubmitting, setErrors },
+  ) => {
     try {
       setIsTransitioning(true);
-      let discountValue = 0;
+      setServerError(null);
+
       const salesPrice = Number(values.salesPrice) || 0;
+      const purchasePrice = Number(values.purchasePrice) || 0;
       const inputDiscount = Number(values.discountPrice) || 0;
 
-      if (values.selectedDiscountType?.id === 'percentage') {
-        discountValue = (salesPrice * inputDiscount) / 100;
+      // FIX: always derive discountTypeId from selectedDiscountType object
+      // because that's what the UI controls — discountType string is derived from it
+      const discountTypeId = values.selectedDiscountType?.id ?? 'amount';
+
+      // ── Selling discount calculations ──────────────────────────────────────
+      let discountValue = 0;
+      let discountPercentage = 0;
+
+      if (discountTypeId === 'percentage') {
+        discountPercentage = inputDiscount; // user typed "10" → 10%
+        discountValue = parseFloat(
+          ((salesPrice * inputDiscount) / 100).toFixed(2),
+        ); // computed flat ₹
       } else {
-        discountValue = inputDiscount;
+        discountValue = inputDiscount; // user typed flat ₹
+        discountPercentage =
+          salesPrice > 0
+            ? parseFloat(((inputDiscount / salesPrice) * 100).toFixed(4))
+            : 0;
       }
+
+      // ── Purchase discount ──────────────────────────────────────────────────
+      const purchaseDiscountType = values.purchaseDiscountType ?? 'amount';
+      const purchaseDiscountPercentage =
+        Number(values.purchaseDiscountPercentage) || 0;
+
       const payload = {
         name: values.itemName,
         unit: values.selectedUnit?.name || values.selectedUnit || '',
@@ -375,14 +453,20 @@ const AddItem = () => {
           values.selectedCategory?._id || values.selectedCategory?.id || '',
         sku: values.itemCode,
         hsn: values.hsnCode,
-        sellingPrice: Number(values.salesPrice) || 0,
-        costPrice: Number(values.purchasePrice) || 0,
+        sellingPrice: salesPrice,
+        costPrice: purchasePrice,
+
         discountPrice: discountValue,
+        discountType: discountTypeId,
+        discountPercentage: discountPercentage,
+
+        purchaseDiscountType,
+        purchaseDiscountPercentage,
+
         gstRate: Number(values.selectedTaxRate?.rate) || 0,
         isTaxInclusive: values.selectedTaxOption?.id === 'with_tax',
       };
 
-      // console.log('payload', payload);
       if (isEditMode) {
         const id = itemToEdit.id || itemToEdit._id;
         await api.put(`/product/id/${id}`, payload);
@@ -393,24 +477,29 @@ const AddItem = () => {
           text2: 'Item updated successfully!',
         });
 
-        // Reset form with latest payload instead of old values
         resetForm({
           values: {
             itemName: payload.name,
             itemCode: payload.sku,
             hsnCode: payload.hsn,
             salesPrice: String(payload.sellingPrice),
+            purchasePrice: String(payload.costPrice),
             selectedUnit: values.selectedUnit,
             selectedCategory: values.selectedCategory,
             selectedTaxOption: values.selectedTaxOption,
             selectedTaxRate: values.selectedTaxRate,
-            discountPrice: String(payload.discountPrice),
+            // FIX: after save, input should still show what user typed
+            // (percentage number if type=percentage, flat if type=amount)
+            discountPrice: inputDiscount > 0 ? String(inputDiscount) : '',
             selectedDiscountType: values.selectedDiscountType,
+            discountType: discountTypeId,
+            discountPercentage: discountPercentage,
+            purchaseDiscountType,
+            purchaseDiscountPercentage,
           },
         });
       } else {
         const response = await api.post('/product', payload);
-        // // console.log("product adding",response)
         const newItem = response.data;
 
         Toast.show({
@@ -427,15 +516,41 @@ const AddItem = () => {
           navigation.pop();
         }
 
-        resetForm(); // Add mode can stay as full reset
+        resetForm();
       }
     } catch (error) {
-      // console.log('Error:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Failed',
-        text2: error.message || 'An error occurred while saving the item.',
-      });
+      const message =
+        error?.message || 'An error occurred while saving the item.';
+      const isDuplicate =
+        message.toLowerCase().includes('already exists') ||
+        message.toLowerCase().includes('duplicate') ||
+        error?.status === 409 ||
+        error?.code === 11000;
+
+      setServerError(message);
+
+      if (isDuplicate) {
+        setErrors({
+          itemName: 'An item with this name already exists',
+          salesPrice: ' ',
+          selectedUnit: ' ',
+          selectedTaxOption: ' ',
+        });
+      } else {
+        setErrors({
+          itemName: ' ',
+          salesPrice: ' ',
+          selectedUnit: ' ',
+          selectedCategory: ' ',
+          selectedTaxOption: ' ',
+          selectedTaxRate: ' ',
+          discountPrice: ' ',
+          purchasePrice: ' ',
+          hsnCode: ' ',
+        });
+      }
+
+      Toast.show({ type: 'error', text1: 'Failed', text2: message });
     } finally {
       setSubmitting(false);
       setIsTransitioning(false);
@@ -1287,7 +1402,7 @@ const AddItem = () => {
                 <AddHsnCodeBottomSheet
                   ref={addHsnSheet.bottomSheetRef}
                   onCreateHsnCode={handleCreateHsnCode}
-                // Optionally support update/actions as well
+                  // Optionally support update/actions as well
                 />
                 <TaxRateSelectorBottomSheet
                   ref={taxRateSheet.bottomSheetRef}
@@ -1334,18 +1449,45 @@ const AddItem = () => {
                 <DiscountTypeSelectorBottomSheet
                   ref={discountTypeSheet.bottomSheetRef}
                   selectedDiscountType={values.selectedDiscountType}
-                  onDiscountTypeSelect={type =>
-                    handleSelect({
-                      field: 'selectedDiscountType',
-                      value: type,
-                      helpers: {
-                        setFieldValue,
-                        setFieldTouched,
-                        setFieldError,
-                      },
-                      closeFn: discountTypeSheet.close,
-                    })
-                  }
+                  onDiscountTypeSelect={type => {
+                    // Convert existing discount input value when switching types
+                    const currentInput = Number(values.discountPrice) || 0;
+                    const salesPrice = Number(values.salesPrice) || 0;
+                    let convertedInput = currentInput;
+
+                    if (
+                      type.id === 'percentage' &&
+                      values.selectedDiscountType?.id === 'amount'
+                    ) {
+                      // switching amount → percentage: convert ₹ to %
+                      convertedInput =
+                        salesPrice > 0
+                          ? parseFloat(
+                              ((currentInput / salesPrice) * 100).toFixed(2),
+                            )
+                          : 0;
+                    } else if (
+                      type.id === 'amount' &&
+                      values.selectedDiscountType?.id === 'percentage'
+                    ) {
+                      // switching percentage → amount: convert % to ₹
+                      convertedInput = parseFloat(
+                        ((salesPrice * currentInput) / 100).toFixed(2),
+                      );
+                    }
+
+                    setFieldValue('selectedDiscountType', type);
+                    setFieldValue('discountType', type.id); // ← keep string in sync
+                    setFieldValue(
+                      'discountPrice',
+                      convertedInput > 0 ? String(convertedInput) : '',
+                    );
+                    setTimeout(() => {
+                      setFieldTouched('selectedDiscountType', true);
+                      setFieldError('selectedDiscountType', undefined);
+                    }, 0);
+                    discountTypeSheet.close();
+                  }}
                 />
                 <TaxRateSelectorBottomSheet
                   ref={taxRateSheet.bottomSheetRef}

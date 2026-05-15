@@ -43,7 +43,6 @@ import {
   useRoute,
 } from '@react-navigation/native';
 import { useAuth, permissions } from '../../context/AuthContext';
-import { generateInvoiceHTML } from '../../utils/invoiceTemplate';
 import api from '../../utils/api';
 import Toast from 'react-native-toast-message';
 import { FlatList, TouchableOpacity, Animated, Pressable } from 'react-native';
@@ -64,6 +63,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import InvoiceSummaryBox from '../../components/InvoiceSummaryBox';
 import PurchaseInviceItemCard from '../../components/purchaseInviceItemCard';
 import PurchaseSummaryBox from '../../components/purchaseSummaryBox';
+
+import { generatePurchaseHTML } from '../../utils/purchaseTemplate';
 
 Sound.setCategory('Ambient', true);
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
@@ -112,6 +113,7 @@ export default function Purchase() {
     hasPermission,
   } = useAuth();
   const storedata = authState?.user?.store;
+  const [afterStoredata, setAfterStoredata] = useState({});
   const [permissionDenied, setPermissionDenied] = useState(false);
 
   useEffect(() => {
@@ -167,7 +169,6 @@ export default function Purchase() {
   const [isMobileFocused, setIsMobileFocused] = useState(false);
   const [isNameFocused, setIsNameFocused] = useState(false);
 
-  // Responsive FAB helpers: safe-area, window dimensions and keyboard handling
   const insets = useSafeAreaInsets();
   const windowDims = useWindowDimensions();
   const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -176,11 +177,9 @@ export default function Purchase() {
   const [paymentNote, setPaymentNote] = useState('');
   const paymentSheetRef = React.useRef(null);
 
-  // At top of NewSale.jsx state section
   const [paidAmount, setPaidAmount] = React.useState(0);
   const [paidAmountText, setPaidAmountText] = React.useState('');
 
-  // Keep paidAmount in sync with computed grand total by default (only when user hasn’t overridden)
   const hasUserEditedPaid = React.useRef(false);
 
   const webViewRef = React.useRef(null);
@@ -209,7 +208,6 @@ export default function Purchase() {
     smoothZoom(newZoom);
   };
 
-  // Payment method options
   const paymentMethodOptions = [
     { label: 'Cash', value: 'cash', icon: 'cash' },
     { label: 'UPI', value: 'upi', icon: 'qrcode-scan' },
@@ -223,7 +221,6 @@ export default function Purchase() {
       if (paidAmount === 0) {
         setPaidAmountText('');
       } else {
-        // ✅ Always show exactly 2 decimal places, no floating point artifacts
         setPaidAmountText(parseFloat(paidAmount.toFixed(2)).toString());
       }
     }
@@ -243,15 +240,13 @@ export default function Purchase() {
     };
   }, []);
 
-  // Helper to compute FAB bottom position (respects keyboard and safe-area)
   const computeFabBottom = offset =>
     keyboardHeight
       ? keyboardHeight + insets.bottom + offset
       : insets.bottom + offset;
 
-  // Responsive offsets (percentages of screen height)
-  const pencilOffset = Math.round(windowDims.height * 0.005); // ~8% from bottom
-  const discountOffset = Math.round(windowDims.height * 0.065); // ~16% from bottom
+  const pencilOffset = Math.round(windowDims.height * 0.005);
+  const discountOffset = Math.round(windowDims.height * 0.065);
   const fabRight = Math.max(12, Math.round(windowDims.width * 0.03));
 
   const [showDropdown, setShowDropdown] = useState(false);
@@ -282,12 +277,10 @@ export default function Purchase() {
       country: data.country || '',
       postalCode: data.postalCode || '',
     });
-    // Sheet closes itself in its own handleSave after calling onSave
   };
 
   const shouldShowBackAlert = () => {
     const fv = formikRef.current?.values || {};
-    // show alert if invoice is loaded or any customer info entered
     const hasCustomerInfo =
       fv.vendorName?.trim()?.length > 0 ||
       fv.vendorNumber?.trim()?.length > 0 ||
@@ -299,12 +292,10 @@ export default function Purchase() {
 
   const [cartItems, setCartItems] = useState([]);
 
-  // console.log("cart: ", cartItems)
   const [showPreview, setShowPreview] = useState(false);
   const [invoiceKind, setInvoiceKind] = useState(
     storedata?.gstNumber ? 'gst' : 'non-gst',
   );
-  // If vendor has no GST → force NON-GST
   const vendorHasGst = !!(
     formikRef.current?.values?.gstNumber || selectedCustomer?.gstNumber
   );
@@ -360,7 +351,6 @@ export default function Purchase() {
   useFocusEffect(
     React.useCallback(() => {
       const onBackPress = () => {
-        // ✅ Use same cancel alert style
         if (
           invoiceLoaded &&
           showPreview &&
@@ -386,7 +376,7 @@ export default function Purchase() {
             'warning',
           );
 
-          return true; // prevent immediate navigation
+          return true;
         } else {
           navigation.goBack();
           return true;
@@ -403,7 +393,6 @@ export default function Purchase() {
   useFocusEffect(
     React.useCallback(() => {
       const onFocus = async () => {
-        // 👇 Re-fetch subscription each time user enters NewSale
         await fetchSubscription();
       };
 
@@ -413,41 +402,34 @@ export default function Purchase() {
 
         setTimeout(() => {
           setLoadingPurchaseNo(false);
-        }, 600); // smooth effect
+        }, 600);
       }
-      // const num = getNextPurchaseNumber();
-      // setNextPurchaseNo(num);
+      fetchStoreSnapshotForPreview();
       fetchCustomers();
 
-      // Optional cleanup
       return () => {};
     }, [isEditMode]),
   );
 
-  // const fetchLastInvoice = async () => {
-  //     try {
-  //         const res = await api.get('/invoice/last');
-  //         const prefix = storedata?.settings?.invoicePrefix || 'INV';
-  //         const startNo = storedata?.settings?.invoiceStartNumber || 1;
-  //         const currentFY = getFinancialYear();
-
-  //         if (res?.success && res?.data?.invoiceNumber) {
-  //             // Increment from last invoice
-  //             const newInvoice = incrementInvoiceNumber(res.data.invoiceNumber);
-  //             setNextInvoiceNo(newInvoice);
-  //             // console.log('Next Invoice:', newInvoice);
-  //         } else {
-  //             // No invoice found → start fresh
-  //             setNextInvoiceNo(`${prefix}-${currentFY}-${startNo}`);
-  //         }
-  //     } catch (err) {
-  //         // console.error('Failed to fetch last invoice:', err);
-  //         const prefix = storedata?.settings?.invoicePrefix || 'INV';
-  //         const startNo = storedata?.settings?.invoiceStartNumber || 1;
-  //         const currentFY = getFinancialYear();
-  //         setNextInvoiceNo(`${prefix}-${currentFY}-${startNo}`);
-  //     }
-  // };
+  const fetchStoreSnapshotForPreview = async () => {
+    try {
+      const res = await api.get('/invoice/last');
+      if (res?.success && res?.data) {
+        setAfterStoredata({
+          address: res.data?.address,
+          bankDetails: res.data?.bankDetails,
+          name: res.data?.name,
+          settings: res.data?.settings,
+          contactNo: res.data?.contactNo,
+          logoUrl: res.data?.logoUrl,
+          gstNumber: res.data?.gstNumber,
+          signatureUrl: res.data?.signatureUrl,
+        });
+      }
+    } catch {
+      // Preview falls back to auth `storedata`
+    }
+  };
 
   const fetchCustomers = async () => {
     try {
@@ -470,7 +452,7 @@ export default function Purchase() {
 
   function getFinancialYear(date = new Date()) {
     const year = date.getFullYear();
-    const month = date.getMonth() + 1; // Jan=0
+    const month = date.getMonth() + 1;
     if (month >= 4) {
       return `${String(year).slice(-2)}${String(year + 1).slice(-2)}`;
     } else {
@@ -478,20 +460,17 @@ export default function Purchase() {
     }
   }
 
-  // UTIL — Generate a unique incremental purchase number with fallback randomness
   async function getNextPurchaseNumber() {
     try {
       const key = 'LAST_PURCHASE_NUMBER';
       let last = await AsyncStorage.getItem(key);
 
       if (!last) {
-        // Set base if not found
         const base = `PUR-${Date.now()}-1`;
         await AsyncStorage.setItem(key, base);
         return base;
       }
 
-      // Parse last number
       const parts = last.split('-');
       const prefix = parts[0];
       const timestamp = parts[1];
@@ -504,26 +483,10 @@ export default function Purchase() {
 
       return newNum;
     } catch (e) {
-      // Fallback unique ID
       return `PUR-${Date.now()}-${Math.floor(Math.random() * 9999)}`;
     }
   }
 
-  // function incrementInvoiceNumber(currentInvoiceNo) {
-  //     const { prefix, financialYear, sequentialNo } =
-  //         parseInvoiceNumber(currentInvoiceNo);
-  //     const currentFY = getFinancialYear();
-
-  //     // If financial year changed → reset to 1
-  //     if (financialYear !== currentFY) {
-  //         return `${prefix}-${currentFY}-1`;
-  //     }
-
-  //     // Else increment sequence
-  //     return `${prefix}-${financialYear}-${sequentialNo + 1}`;
-  // }
-
-  // Search filter
   const debouncedSearch = useMemo(
     () =>
       debounce((mobileQ, nameQ) => {
@@ -546,7 +509,6 @@ export default function Purchase() {
                   .replace(/\D/g, '')
                   .includes(m.replace(/\D/g, ''))
               : true;
-            // If both queries present, require BOTH to match (AND). If only one present, match that one.
             if (n && m) return nameMatch && mobileMatch;
             if (n) return nameMatch;
             return mobileMatch;
@@ -558,9 +520,7 @@ export default function Purchase() {
 
   const handleMobileChange = text => {
     setMobileQuery(text);
-    // Keep Formik vendorNumber in sync
     formikRef.current?.setFieldValue?.('vendorNumber', text);
-    // If user edits mobile after selecting customer, clear selectedCustomer
     if (selectedCustomer && text !== selectedCustomer.mobile) {
       setSelectedCustomer(null);
     }
@@ -569,7 +529,6 @@ export default function Purchase() {
 
   const handleNameChange = text => {
     setNameQuery(text);
-    // Keep Formik vendorName in sync
     formikRef.current?.setFieldValue?.('vendorName', text);
     if (selectedCustomer && text !== selectedCustomer.name) {
       setSelectedCustomer(null);
@@ -585,7 +544,6 @@ export default function Purchase() {
     setSelectedCustomer(null);
     setFilteredCustomers(vendors);
 
-    // ✅ Reset amount to full paid (net total) and lock it
     setPaidAmount(invoiceCalculations?.netTotal || 0);
     hasUserEditedPaid.current = false;
   };
@@ -594,7 +552,6 @@ export default function Purchase() {
     if (input === 'mobile') setIsMobileFocused(true);
     if (input === 'name') setIsNameFocused(true);
 
-    // Show dropdown if not already visible
     if (!showDropdown) {
       setShowDropdown(true);
       Animated.timing(dropdownAnim, {
@@ -609,7 +566,6 @@ export default function Purchase() {
     if (input === 'mobile') setIsMobileFocused(false);
     if (input === 'name') setIsNameFocused(false);
 
-    // Wait briefly to allow switching between inputs
     setTimeout(() => {
       if (!isMobileFocused && !isNameFocused) {
         setShowDropdown(false);
@@ -641,12 +597,11 @@ export default function Purchase() {
       <Switch
         value={isGstInvoice}
         onValueChange={val => {
-          // Only allow toggle if gstNumber exists
           if (storedata?.gstNumber) {
             setInvoiceKind(val ? 'gst' : 'non-gst');
           }
         }}
-        disabled={!storedata?.gstNumber} // disable switch if no gstNumber
+        disabled={!storedata?.gstNumber}
         thumbColor={isGstInvoice ? theme.colors.primary : theme.colors.outline}
         trackColor={{
           true: theme.colors.primary + '60',
@@ -679,7 +634,6 @@ export default function Purchase() {
       >
         <View style={{ flex: 1, paddingHorizontal: 16 }}>
           <View style={styles.dropdownItemContent}>
-            {/* Left Icon */}
             <View style={styles.iconContainer}>
               <TextInput.Icon
                 icon="account-circle"
@@ -688,7 +642,6 @@ export default function Purchase() {
               />
             </View>
 
-            {/* Customer Info */}
             <View style={styles.customerInfo}>
               {item.name && (
                 <Text variant="titleMedium" style={styles.customerName}>
@@ -725,11 +678,9 @@ export default function Purchase() {
   useEffect(() => {
     if (isEditMode && existingPurchase?.invoiceNumber) {
       setManualPurchaseNo(existingPurchase.invoiceNumber);
-      setIsEditingPurchaseNo(true); // allow editing like add mode
+      setIsEditingPurchaseNo(true);
     }
   }, [isEditMode, existingPurchase]);
-
-  // // console.log("Cart data",cartItems);
 
   useEffect(() => {
     const loadInvoiceDetails = async () => {
@@ -741,21 +692,21 @@ export default function Purchase() {
           if (res?.success && res?.data) {
             const fullInvoice = res.data;
 
-            // Normalize items using PURCHASE-SPECIFIC keys for calculations
             const normalizedItems = (fullInvoice.items || []).map(item => ({
               ...item,
-              // Purchase-specific keys (required by invoiceCalculations)
               costPrice: Number(item.costPrice ?? item.rate ?? item.price ?? 0),
               purchaseDiscount: Number(
                 item.purchaseDiscount ?? item.discount ?? 0,
               ),
+              price: Number(item.costPrice ?? item.rate ?? item.price ?? 0), // ✅ ADD
+              sellingPrice: Number(item.sellingPrice ?? 0), // ✅ ADD
+              productOriginalPrice: Number(item.sellingPrice ?? 0),
               purchaseGstRate: Number(
                 item.purchaseGstRate ?? item.gstRate ?? 0,
               ),
               isPurchaseTaxInclusive: Boolean(
                 item.isPurchaseTaxInclusive ?? item.isTaxInclusive ?? false,
               ),
-              // Standard keys
               qty: Number(item.quantity ?? item.qty ?? 0),
               gstRate: Number(item.purchaseGstRate ?? item.gstRate ?? 0),
               isTaxInclusive: Boolean(
@@ -766,6 +717,11 @@ export default function Purchase() {
               unit: item.unit ?? 'Piece',
               total: Number(item.total ?? 0),
               _id: item._id || item.product,
+              sellDiscount: Number(
+                item.sellDiscount ?? item.sellingDiscount ?? 0,
+              ),
+              sellDiscountType: item.sellDiscountType || 'amount',
+              sellDiscountPercent: Number(item.sellDiscountPercent ?? 0),
               productId: item.product,
             }));
 
@@ -778,7 +734,6 @@ export default function Purchase() {
               gstNumber: fullInvoice.vendorGstNumber || '',
             });
 
-            // Load payment details from existing purchase
             setPurchaseDate(new Date(fullInvoice.date));
             const loadedPaid = parseFloat(
               Number(fullInvoice.amountPaid ?? 0).toFixed(2),
@@ -816,11 +771,13 @@ export default function Purchase() {
     );
     if (!hasUserEditedPaid.current) {
       setPaidAmount(gt);
-      setPaidAmountText(gt === 0 ? '' : gt.toFixed(2)); // ✅ sync display too
+      setPaidAmountText(gt === 0 ? '' : gt.toFixed(2));
     }
   }, [
     invoiceCalculations?.netTotalExclusiveOnly,
     invoiceCalculations?.netTotal,
+    invoiceCalculations?.roundedTotal,
+    discount,
   ]);
 
   const now = new Date();
@@ -849,9 +806,10 @@ export default function Purchase() {
       const purchaseDiscount = Number(item.purchaseDiscount ?? 0);
       const netRate = Math.max(0, rawCostPrice - purchaseDiscount);
       const mrp = item.mrp;
-
+      const sellingDiscount = Number(item.sellDiscount ?? 0);
       const gstRate = Number(item.purchaseGstRate || 0);
-      const isTaxInclusive = Boolean(item.isPurchaseTaxInclusive);
+      const isPurchaseTaxInclusive = Boolean(item.isPurchaseTaxInclusive);
+      const isTaxInclusive = Boolean(item.isTaxInclusive);
 
       let baseRate = 0;
       let taxableValue = 0;
@@ -871,11 +829,9 @@ export default function Purchase() {
       }
 
       subtotal += taxableValue;
-      totalTax += gstAmount; // ✅ always accumulate tax regardless of vendor GST status
+      totalTax += gstAmount;
 
-      // GST breakdown — only for display purposes when isGstInvoice
       if (isGstInvoice && gstRate > 0) {
-        // ✅ removed vendorHasGst gate
         const cgstAmount = isIgst ? 0 : gstAmount / 2;
         const sgstAmount = isIgst ? 0 : gstAmount / 2;
         const igstAmount = isIgst ? gstAmount : 0;
@@ -901,9 +857,10 @@ export default function Purchase() {
         price: rawCostPrice,
         costPrice: rawCostPrice,
         purchaseDiscount,
+        sellingDiscount,
         gstRate,
         isTaxInclusive,
-        isPurchaseTaxInclusive: isTaxInclusive,
+        isPurchaseTaxInclusive: isPurchaseTaxInclusive,
         baseRate,
         taxableValue,
         gstAmount,
@@ -942,19 +899,17 @@ export default function Purchase() {
       netTotal,
       netTotalExclusiveOnly,
       roundOff,
-      totalTax, // ✅ always return real tax amount
+      totalTax,
       grandTotal: grandTotalRaw,
       roundedTotal,
       grandTotalRaw,
       discountTotal: Number(invoiceDiscountTotal.toFixed(2)),
       totalQuantity,
       itemCount: computedItems.length,
-      gstBreakdown: isGstInvoice ? gstBreakdown : {}, // breakdown only for GST invoices
+      gstBreakdown: isGstInvoice ? gstBreakdown : {},
       computedItems,
     };
   }, [cartItems, isGstInvoice, vendorHasGst, discount, isIgst]);
-
-  // console.log("computedItems", invoiceCalculations?.computedItems)
 
   React.useEffect(() => {
     const gt = parseFloat(
@@ -964,15 +919,11 @@ export default function Purchase() {
     );
     if (!hasUserEditedPaid.current) {
       setPaidAmount(gt);
-      setPaidAmountText(gt === 0 ? '' : gt.toFixed(2)); // ✅ sync display too
+      setPaidAmountText(gt === 0 ? '' : gt.toFixed(2));
     }
   }, [cartItems]);
 
-  // Derived payment info
   const payment = React.useMemo(() => {
-    // isPurchaseTaxInclusive: true  → show WITHOUT tax (base value only)
-    // isPurchaseTaxInclusive: false → show WITH tax (GST added on top)
-    // Mixed cart: each item handled individually in netTotalExclusiveOnly
     const grandTotal = Number(
       invoiceCalculations?.roundedTotal ?? invoiceCalculations?.netTotal ?? 0,
     );
@@ -993,10 +944,6 @@ export default function Purchase() {
     paidAmount,
   ]);
 
-  console.log('invoice --->', invoiceCalculations.computedItems);
-  // console.log('==>nat', invoiceCalculations.totalTax);
-
-  // Helper chip for status colors
   const getStatusStyle = (status, theme) => {
     switch (status) {
       case 'paid':
@@ -1020,19 +967,10 @@ export default function Purchase() {
     }
   };
 
-  console.log('hsbswfyh', cartItems);
-
   const handleSubmit = async (values, formikHelpers) => {
     formikHelpers.setSubmitting(true);
 
     try {
-      // Generate purchase number using AsyncStorage
-      // const purchaseNumber = await getNextPurchaseNumber();
-
-      // // Save it into state so UI shows it instantly
-      // setNextInvoiceNo(purchaseNumber);
-
-      // Call createPurchase with correct purchase number
       await createPurchase(
         {
           ...values,
@@ -1049,22 +987,18 @@ export default function Purchase() {
     }
   };
 
-  // ✅ Determine whether invoice is IGST or CGST+SGST
   function determineGstType(storeGst, customerGst, storeState, customerState) {
-    // console.log('details:', storeGst, customerGst, storeState, customerState);
     const extractStateCode = gst => gst?.substring(0, 2);
 
     let isIgst = false;
 
     if (storeGst && customerGst) {
-      // Compare first 2 digits of GSTIN (state codes)
       const storeCode = extractStateCode(storeGst);
       const customerCode = extractStateCode(customerGst);
       if (storeCode && customerCode && storeCode !== customerCode) {
         isIgst = true;
       }
     } else if (storeState && customerState) {
-      // Compare states when GSTINs are missing
       if (
         storeState.trim().toLowerCase() !== customerState.trim().toLowerCase()
       ) {
@@ -1075,11 +1009,8 @@ export default function Purchase() {
     return isIgst;
   }
 
-  console.log('payment details', cartItems);
-
   const createPurchase = async (values, { setSubmitting, resetForm }) => {
     console.log('====>purcsj', values);
-    // No subscription limit for purchase, skip the invoice subscription check
 
     if (cartItems.length === 0) {
       showAlert('Error', 'Please add items to the purchase');
@@ -1097,7 +1028,6 @@ export default function Purchase() {
       return;
     }
 
-    // ✅ Vendor Mobile Required
     if (!values.vendorNumber || values.vendorNumber.trim().length < 10) {
       Toast.show({
         type: 'error',
@@ -1128,7 +1058,6 @@ export default function Purchase() {
     const vendorGstFinal = values?.gstNumber || selectedCustomer?.gstNumber;
     const vendorStateFinal = values?.state || selectedCustomer?.state;
 
-    // Determine IGST/CGST based on store vs vendor
     const isIgst = determineGstType(
       storedata?.gstNumber,
       vendorGstFinal,
@@ -1136,12 +1065,9 @@ export default function Purchase() {
       vendorStateFinal,
     );
 
-    // Generate unique purchase number
-    // const purchaseNumber = await getNextPurchaseNumber();
-
     const purchaseData = {
       vendor: isEditMode
-        ? existingPurchase?.vendor // 👈 SAME vendor ID
+        ? existingPurchase?.vendor
         : selectedCustomer?._id || null,
       vendorName: values.vendorName,
       vendorMobile: values.vendorNumber,
@@ -1154,7 +1080,7 @@ export default function Purchase() {
 
       invoiceNumber: manualPurchaseNo.trim(),
 
-      date: format(new Date(), 'yyyy-MM-dd'),
+      date: format(purchaseDate, 'yyyy-MM-dd'),
 
       items: invoiceCalculations.computedItems.map(item => ({
         product: item.product,
@@ -1163,47 +1089,38 @@ export default function Purchase() {
         unit: item.unit || 'Piece',
         mrp: Number(item.mrp ?? 0),
 
-        // ✅ raw costPrice (before purchase discount)
         rate: Number(item.costPrice ?? item.price ?? 0),
         costPrice: Number(item.costPrice ?? item.price ?? 0),
+
+        sellingPrice: Number(item.sellingPrice ?? item.price ?? 0),
         previousQuantity: Number(item.previousQty ?? item.qty ?? 0),
-        // ✅ purchase-specific discount per unit
-        purchaseDiscount: Number(item.purchaseDiscount ?? 0),
+        sellingDiscount: Number(item.sellingDiscount ?? 0),
         discount: Number(item.purchaseDiscount ?? 0),
+        sellingDiscount: Number(item.sellingDiscount ?? 0),
 
-        // ✅ tax details from computed item (purchaseGstRate resolved into gstRate)
         gstRate: Number(item.gstRate ?? 0),
-        purchaseGstRate: Number(item.gstRate ?? 0),
+        //GstRate: Number(item.gstRate ?? 0),
+        // purchaseGstRate: Number(item.gstRate ?? 0),
         isPurchaseTaxInclusive: Boolean(item.isPurchaseTaxInclusive),
-        isTaxInclusive: Boolean(item.isPurchaseTaxInclusive),
+        isTaxInclusive: Boolean(item.isTaxInclusive),
 
-        // quantity
         quantity: Number(item.qty ?? 0),
 
-        // computed line totals
         baseRate: Number(item.baseRate ?? 0),
         taxableValue: Number(item.taxableValue ?? 0),
         gstAmount: Number(item.gstAmount ?? 0),
 
-        // ✅ final line total (after discount + tax per item)
         total: Number(item.total ?? 0),
       })),
 
-      // ✅ subtotal = base after item discounts, before tax
       subTotal: Number(invoiceCalculations.subtotal.toFixed(2)),
 
-      // ✅ total GST across all items
       gstTotal: Number(invoiceCalculations.totalTax.toFixed(2)),
       isIgst: isIgst,
 
-      // ✅ bill-level discount (flat or %)
       discountTotal: Number(invoiceCalculations.discountTotal.toFixed(2)),
       roundOff: Number(invoiceCalculations.roundOff),
 
-      // ✅ netTotal = true payable:
-      //    inclusive items → netRate × qty (GST not added again)
-      //    exclusive items → (netRate + tax) × qty
-      //    then − bill discount
       grandTotal: Number(
         (
           invoiceCalculations.roundedTotal ?? invoiceCalculations.netTotal
@@ -1216,19 +1133,16 @@ export default function Purchase() {
       paymentMethod: paymentMethod,
       paymentNote: paymentNote || '',
     };
-    // console.log("Purchase Payload:", purchaseData);
 
     try {
       let res;
 
       if (isEditMode && existingPurchase?._id) {
         console.log('Editing existing purchase:', existingPurchase._id);
-        console.log('Payload:', purchaseData);
         res = await api.put(
           `/purchase/id/${existingPurchase._id}`,
           purchaseData,
         );
-        console.log('Edit Purchase Response:', res);
       } else {
         res = await api.post('/purchase', purchaseData);
       }
@@ -1243,7 +1157,7 @@ export default function Purchase() {
         });
 
         navigation.replace('PurchaseDetail', {
-          purchaseId: res.data._id, // 👈 works for both
+          purchaseId: res.data._id,
         });
       } else {
         Toast.show({
@@ -1285,8 +1199,6 @@ export default function Purchase() {
     );
   };
 
-  console.log('cart items for preview', invoiceCalculations?.computedItems);
-
   const handleAddItems = () => {
     const preparedCart = (cartItems || []).map((item, index) => ({
       ...item,
@@ -1294,14 +1206,12 @@ export default function Purchase() {
       sellingPrice: item.price ?? item.sellingPrice ?? 0,
       qty: item.qty ?? item.quantity ?? 0,
       subtotal: item.total ?? item.subtotal ?? 0,
-      // ✅ Freeze previousQty here — this is the qty before user edits in AddPurchaseItems
       previousQty: item.previousQty ?? item.qty ?? item.quantity ?? 0,
     }));
     navigation.push('AddPurchaseItems', {
       purchase: true,
       existingCart: preparedCart,
       onItemsSelected: newCart => {
-        // ✅ Fully replace cart with what came back — no merging
         setCartItems(newCart);
 
         hasUserEditedPaid.current = false;
@@ -1324,11 +1234,16 @@ export default function Purchase() {
     [formikRef.current?.values],
   );
 
-  console.log('-->customerData', customerData);
-  console.log('--> ede', invoiceCalculations?.computedItems);
-  console.log('cart items before preview  --', cartItems);
+  // ─── Derived boolean: show the preview+footer layout ───────────────────────
+  // ✅ FIX: single source of truth for whether to show the invoice preview area.
+  //         Both create and edit mode use the same condition so layout is identical.
+  const showInvoicePreview =
+    invoiceLoaded &&
+    showPreview &&
+    (invoiceCalculations.computedItems?.length > 0 || cartItems.length > 0);
 
-  // Initial form view (when no items added yet)
+  console.log('cart item ---> ', cartItems);
+
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
@@ -1343,11 +1258,7 @@ export default function Purchase() {
           showBackButton={true}
           help="Billing"
           onBackPress={() => {
-            if (
-              invoiceLoaded &&
-              showPreview &&
-              (invoiceCalculations.computedItems || cartItems).length > 0
-            ) {
+            if (showInvoicePreview) {
               showAlert(
                 'Exit Purchase Invoice',
                 'Are you sure you want to Exit? All changes will be lost.',
@@ -1391,8 +1302,6 @@ export default function Purchase() {
             shadowOffset: { width: 0, height: 2 },
           }}
         >
-          {/* LEFT SECTION → Purchase Number */}
-          {/* ---- PURCHASE NUMBER SECTION ---- */}
           <View>
             <Text variant="labelMedium" style={{ color: theme.colors.outline }}>
               Purchase Number
@@ -1408,7 +1317,6 @@ export default function Purchase() {
                 </Text>
               )
             ) : isEditingPurchaseNo || manualPurchaseNo === '' ? (
-              // 🆕 NEW PURCHASE → Show input by default
               <TextInput
                 value={manualPurchaseNo}
                 onChangeText={setManualPurchaseNo}
@@ -1426,21 +1334,6 @@ export default function Purchase() {
                   minWidth: 150,
                   maxWidth: 200,
                 }}
-                // onBlur={() => {
-                //     const v = manualPurchaseNo.trim();
-
-                //     if (v === "") {
-                //         // keep showing input—user must enter something
-                //         Toast.show({
-                //             type: "error",
-                //             text1: "Purchase number required",
-                //         });
-                //         return;
-                //     }
-
-                //     // close input view
-                //     setIsEditingPurchaseNo(false);
-                // }}
                 error={manualPurchaseNo === ''}
                 maxLength={25}
                 helperText={
@@ -1448,7 +1341,6 @@ export default function Purchase() {
                 }
               />
             ) : (
-              // 👆 After input & blur → show text view
               <TouchableOpacity onPress={() => setIsEditingPurchaseNo(true)}>
                 <Text variant="titleSmall">
                   {'#'}
@@ -1458,7 +1350,6 @@ export default function Purchase() {
             )}
           </View>
 
-          {/* RIGHT SECTION → Current Date */}
           <View style={{ alignItems: 'flex-end' }}>
             <Text variant="labelMedium" style={{ color: theme.colors.outline }}>
               Date
@@ -1478,6 +1369,7 @@ export default function Purchase() {
             </TouchableOpacity>
           </View>
         </View>
+
         {showDatePicker && (
           <DateTimePicker
             mode="date"
@@ -1510,49 +1402,9 @@ export default function Purchase() {
             isSubmitting,
             setFieldValue,
           }) => (
-            <View style={{ flex: 1 }}>
-              {/* <View style={{ paddingHorizontal: 16 }}>
-                  <Surface
-                    mode="elevated"
-                    style={{
-                      paddingHorizontal: 16,
-                      paddingVertical: 8,
-                      borderRadius: 12,
-                      flexDirection: 'row',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      backgroundColor: theme.colors.surface,
-                    }}
-                  >
-                    <View style={{}}>
-                      <Text
-                        variant="labelMedium"
-                        style={{ color: theme.colors.outline }}
-                      >
-                        Invoice Number
-                      </Text>
-                      <Text variant="titleSmall">
-                        {'#'}
-                        {isEditMode
-                          ? existingPurchase?.invoiceNumber
-                          : nextInvoiceNo || 'Loading...'}
-                      </Text>
-                    </View>
-
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text
-                        variant="labelMedium"
-                        style={{ color: theme.colors.outline }}
-                      >
-                        Date
-                      </Text>
-                      <Text variant="titleSmall">
-                        {format(invoiceDate, 'dd-MMM-yyyy')}
-                      </Text>
-                    </View>
-                  </Surface>
-                </View> */}
-              {/* Customer Input Section */}
+            // ✅ FIX: outer wrapper is always flex:1 column — same for both modes
+            <View style={{ flex: 1, flexDirection: 'column' }}>
+              {/* ── Vendor inputs (always visible at top) ── */}
               <View
                 style={styles.inputRow}
                 onLayout={e => {
@@ -1560,7 +1412,6 @@ export default function Purchase() {
                   setInputLayout({ x, y: y + height + 60, width, height });
                 }}
               >
-                {/* Mobile / Phone input */}
                 <TextInput
                   ref={mobileInputRef}
                   label="Vendor Mobile"
@@ -1592,7 +1443,6 @@ export default function Purchase() {
                   )}
                 />
 
-                {/* name input */}
                 <TextInput
                   label="Vendor Name"
                   value={
@@ -1619,7 +1469,7 @@ export default function Purchase() {
                 />
               </View>
 
-              {/* Dropdown */}
+              {/* Vendor search dropdown */}
               <Portal>
                 {showDropdown && (
                   <View
@@ -1682,13 +1532,13 @@ export default function Purchase() {
                 )}
               </Portal>
 
+              {/* "Add More Vendor Details" link */}
               <View style={{ paddingHorizontal: 16 }}>
                 {mobileQuery.trim() || nameQuery.trim() ? (
                   <TouchableOpacity
                     activeOpacity={0.8}
                     disabled={!mobileQuery.trim() && !nameQuery.trim()}
                     onPress={() => {
-                      // Optional: keep a UI snapshot if needed
                       const snapshot = {
                         name: values.vendorName || '',
                         mobile: values.vendorNumber || '',
@@ -1717,107 +1567,147 @@ export default function Purchase() {
                 ) : null}
               </View>
 
-              {/* <CustomerDetailBottomSheet
-                ref={customerSheetRef}
-                customerData={{
-                  name: values.vendorName,
-                  mobile: values.vendorNumber,
-                  address: values.address,
-                  gstNumber: values.gstNumber,
-                }}
-                onSave={handleCustomerSave}
-              /> */}
-              {invoiceLoaded &&
-              showPreview &&
-              (invoiceCalculations.computedItems || cartItems).length > 0 ? (
-                <View style={{ flex: 1, position: 'relative' }}>
-                  {/* <View style={{ flexDirection: 'row', gap: 8, marginHorizontal: 16 }}>
-                        <Button
-                          mode="contained"
-                          onPress={handleAddItems}
-                          style={{ flex: 1 }}
-                          icon="pencil"
-                        >
-                          Edit / Add Items
-                        </Button>
-                      </View> */}
-                  <View style={[styles.previewContainer]}>
-                    <FlatList
-                      data={invoiceCalculations.computedItems}
-                      keyExtractor={(item, index) =>
-                        item._id || `${item.name}-${index}`
-                      }
-                      renderItem={({ item }) => (
-                        <PurchaseInviceItemCard
-                          item={item}
-                          isGstInvoice={isGstInvoice}
-                        />
-                      )}
-                      contentContainerStyle={{
-                        paddingBottom: 140, // space for summary box
-                        paddingTop: 4,
+              {/* ── PREVIEW area OR empty state ── */}
+              {showInvoicePreview ? (
+                // ✅ FIX: This wrapper is identical for both create and edit mode.
+                //         flex:1 ensures WebView takes remaining space and the
+                //         bottom Surface sits naturally below it — no overlap.
+                <View style={styles.previewWrapper}>
+                  {/* ── WebView card ── */}
+                  <View
+                    style={[
+                      styles.previewContainer,
+                      { backgroundColor: theme.colors.surface },
+                    ]}
+                  >
+                    <WebView
+                      ref={webViewRef}
+                      showsVerticalScrollIndicator={false}
+                      source={{
+                        html: generatePurchaseHTML({
+                          preview: true,
+                          formValues: values,
+                          cartItems: invoiceCalculations.computedItems?.length
+                            ? invoiceCalculations.computedItems
+                            : cartItems,
+                          invoiceCalculations,
+                          invoiceNumber: isEditMode
+                            ? existingPurchase?.invoiceNumber
+                            : manualPurchaseNo?.trim() || '—',
+                          invoiceDate: isEditMode
+                            ? new Date(
+                                existingPurchase?.date ||
+                                  existingPurchase?.invoiceDate ||
+                                  purchaseDate,
+                              )
+                            : purchaseDate,
+                          storedata:
+                            Object.keys(afterStoredata).length > 0
+                              ? afterStoredata
+                              : storedata,
+                          isGstInvoice,
+                          payment: {
+                            paid: payment.paid,
+                            due: payment.due,
+                            status: payment.status,
+                          },
+                        }),
                       }}
-                      ListFooterComponent={
-                        <PurchaseSummaryBox invoice={invoiceCalculations} />
-                      }
+                      style={styles.webview}
+                      scalesPageToFit={true}
+                      startInLoadingState={true}
+                      javaScriptEnabled={true}
+                      domStorageEnabled={true}
+                      mixedContentMode="compatibility"
+                      originWhitelist={['*']}
+                      onError={syntheticEvent => {
+                        const { nativeEvent } = syntheticEvent;
+                        console.warn('WebView error: ', nativeEvent);
+                      }}
                     />
-                    {invoiceLoaded &&
-                      showPreview &&
-                      (invoiceCalculations.computedItems || cartItems).length >
-                        0 && (
-                        <>
-                          <FAB
-                            size="small"
-                            animated
-                            icon="percent"
-                            style={{
-                              position: 'absolute',
-                              bottom: computeFabBottom(discountOffset),
-                              right: fabRight,
-                              backgroundColor: theme.colors.secondary, // or theme.colors.primary
-                              borderRadius: 30,
-                            }}
-                            color="white"
-                            onPress={() =>
-                              discountSheetRef.current?.present?.()
-                            }
-                          />
 
-                          <FAB
-                            size="small"
-                            animated
-                            icon="pencil"
-                            style={{
-                              position: 'absolute',
-                              bottom: computeFabBottom(pencilOffset),
-                              right: fabRight,
-                              backgroundColor: theme.colors.primary,
-                              borderRadius: 30,
-                            }}
-                            color={theme.colors.onPrimary}
-                            onPress={handleAddItems}
-                          />
-                        </>
-                      )}
+                    {/* Zoom controls — absolutely positioned inside WebView card */}
+                    <View
+                      style={[
+                        styles.zoomControls,
+                        {
+                          bottom: computeFabBottom(20),
+                          left: 12,
+                        },
+                      ]}
+                    >
+                      <TouchableOpacity
+                        onPress={handleZoomIn}
+                        activeOpacity={0.7}
+                        style={[
+                          styles.zoomButton,
+                          { borderColor: theme.colors.primary },
+                        ]}
+                      >
+                        <Icon
+                          source="magnify-plus-outline"
+                          size={24}
+                          color={theme.colors.primary}
+                        />
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        onPress={handleZoomOut}
+                        activeOpacity={0.7}
+                        style={[
+                          styles.zoomButton,
+                          { borderColor: theme.colors.primary },
+                        ]}
+                      >
+                        <Icon
+                          source="magnify-minus-outline"
+                          size={24}
+                          color={theme.colors.primary}
+                        />
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* FABs — absolutely positioned inside WebView card */}
+                    <FAB
+                      size="small"
+                      animated
+                      icon="percent"
+                      style={{
+                        position: 'absolute',
+                        bottom: computeFabBottom(discountOffset),
+                        right: fabRight,
+                        backgroundColor: theme.colors.secondary,
+                        borderRadius: 30,
+                      }}
+                      color="white"
+                      onPress={() => discountSheetRef.current?.present?.()}
+                    />
+
+                    <FAB
+                      size="small"
+                      animated
+                      icon="pencil"
+                      style={{
+                        position: 'absolute',
+                        bottom: computeFabBottom(pencilOffset),
+                        right: fabRight,
+                        backgroundColor: theme.colors.primary,
+                        borderRadius: 30,
+                      }}
+                      color={theme.colors.onPrimary}
+                      onPress={handleAddItems}
+                    />
                   </View>
 
+                  {/* ── Bottom payment / action Surface ── */}
+                  {/* ✅ FIX: NOT absolutely positioned — sits in normal flow below
+                              the flex:1 previewContainer so it never overlaps */}
                   <Surface
                     elevation={6}
                     style={[
+                      styles.bottomSurface,
                       {
-                        paddingHorizontal: 12,
-                        paddingBottom: 12,
-                        paddingTop: 8,
                         backgroundColor: theme.colors.surfaceVariant,
-                        borderTopLeftRadius: 16,
-                        borderTopRightRadius: 16,
-                        // 👇 iOS-specific shadow for parity with Android elevation
-                        shadowColor: '#000',
-                        shadowOffset: { width: 0, height: 3 },
-                        shadowOpacity: 0.15,
-                        shadowRadius: 6,
-
-                        // Optional subtle border to help separation on light themes
                         borderTopWidth: theme.dark
                           ? 0
                           : StyleSheet.hairlineWidth,
@@ -1844,7 +1734,6 @@ export default function Purchase() {
                         <Text variant="labelSmall" style={{ lineHeight: 10 }}>
                           Amount
                         </Text>
-                        {/* Status chip */}
                         {(() => {
                           const s = getStatusStyle(payment.status, theme);
                           return (
@@ -1869,98 +1758,6 @@ export default function Purchase() {
                         })()}
                       </View>
 
-                      {/* <Dropdown
-                        style={{
-                          width: 120,
-                          height: 22,
-                          backgroundColor: theme.colors.surface,
-                          borderRadius: 10,
-                          borderWidth: 1,
-                          borderColor: theme.colors.outline,
-                          paddingHorizontal: 10,
-                        }}
-                        placeholderStyle={{
-                          fontSize: 12,
-                          color: theme.colors.onSurfaceVariant,
-                        }}
-                        selectedTextStyle={{
-                          fontSize: 12,
-                          color: theme.colors.onSurface,
-                          fontWeight: '500',
-                        }}
-                        iconStyle={{
-                          width: 12,
-                          height: 12,
-                          tintColor: theme.colors.onSurfaceVariant,
-                        }}
-                        iconColor={theme.colors.onSurfaceVariant}
-                        data={paymentMethodOptions}
-                        // maxHeight={220}
-                        labelField="label"
-                        valueField="value"
-                        placeholder="Select"
-                        value={paymentMethod}
-                        onChange={(item) => {
-                          setPaymentMethod(item.value);
-                          // Vibration.vibrate(30); // subtle haptic feedback
-                        }}
-                        // renderLeftIcon={() => (
-                        //   <Icon
-                        //     source={
-                        //       paymentMethodOptions.find((m) => m.value === paymentMethod)
-                        //         ?.icon || 'cash'
-                        //     }
-                        //     size={16}
-                        //     color={theme.colors.onSurfaceVariant}
-                        //   />
-                        // )}
-                        renderItem={(item, selected) => (
-                          <View
-                            style={{
-                              flexDirection: 'row',
-                              alignItems: 'center',
-                              paddingVertical: 8,
-                              paddingHorizontal: 12,
-                              backgroundColor: selected
-                                ? theme.colors.primaryContainer
-                                : 'transparent',
-                            }}
-                          >
-                            <Icon
-                              source={item.icon}
-                              size={14}
-                              color={
-                                selected
-                                  ? theme.colors.onPrimaryContainer
-                                  : theme.colors.onSurface
-                              }
-                            />
-                            <Text
-                              style={{
-                                marginLeft: 10,
-                                fontSize: 12,
-                                color: selected
-                                  ? theme.colors.onPrimaryContainer
-                                  : theme.colors.onSurface,
-                                fontWeight: selected ? '600' : '400',
-                              }}
-                            >
-                              {item.label}
-                            </Text>
-                          </View>
-                        )}
-                        containerStyle={{
-                          borderRadius: 12,
-                          elevation: 8,
-                          shadowColor: '#000',
-                          shadowOffset: { width: 0, height: 4 },
-                          shadowOpacity: 0.15,
-                          shadowRadius: 8,
-                        }}
-                        activeColor={theme.colors.primaryContainer}
-                        dropdownPosition='top'
-                        showsVerticalScrollIndicator={false}
-                      /> */}
                       <TouchableRipple
                         onPress={() => paymentSheetRef.current?.expand?.()}
                         rippleColor={theme.colors.primary + '20'}
@@ -2010,6 +1807,7 @@ export default function Purchase() {
                         </View>
                       </TouchableRipple>
                     </View>
+
                     <View
                       style={{
                         flexDirection: 'row',
@@ -2018,7 +1816,6 @@ export default function Purchase() {
                         paddingBottom: 4,
                       }}
                     >
-                      {/* Paid input row (compact) */}
                       <View style={{ flex: 1 }}>
                         <TouchableWithoutFeedback
                           onPress={() => {
@@ -2067,7 +1864,6 @@ export default function Purchase() {
                               }
                               value={paidAmountText}
                               onChangeText={txt => {
-                                // ✅ Guard — block if not allowed to edit
                                 if (
                                   !isEditMode &&
                                   !Boolean(selectedCustomer) &&
@@ -2079,22 +1875,18 @@ export default function Purchase() {
                                   return;
                                 }
 
-                                // ✅ Strip non-numeric except dot
                                 const digits = txt.replace(/[^0-9.]/g, '');
 
-                                // ✅ Split on dot — enforce single dot + max 2 decimal digits
                                 const parts = digits.split('.');
                                 let cleanValue =
                                   parts.length > 1
-                                    ? parts[0] + '.' + parts[1].slice(0, 2) // ✅ only first 2 decimal chars
+                                    ? parts[0] + '.' + parts[1].slice(0, 2)
                                     : parts[0];
 
-                                // ✅ Handle leading dot
                                 if (cleanValue.startsWith('.')) {
                                   cleanValue = '0' + cleanValue;
                                 }
 
-                                // ✅ Always update display text as-is (preserves "100." while typing)
                                 setPaidAmountText(cleanValue);
                                 hasUserEditedPaid.current = true;
 
@@ -2106,7 +1898,6 @@ export default function Purchase() {
                                 const numeric = parseFloat(cleanValue);
                                 if (isNaN(numeric)) return;
 
-                                // ✅ Hard cap at netTotal — no more, no less
                                 const maxAmount = parseFloat(
                                   Number(
                                     invoiceCalculations?.roundedTotal ??
@@ -2121,13 +1912,11 @@ export default function Purchase() {
 
                                 setPaidAmount(clamped);
 
-                                // ✅ If user typed above max, snap display text to max too
                                 if (numeric > maxAmount) {
                                   setPaidAmountText(maxAmount.toFixed(2));
                                 }
                               }}
                               onBlur={() => {
-                                // ✅ On blur, clean up trailing dot and clamp to 2 decimals
                                 const maxAmount = parseFloat(
                                   Number(
                                     invoiceCalculations?.roundedTotal ??
@@ -2143,13 +1932,13 @@ export default function Purchase() {
                                 }
 
                                 const clamped = parseFloat(
-                                  Math.min(paidAmount, maxAmount).toFixed(2), // ✅ final 2-decimal clamp
+                                  Math.min(paidAmount, maxAmount).toFixed(2),
                                 );
                                 setPaidAmount(clamped);
                                 setPaidAmountText(String(clamped));
                               }}
                               editable={
-                                isEditMode || // ✅ always editable in edit mode
+                                isEditMode ||
                                 Boolean(selectedCustomer) ||
                                 Boolean(
                                   formikRef.current?.values?.vendorNumber?.trim()
@@ -2173,6 +1962,7 @@ export default function Purchase() {
                           </View>
                         </TouchableWithoutFeedback>
                       </View>
+
                       <View
                         style={{
                           flexDirection: 'row',
@@ -2185,7 +1975,7 @@ export default function Purchase() {
                           bold
                           style={{
                             width: 1,
-                            height: 32, // adjust height as needed
+                            height: 32,
                             backgroundColor: theme.colors.outline,
                           }}
                         />
@@ -2202,6 +1992,7 @@ export default function Purchase() {
                         </View>
                       </View>
                     </View>
+
                     {payment.due > 0 && (
                       <View
                         style={{
@@ -2275,10 +2066,8 @@ export default function Purchase() {
                   </Surface>
                 </View>
               ) : (
+                /* ── Empty state: no items added yet ── */
                 <View style={styles.emptyContainer}>
-                  {/* <Text variant="headlineSmall" style={styles.emptyTitle}>
-                          Create Invoice
-                        </Text> */}
                   <Text variant="bodyMedium" style={styles.emptySubtitle}>
                     Start by adding items to your purchase invoice
                   </Text>
@@ -2319,7 +2108,6 @@ export default function Purchase() {
         customerData={customerData}
         onSave={async data => {
           await handleCustomerSave(data);
-          // Ensure the sheet is closed after save
           if (customerSheetRef.current) {
             if (typeof customerSheetRef.current.close === 'function') {
               customerSheetRef.current.close();
@@ -2355,7 +2143,6 @@ const styles = StyleSheet.create({
   },
   input: {
     marginTop: 4,
-    // marginBottom: 4,
     height: 42,
   },
   dropdown: {
@@ -2377,38 +2164,28 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
-
   dropdownItemContent: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-
   iconContainer: {
-    // marginRight: 12,
     marginHorizontal: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
-
   customerInfo: {
     marginHorizontal: 12,
   },
-
-  customerName: {
-    // fontWeight: '600',
-  },
-
+  customerName: {},
   customerMobile: {
     color: '#444',
     marginLeft: 4,
   },
-
   customerAddress: {
     color: '#777',
     marginLeft: 4,
     fontStyle: 'italic',
   },
-
   dropdownOverlay: {
     position: 'absolute',
     top: 0,
@@ -2418,32 +2195,53 @@ const styles = StyleSheet.create({
     zIndex: 999,
     overflow: 'hidden',
   },
-  dropdownSurface: {
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
   dropdownItem: {
     padding: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#eee',
   },
   dropdownList: {
-    // flexGrow: 0,
     maxHeight: Math.min(screenHeight * 0.35, 260),
   },
   errorText: {
     fontSize: 12,
     textAlign: 'left',
   },
-  previewContainer: {
+
+  // ✅ FIX: previewWrapper is the flex:1 column container that holds
+  //         previewContainer + bottomSurface in normal document flow.
+  //         This is what was missing in create mode — causing overlap.
+  previewWrapper: {
     flex: 1,
-    marginVertical: 4,
+    flexDirection: 'column',
+  },
+
+  previewContainer: {
+    flex: 1, // ✅ takes ALL remaining space above the bottom Surface
+    margin: 8,
+    elevation: 2,
+    borderRadius: 8,
     overflow: 'hidden',
   },
   webview: {
     flex: 1,
     backgroundColor: 'white',
   },
+
+  // ✅ FIX: bottomSurface is in normal flow — NOT position:absolute.
+  //         It naturally sits below the flex:1 previewContainer.
+  bottomSurface: {
+    paddingHorizontal: 12,
+    paddingBottom: 12,
+    paddingTop: 8,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+  },
+
   footer: {
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
@@ -2459,7 +2257,6 @@ const styles = StyleSheet.create({
     flex: 2,
   },
   emptyContainer: {
-    // flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 40,
@@ -2491,14 +2288,11 @@ const styles = StyleSheet.create({
     gap: 12,
     zIndex: 10,
   },
-
   zoomButton: {
     width: 20,
     height: 20,
     borderRadius: 10,
-    // borderWidth: 1,
-    // outline border
-    backgroundColor: 'rgba(255,255,255,0.1)', // transparent look
+    backgroundColor: 'rgba(255,255,255,0.1)',
     justifyContent: 'center',
     alignItems: 'center',
   },

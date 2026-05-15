@@ -164,23 +164,18 @@ const PurchaseDetail = ({ route, navigation }) => {
     try {
       setLoading(true);
 
-      // 👇 NEW API CALL
       const res = await api.put(`/purchase/status/${purchase._id}`, {
         status: 'cancelled',
       });
 
       if (res?.success) {
-        // best practice → fresh data refetch
         await fetchPurchase();
-
         showAlert(
           'Purchase Cancelled',
           'This Purchase has been cancelled successfully.',
           'success',
           [{ label: 'OK', onPress: () => setAlertVisible(false) }],
         );
-      } else {
-        throw new Error('Cancel failed');
       }
     } catch (error) {
       console.error('Cancel Purchase error:', error);
@@ -195,28 +190,28 @@ const PurchaseDetail = ({ route, navigation }) => {
     }
   };
 
-  const handleDelete = () => {
-    setMenuVisible(false);
-    Alert.alert(
-      'Delete Purchase',
-      'Are you sure you want to delete this purchase? This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await api.delete(`/purchase/${purchase._id}`);
-              navigation.goBack();
-            } catch (err) {
-              Alert.alert('Error', 'Failed to delete purchase');
-            }
-          },
-        },
-      ],
-    );
-  };
+  // const handleDelete = () => {
+  //   setMenuVisible(false);
+  //   Alert.alert(
+  //     'Delete Purchase',
+  //     'Are you sure you want to delete this purchase? This action cannot be undone.',
+  //     [
+  //       { text: 'Cancel', style: 'cancel' },
+  //       {
+  //         text: 'Delete',
+  //         style: 'destructive',
+  //         onPress: async () => {
+  //           try {
+  //             await api.delete(`/purchase/${purchase._id}`);
+  //             navigation.goBack();
+  //           } catch (err) {
+  //             Alert.alert('Error', 'Failed to delete purchase');
+  //           }
+  //         },
+  //       },
+  //     ],
+  //   );
+  // };
 
   // Request storage permission for Android
   const requestStoragePermission = async () => {

@@ -58,6 +58,7 @@ const Settings = () => {
     fetchUserProfile,
     hasPermission,
     isPurchaseOrderEnabled,
+    updateAuthState,
   } = useAuth();
 
   // ── Helpers ──────────────────────────────────────────────────
@@ -74,127 +75,24 @@ const Settings = () => {
   const [poLoading, setPoLoading] = useState(false);
 
   // ── Change Email Modal ───────────────────────────────────────
-  // Flow: VERIFY_EMAIL (send OTP to current email) → VERIFY_OTP → NEW_EMAIL (enter + submit)
   const [emailModalVisible, setEmailModalVisible] = useState(false);
-  const [emailStep, setEmailStep] = useState('VERIFY_EMAIL');
-  const [currentEmailOtp, setCurrentEmailOtp] = useState('');
   const [newEmail, setNewEmail] = useState('');
-  const [emailChangeToken, setEmailChangeToken] = useState(null);
   const [emailLoading, setEmailLoading] = useState(false);
 
-  const resetEmailFlow = () => {
-    setEmailStep('VERIFY_EMAIL');
-    setCurrentEmailOtp('');
-    setNewEmail('');
-    setEmailChangeToken(null);
-    setEmailLoading(false);
-  };
-
   const openEmailModal = () => {
-    resetEmailFlow();
+    setNewEmail(getCurrentEmail());
     setEmailModalVisible(true);
   };
 
   const closeEmailModal = () => {
     setEmailModalVisible(false);
-    resetEmailFlow();
+    setNewEmail('');
+    setEmailLoading(false);
   };
 
-  // ── Change Phone Modal ───────────────────────────────────────
-  // Flow: VERIFY_EMAIL (send OTP to current email) → VERIFY_OTP → NEW_PHONE (enter + submit)
-  const [phoneModalVisible, setPhoneModalVisible] = useState(false);
-  const [phoneStep, setPhoneStep] = useState('VERIFY_EMAIL');
-  const [phoneVerifyOtp, setPhoneVerifyOtp] = useState('');
-  const [newPhone, setNewPhone] = useState('');
-  const [phoneChangeToken, setPhoneChangeToken] = useState(null);
-  const [phoneLoading, setPhoneLoading] = useState(false);
-
-  const resetPhoneFlow = () => {
-    setPhoneStep('VERIFY_EMAIL');
-    setPhoneVerifyOtp('');
-    setNewPhone('');
-    setPhoneChangeToken(null);
-    setPhoneLoading(false);
-  };
-
-  const openPhoneModal = () => {
-    resetPhoneFlow();
-    setPhoneModalVisible(true);
-  };
-
-  const closePhoneModal = () => {
-    setPhoneModalVisible(false);
-    resetPhoneFlow();
-  };
-
-  const openTermsBottomSheet = () => {
-    termsSheetRef.current?.expand();
-  };
-
-  // ── Change Email Handlers ────────────────────────────────────
-
-  // Step 1: Send OTP to current email
-  const handleSendCurrentEmailOtp = async () => {
-    const current = getCurrentEmail();
-    if (!current) {
-      Toast.show({ type: 'error', text1: 'No email found on account' });
-      return;
-    }
-    try {
-      setEmailLoading(true);
-      const res = await api.post('/auth/phone-change-email/send-otp', {
-        email: current,
-      });
-      if (!res?.success) {
-        throw new Error(res?.message || 'Failed to send OTP');
-      }
-      setEmailChangeToken(res?.data?.token || null);
-      Toast.show({ type: 'success', text1: `OTP sent to ${current}` });
-      setEmailStep('VERIFY_OTP');
-    } catch (error) {
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: error?.message || 'Failed to send OTP',
-      });
-    } finally {
-      setEmailLoading(false);
-    }
-  };
-
-  // Step 2: Verify OTP
-  const handleVerifyCurrentEmailOtp = async () => {
-    if (!currentEmailOtp || currentEmailOtp.length < 4) {
-      Toast.show({ type: 'error', text1: 'Enter valid OTP' });
-      return;
-    }
-    try {
-      setEmailLoading(true);
-      const res = await api.post('/auth/phone-change-email/verify-otp', {
-        email: getCurrentEmail(),
-        otp: currentEmailOtp.trim(),
-      });
-      if (!res?.success) {
-        throw new Error(res?.message || 'Invalid OTP');
-      }
-      setEmailChangeToken(res?.data?.token || null);
-      Toast.show({ type: 'success', text1: 'OTP verified' });
-      setEmailStep('NEW_EMAIL');
-    } catch (error) {
-      Toast.show({
-        type: 'error',
-        text1: 'Verification failed',
-        text2: error?.message || 'Invalid OTP',
-      });
-    } finally {
-      setEmailLoading(false);
-    }
-  };
-
-  // Step 3: Submit new email
   const handleUpdateEmail = async () => {
     if (!newEmail?.trim()) {
-      Toast.show({ type: 'error', text1: 'New email is required' });
+      Toast.show({ type: 'error', text1: 'Email is required' });
       return;
     }
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -210,7 +108,11 @@ const Settings = () => {
       if (!res?.success) {
         throw new Error(res?.message || 'Failed to update email');
       }
-      await fetchUserProfile();
+      // Patch authState locally so the pre-filled value updates immediately
+      await updateAuthState({
+        ...authState,
+        user: { ...authState.user, email: newEmail.trim() },
+      });
       Toast.show({ type: 'success', text1: 'Email updated successfully' });
       closeEmailModal();
     } catch (error) {
@@ -224,94 +126,40 @@ const Settings = () => {
     }
   };
 
-  // ── Change Phone Handlers ────────────────────────────────────
+  // ── Change Phone Modal ───────────────────────────────────────
+  const [phoneModalVisible, setPhoneModalVisible] = useState(false);
+  const [newPhone, setNewPhone] = useState('');
+  const [phoneLoading, setPhoneLoading] = useState(false);
 
-  // Step 1: Send OTP to current email to verify identity
-  const handleSendPhoneVerifyEmailOtp = async () => {
-    const current = getCurrentEmail();
-    if (!current) {
-      Toast.show({ type: 'error', text1: 'No email found on account' });
-      return;
-    }
-    try {
-      setPhoneLoading(true);
-      const res = await api.post('/auth/phone-change-phone/send-otp', {
-        email: current,
-      });
-      if (!res?.success) {
-        throw new Error(res?.message || 'Failed to send OTP');
-      }
-      setPhoneChangeToken(res?.data?.token || null);
-      Toast.show({ type: 'success', text1: `OTP sent to ${current}` });
-      setPhoneStep('VERIFY_OTP');
-    } catch (error) {
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: error?.message || 'Failed to send OTP',
-      });
-    } finally {
-      setPhoneLoading(false);
-    }
+  const openPhoneModal = () => {
+    setNewPhone(getCurrentPhone());
+    setPhoneModalVisible(true);
   };
 
-  // Step 2: Verify OTP
-  const handleVerifyPhoneEmailOtp = async () => {
-    if (!phoneVerifyOtp || phoneVerifyOtp.length < 4) {
-      Toast.show({ type: 'error', text1: 'Enter valid OTP' });
-      return;
-    }
-    try {
-      setPhoneLoading(true);
-      const res = await api.post(
-        '/auth/phone-change-phone/verify-otp',
-        { email: getCurrentEmail(), otp: phoneVerifyOtp.trim() },
-        {
-          headers: phoneChangeToken
-            ? { Authorization: `Bearer ${phoneChangeToken}` }
-            : {},
-          _skipRefresh: true,
-        },
-      );
-      if (!res?.success) {
-        throw new Error(res?.message || 'Invalid OTP');
-      }
-      setPhoneChangeToken(res?.data?.token || null);
-      Toast.show({ type: 'success', text1: 'Identity verified' });
-      setPhoneStep('NEW_PHONE');
-    } catch (error) {
-      Toast.show({
-        type: 'error',
-        text1: 'Verification failed',
-        text2: error?.message || 'Invalid OTP',
-      });
-    } finally {
-      setPhoneLoading(false);
-    }
+  const closePhoneModal = () => {
+    setPhoneModalVisible(false);
+    setNewPhone('');
+    setPhoneLoading(false);
   };
 
-  // Step 3: Submit new phone
   const handleUpdatePhone = async () => {
     if (!newPhone?.trim()) {
-      Toast.show({ type: 'error', text1: 'New phone number is required' });
+      Toast.show({ type: 'error', text1: 'Phone number is required' });
       return;
     }
     try {
       setPhoneLoading(true);
-      const res = await api.post(
-        '/auth/phone-change-phone/update-phone',
-        { newPhone: newPhone.trim() },
-        {
-          headers: phoneChangeToken
-            ? { Authorization: `Bearer ${phoneChangeToken}` }
-            : {},
-          _skipRefresh: true,
-        },
-      );
+      const res = await api.post('/auth/phone-change-phone/update-phone', {
+        number: newPhone.trim(),
+      });
       if (!res?.success) {
         throw new Error(res?.message || 'Failed to update phone');
       }
-      await fetchUserProfile();
+      // Patch authState locally so the pre-filled value updates immediately
+      await updateAuthState({
+        ...authState,
+        user: { ...authState.user, phone: newPhone.trim() },
+      });
       Toast.show({
         type: 'success',
         text1: 'Phone number updated successfully',
@@ -326,6 +174,10 @@ const Settings = () => {
     } finally {
       setPhoneLoading(false);
     }
+  };
+
+  const openTermsBottomSheet = () => {
+    termsSheetRef.current?.expand();
   };
 
   // ── Stock & PO Toggles ───────────────────────────────────────
@@ -788,106 +640,22 @@ const Settings = () => {
           <Text variant="titleMedium" style={styles.modalTitle}>
             Change Email
           </Text>
-
-          {/* Step indicator */}
-          <View style={styles.stepIndicator}>
-            {['VERIFY_EMAIL', 'VERIFY_OTP', 'NEW_EMAIL'].map((step, i) => (
-              <View key={step} style={styles.stepRow}>
-                <View
-                  style={[
-                    styles.stepDot,
-                    {
-                      backgroundColor:
-                        emailStep === step
-                          ? theme.colors.primary
-                          : ['VERIFY_OTP', 'NEW_EMAIL'].indexOf(emailStep) >
-                              i - 1 && emailStep !== step
-                          ? theme.colors.primary + '60'
-                          : theme.colors.outline,
-                    },
-                  ]}
-                />
-                {i < 2 && (
-                  <View
-                    style={[
-                      styles.stepLine,
-                      { backgroundColor: theme.colors.outline },
-                    ]}
-                  />
-                )}
-              </View>
-            ))}
-          </View>
-
-          {emailStep === 'VERIFY_EMAIL' && (
-            <>
-              <Text
-                variant="bodySmall"
-                style={[
-                  styles.stepHint,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
-              >
-                We'll send a verification OTP to your current email:
-              </Text>
-              <TextInput
-                label="Current Email"
-                mode="outlined"
-                value={getCurrentEmail()}
-                editable={false}
-                style={[styles.modalInput, { opacity: 0.7 }]}
-              />
-            </>
-          )}
-
-          {emailStep === 'VERIFY_OTP' && (
-            <>
-              <Text
-                variant="bodySmall"
-                style={[
-                  styles.stepHint,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
-              >
-                Enter the OTP sent to {getCurrentEmail()}
-              </Text>
-              <TextInput
-                label="Enter OTP"
-                mode="outlined"
-                value={currentEmailOtp}
-                onChangeText={setCurrentEmailOtp}
-                keyboardType="number-pad"
-                style={styles.modalInput}
-                disabled={emailLoading}
-                maxLength={6}
-              />
-            </>
-          )}
-
-          {emailStep === 'NEW_EMAIL' && (
-            <>
-              <Text
-                variant="bodySmall"
-                style={[
-                  styles.stepHint,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
-              >
-                Enter your new email address
-              </Text>
-              <TextInput
-                label="New Email"
-                mode="outlined"
-                value={newEmail}
-                onChangeText={setNewEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                style={styles.modalInput}
-                disabled={emailLoading}
-              />
-            </>
-          )}
-
+          <Text
+            variant="bodySmall"
+            style={[styles.stepHint, { color: theme.colors.onSurfaceVariant }]}
+          >
+            Update your email address below
+          </Text>
+          <TextInput
+            label="Email Address"
+            mode="outlined"
+            value={newEmail}
+            onChangeText={setNewEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            style={styles.modalInput}
+            disabled={emailLoading}
+          />
           <View style={styles.modalActions}>
             <Button
               mode="text"
@@ -900,17 +668,9 @@ const Settings = () => {
               mode="contained"
               loading={emailLoading}
               disabled={emailLoading}
-              onPress={() => {
-                if (emailStep === 'VERIFY_EMAIL')
-                  return handleSendCurrentEmailOtp();
-                if (emailStep === 'VERIFY_OTP')
-                  return handleVerifyCurrentEmailOtp();
-                return handleUpdateEmail();
-              }}
+              onPress={handleUpdateEmail}
             >
-              {emailStep === 'VERIFY_EMAIL' && 'Send OTP'}
-              {emailStep === 'VERIFY_OTP' && 'Verify OTP'}
-              {emailStep === 'NEW_EMAIL' && 'Update Email'}
+              Update Email
             </Button>
           </View>
         </Modal>
@@ -929,105 +689,21 @@ const Settings = () => {
           <Text variant="titleMedium" style={styles.modalTitle}>
             Change Phone Number
           </Text>
-
-          {/* Step indicator */}
-          <View style={styles.stepIndicator}>
-            {['VERIFY_EMAIL', 'VERIFY_OTP', 'NEW_PHONE'].map((step, i) => (
-              <View key={step} style={styles.stepRow}>
-                <View
-                  style={[
-                    styles.stepDot,
-                    {
-                      backgroundColor:
-                        phoneStep === step
-                          ? theme.colors.primary
-                          : ['VERIFY_OTP', 'NEW_PHONE'].indexOf(phoneStep) >
-                              i - 1 && phoneStep !== step
-                          ? theme.colors.primary + '60'
-                          : theme.colors.outline,
-                    },
-                  ]}
-                />
-                {i < 2 && (
-                  <View
-                    style={[
-                      styles.stepLine,
-                      { backgroundColor: theme.colors.outline },
-                    ]}
-                  />
-                )}
-              </View>
-            ))}
-          </View>
-
-          {phoneStep === 'VERIFY_EMAIL' && (
-            <>
-              <Text
-                variant="bodySmall"
-                style={[
-                  styles.stepHint,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
-              >
-                We'll send a verification OTP to your email:
-              </Text>
-              <TextInput
-                label="Email"
-                mode="outlined"
-                value={getCurrentEmail()}
-                editable={false}
-                style={[styles.modalInput, { opacity: 0.7 }]}
-              />
-            </>
-          )}
-
-          {phoneStep === 'VERIFY_OTP' && (
-            <>
-              <Text
-                variant="bodySmall"
-                style={[
-                  styles.stepHint,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
-              >
-                Enter the OTP sent to {getCurrentEmail()}
-              </Text>
-              <TextInput
-                label="Enter OTP"
-                mode="outlined"
-                value={phoneVerifyOtp}
-                onChangeText={setPhoneVerifyOtp}
-                keyboardType="number-pad"
-                style={styles.modalInput}
-                disabled={phoneLoading}
-                maxLength={6}
-              />
-            </>
-          )}
-
-          {phoneStep === 'NEW_PHONE' && (
-            <>
-              <Text
-                variant="bodySmall"
-                style={[
-                  styles.stepHint,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
-              >
-                Enter your new phone number
-              </Text>
-              <TextInput
-                label="New Phone Number"
-                mode="outlined"
-                value={newPhone}
-                onChangeText={setNewPhone}
-                keyboardType="phone-pad"
-                style={styles.modalInput}
-                disabled={phoneLoading}
-              />
-            </>
-          )}
-
+          <Text
+            variant="bodySmall"
+            style={[styles.stepHint, { color: theme.colors.onSurfaceVariant }]}
+          >
+            Update your phone number below
+          </Text>
+          <TextInput
+            label="Phone Number"
+            mode="outlined"
+            value={newPhone}
+            onChangeText={setNewPhone}
+            keyboardType="phone-pad"
+            style={styles.modalInput}
+            disabled={phoneLoading}
+          />
           <View style={styles.modalActions}>
             <Button
               mode="text"
@@ -1040,17 +716,9 @@ const Settings = () => {
               mode="contained"
               loading={phoneLoading}
               disabled={phoneLoading}
-              onPress={() => {
-                if (phoneStep === 'VERIFY_EMAIL')
-                  return handleSendPhoneVerifyEmailOtp();
-                if (phoneStep === 'VERIFY_OTP')
-                  return handleVerifyPhoneEmailOtp();
-                return handleUpdatePhone();
-              }}
+              onPress={handleUpdatePhone}
             >
-              {phoneStep === 'VERIFY_EMAIL' && 'Send OTP'}
-              {phoneStep === 'VERIFY_OTP' && 'Verify OTP'}
-              {phoneStep === 'NEW_PHONE' && 'Update Number'}
+              Update Number
             </Button>
           </View>
         </Modal>
@@ -1145,14 +813,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   stepHint: { marginBottom: 10, fontSize: 13 },
-  stepIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  stepRow: { flexDirection: 'row', alignItems: 'center' },
-  stepDot: { width: 10, height: 10, borderRadius: 5 },
-  stepLine: { width: 24, height: 2, marginHorizontal: 4 },
 });
 
 export default Settings;

@@ -55,24 +55,45 @@ const Item = ({ navigation }) => {
       name: item.name,
       category: item.category ? item.category : null,
       price: item.sellingPrice,
+      sellingPrice: item.sellingPrice, // ← add explicit sellingPrice too
+
+      // DISCOUNT fields — all were missing
       discountPrice: item.discountPrice || 0,
-      sellCount: item.sellCount,
-      sales: 0,
+      discountType: item.discountType || 'amount',
+      discountPercentage: item.discountPercentage || 0,
+
+      // PURCHASE DISCOUNT fields — all were missing
+      purchaseDiscountType: item.purchaseDiscountType || 'amount',
+      purchaseDiscountPercentage: item.purchaseDiscountPercentage || 0,
+      purchaseDiscountPrice: item.purchaseDiscountPrice || 0,
+
+      // TAX fields — isTaxInclusive was missing
+      isTaxInclusive: item.isTaxInclusive ?? false,
+      isPurchaseTaxInclusive: item.isPurchaseTaxInclusive ?? false,
+      gstRate: item.gstRate || 0,
+
+      // STOCK & SALES
+      sellCount: item.sellCount || 0,
       currentStock: item.currentStock || 0,
-      isTaxInclusive: item.isTaxInclusive,
-      revenue: 0,
-      status: item.status,
-      unit: item.unit,
-      brand: item.brand || '',
-      sku: item.sku || '',
-      hsn: item.hsn || '',
+
+      // PRICING
       costPrice: item.costPrice || 0,
       lastPurchasePrice: item.lastPurchasePrice || 0,
-      gstRate: item.gstRate || 0,
+
+      // META
+      status: item.status,
+      unit: item.unit,
+      sku: item.sku || '',
+      hsn: item.hsn || '',
+      brand: item.brand || '',
       weight: item.weight || 0,
       tags: item.tags || [],
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
+
+      // unused but kept
+      sales: 0,
+      revenue: 0,
     }),
     [],
   );
@@ -88,13 +109,15 @@ const Item = ({ navigation }) => {
         }
 
         const response = await api.get(`/product?page=${page}&limit=20000`);
-        // console.log('Product Response:', response);
+        console.log('Product Response:', response);
 
         if (response && response.data) {
           const { docs, hasNextPage, page: currentPage } = response.data;
 
           // Transform the API response
           const transformedItems = docs.map(transformItem);
+
+          console.log('');
 
           // Sort items by sellCount in descending order (highest first)
           transformedItems.sort(
@@ -221,6 +244,8 @@ const Item = ({ navigation }) => {
       </View>
     );
   };
+
+  console.log('items ', items);
 
   const renderItemCard = ({ item }) => {
     const isTopSelling =
@@ -471,33 +496,32 @@ const Item = ({ navigation }) => {
         maxToRenderPerBatch={10}
         windowSize={10}
       />
-      {
-        hasPermission(permissions.CAN_MANAGE_PRODUCTS) && (
-          <FAB
-            variant="primary"
-            style={[
-              styles.fab,
-              {
-                backgroundColor: theme.colors.primary,
-                marginBottom: fromMenu ? 20 + bottom : bottom + 20,
-              },
-            ]}
-            icon="package-variant-plus"
-            color="white"
-            onPress={() => {
-              if (hasPermission(permissions.CAN_MANAGE_PRODUCTS)) {
-                navigation.navigate('AddItem');
-              } else {
-                Toast.show({
-                  type: 'error',
-                  text1: 'Permission Denied',
-                  text2: 'You do not have permission to create items.',
-                });
-              }
-            }} // Use your actual screen name here
+      {hasPermission(permissions.CAN_MANAGE_PRODUCTS) && (
+        <FAB
+          variant="primary"
+          style={[
+            styles.fab,
+            {
+              backgroundColor: theme.colors.primary,
+              marginBottom: fromMenu ? 20 + bottom : bottom + 20,
+            },
+          ]}
+          icon="package-variant-plus"
+          color="white"
+          onPress={() => {
+            if (hasPermission(permissions.CAN_MANAGE_PRODUCTS)) {
+              navigation.navigate('AddItem');
+            } else {
+              Toast.show({
+                type: 'error',
+                text1: 'Permission Denied',
+                text2: 'You do not have permission to create items.',
+              });
+            }
+          }} // Use your actual screen name here
           // label="Create Item"
-          />
-        )}
+        />
+      )}
     </SafeAreaView>
   );
 };
