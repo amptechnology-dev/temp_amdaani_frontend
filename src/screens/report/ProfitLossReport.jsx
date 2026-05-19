@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { Icon } from 'react-native-paper';
 import {
   View,
   StyleSheet,
@@ -388,33 +389,108 @@ const ProfitLossReport = () => {
     const date = item.invoiceDate
       ? new Date(item.invoiceDate).toLocaleDateString()
       : '-';
+
+    const isLoss = Number(item.profitLoss || 0) < 0;
+
     return (
-      <Card mode="elevated" style={styles.card}>
-        <Card.Content style={styles.rowBetween}>
-          <View style={{ flex: 1, paddingRight: 8 }}>
-            <Text variant="titleMedium">{item.invoiceNumber || '-'}</Text>
-            <Text variant="bodySmall" style={styles.muted}>
-              Date: {date}
+      <Card
+        mode="outlined"
+        style={styles.card}
+        contentStyle={{
+          paddingHorizontal: 16,
+          paddingTop: 12,
+          paddingBottom: 12,
+        }}
+      >
+        {/* Header: Invoice number + Amount */}
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1 }}>
+            <Text variant="titleMedium" numberOfLines={1}>
+              {item.invoiceNumber || '-'}
             </Text>
-            <Text variant="bodySmall" numberOfLines={1} style={styles.muted}>
+            <Text variant="labelSmall" style={styles.muted} numberOfLines={1}>
               {item.customerDescription || '-'}
             </Text>
           </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text variant="titleMedium">
-              ₹{Number(item.invoiceAmount || 0).toFixed(2)}
-            </Text>
+          <Text variant="titleMedium">
+            ₹{Number(item.invoiceAmount || 0).toFixed(2)}
+          </Text>
+        </View>
+
+        {/* Meta: Date + Profit/Loss tag */}
+        <View style={styles.cardMeta}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Icon
+              source="calendar"
+              size={12}
+              color={theme.colors.onSurfaceVariant}
+            />
             <Text
-              variant="bodySmall"
-              style={[
-                styles.muted,
-                item.profitLoss < 0 && { color: theme.colors.error },
-              ]}
+              variant="labelSmall"
+              style={{ marginLeft: 4, letterSpacing: 0.4 }}
             >
-              P/L: ₹{Number(item.profitLoss || 0).toFixed(2)}
+              {date}
             </Text>
           </View>
-        </Card.Content>
+          <View
+            style={[
+              styles.tag,
+              {
+                backgroundColor: isLoss
+                  ? theme.colors.errorContainer
+                  : '#dcfce7',
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.tagText,
+                { color: isLoss ? theme.colors.error : '#16a34a' },
+              ]}
+            >
+              {isLoss ? '▼ Loss' : '▲ Profit'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Details row */}
+        <View style={styles.cardDetails}>
+          <View style={styles.detailCol}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Icon
+                source="currency-inr"
+                size={14}
+                color={theme.colors.onSurfaceVariant}
+              />
+              <Text variant="labelSmall">Invoice Amt</Text>
+            </View>
+            <Text variant="labelLarge">
+              ₹{Number(item.invoiceAmount || 0).toFixed(2)}
+            </Text>
+          </View>
+
+          <View style={styles.detailCol}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Icon
+                source={isLoss ? 'trending-down' : 'trending-up'}
+                size={14}
+                color={isLoss ? theme.colors.error : '#16a34a'}
+              />
+              <Text variant="labelSmall" style={{ marginLeft: 4 }}>
+                Profit/Loss
+              </Text>
+            </View>
+            <Text
+              variant="labelLarge"
+              style={{
+                fontWeight: '700',
+                color: isLoss ? theme.colors.error : '#16a34a',
+              }}
+            >
+              ₹{Number(item.profitLoss || 0).toFixed(2)}
+            </Text>
+          </View>
+        </View>
       </Card>
     );
   };
@@ -673,7 +749,31 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
   list: { padding: 12 },
-  card: { marginBottom: 10, borderRadius: 12 },
+  card: { marginBottom: 8, borderRadius: 12 },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 6,
+  },
+  cardMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  tag: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+  },
+  tagText: { fontWeight: '600', fontSize: 11 },
+  cardDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  detailCol: { flex: 1 },
   rowBetween: {
     flexDirection: 'row',
     justifyContent: 'space-between',

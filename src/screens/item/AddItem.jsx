@@ -1438,7 +1438,7 @@ const AddItem = () => {
                         val,
                       ) => {
                         if (val.id === 'without_tax') {
-                          setFieldValue('selectedTaxRate', null);
+                          //setFieldValue('selectedTaxRate', null);
                           setFieldTouched('selectedTaxRate', false);
                           setFieldError('selectedTaxRate', undefined);
                         }

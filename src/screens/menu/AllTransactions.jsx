@@ -53,7 +53,7 @@ const AllTransactions = () => {
   const [vendorFilter, setVendorFilter] = useState('month');
   const [vendorRefreshing, setVendorRefreshing] = useState(false);
 
-  // Calculate start date dynamically based on filter
+  // ✅ FIX: Calculate start date based on filter
   const getStartDate = filter => {
     const now = dayjs();
     switch (filter) {
@@ -64,18 +64,20 @@ const AllTransactions = () => {
       case 'month':
         return now.subtract(30, 'day').format('YYYY-MM-DD');
       case 'all':
-        return now.subtract(365, 'day').format('YYYY-MM-DD');
+        return now.subtract(10, 'year').format('YYYY-MM-DD'); // ✅ was 365 days, now truly "all"
       default:
         return now.subtract(30, 'day').format('YYYY-MM-DD');
     }
   };
 
-  // Fetch customer payments
-  const fetchCustomerPayments = async () => {
+  // ✅ FIX: Accept filter as param to avoid stale closure; reset loading on each call; send endDate
+  const fetchCustomerPayments = async (filter = customerFilter) => {
     try {
-      const startDate = getStartDate(customerFilter);
+      setCustomerLoading(true); // ✅ was missing — skeleton never showed on filter change
+      const startDate = getStartDate(filter);
+      const endDate = dayjs().format('YYYY-MM-DD'); // ✅ backend requires endDate
       const res = await api.get('/invoice/transactions', {
-        params: { startDate },
+        params: { startDate, endDate },
       });
       if (res.success) {
         setCustomerPayments(res.data || []);
@@ -87,17 +89,20 @@ const AllTransactions = () => {
         'Error fetching customer payments:',
         err?.response?.data || err.message,
       );
+      setCustomerPayments([]);
     } finally {
       setCustomerLoading(false);
     }
   };
 
-  // Fetch vendor payments
-  const fetchVendorPayments = async () => {
+  // ✅ FIX: Same pattern for vendor payments
+  const fetchVendorPayments = async (filter = vendorFilter) => {
     try {
-      const startDate = getStartDate(vendorFilter);
+      setVendorLoading(true); // ✅ was missing
+      const startDate = getStartDate(filter);
+      const endDate = dayjs().format('YYYY-MM-DD'); // ✅ backend requires endDate
       const res = await api.get('/purchase/transactions', {
-        params: { startDate },
+        params: { startDate, endDate },
       });
       if (res.success) {
         setVendorPayments(res.data || []);
@@ -109,28 +114,30 @@ const AllTransactions = () => {
         'Error fetching vendor payments:',
         err?.response?.data || err.message,
       );
+      setVendorPayments([]);
     } finally {
       setVendorLoading(false);
     }
   };
 
+  // ✅ FIX: Pass filter explicitly so useEffect always uses fresh value, not stale closure
   useEffect(() => {
-    fetchCustomerPayments();
+    fetchCustomerPayments(customerFilter);
   }, [customerFilter]);
 
   useEffect(() => {
-    fetchVendorPayments();
+    fetchVendorPayments(vendorFilter);
   }, [vendorFilter]);
 
   const onCustomerRefresh = async () => {
     setCustomerRefreshing(true);
-    await fetchCustomerPayments();
+    await fetchCustomerPayments(customerFilter);
     setCustomerRefreshing(false);
   };
 
   const onVendorRefresh = async () => {
     setVendorRefreshing(true);
-    await fetchVendorPayments();
+    await fetchVendorPayments(vendorFilter);
     setVendorRefreshing(false);
   };
 
@@ -151,10 +158,12 @@ const AllTransactions = () => {
       .filter(item => {
         const searchText = searchQuery.trim().toLowerCase();
         const purchaseId = item.purchase?._id || '';
-        const storeName = item.store?.name || 'Vendor';
+        const vendorName = item.purchase?.vendorName || '';
+        const invoiceNumber = item.purchase?.invoiceNumber || '';
         return (
           purchaseId.toLowerCase().includes(searchText) ||
-          storeName.toLowerCase().includes(searchText)
+          vendorName.toLowerCase().includes(searchText) ||
+          invoiceNumber.toLowerCase().includes(searchText)
         );
       })
       .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -254,9 +263,7 @@ const AllTransactions = () => {
               icon={getPaymentMethodIcon(item.paymentMethod)}
               style={[
                 styles.avatar,
-                {
-                  backgroundColor: theme.colors.primaryContainer,
-                },
+                { backgroundColor: theme.colors.primaryContainer },
               ]}
               color={theme.colors.onPrimaryContainer}
             />
@@ -559,7 +566,7 @@ const AllTransactions = () => {
     </View>
   );
 
-  // Customer Tab
+  // ✅ Customer Tab — defined inside component so it captures updated state
   const CustomersRoute = () => (
     <View style={styles.tabContent}>
       <Searchbar
@@ -618,11 +625,11 @@ const AllTransactions = () => {
     </View>
   );
 
-  // Vendors Tab
+  // ✅ Vendors Tab
   const VendorsRoute = () => (
     <View style={styles.tabContent}>
       <Searchbar
-        placeholder="Search purchase transactions..."
+        placeholder="Search vendor / invoice..."
         value={vendorSearchQuery}
         onChangeText={setVendorSearchQuery}
         style={styles.search}
@@ -677,10 +684,27 @@ const AllTransactions = () => {
     </View>
   );
 
-  const renderScene = SceneMap({
-    customers: CustomersRoute,
-    vendors: VendorsRoute,
-  });
+  // ✅ renderScene uses useMemo to prevent unnecessary re-creation
+  const renderScene = useMemo(
+    () =>
+      SceneMap({
+        customers: CustomersRoute,
+        vendors: VendorsRoute,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      customerPayments,
+      vendorPayments,
+      customerLoading,
+      vendorLoading,
+      customerSearchQuery,
+      vendorSearchQuery,
+      customerFilter,
+      vendorFilter,
+      customerRefreshing,
+      vendorRefreshing,
+    ],
+  );
 
   const renderTabBar = props => {
     const { navigationState } = props;
@@ -698,8 +722,8 @@ const AllTransactions = () => {
             { backgroundColor: theme.colors.background },
           ]}
         >
-          {props.navigationState.routes.map((route, index) => {
-            const isActive = index === navigationState.index;
+          {props.navigationState.routes.map((route, i) => {
+            const isActive = i === navigationState.index;
             const isVendorsTab = route.key === 'vendors';
             const count = isVendorsTab ? vendorCount : customerCount;
 
@@ -712,7 +736,6 @@ const AllTransactions = () => {
                     backgroundColor: isActive
                       ? theme.colors.primary
                       : theme.colors.primaryContainer,
-                    position: 'relative',
                   },
                 ]}
                 onPress={() => props.jumpTo(route.key)}
@@ -737,6 +760,28 @@ const AllTransactions = () => {
                   >
                     {route.title}
                   </Text>
+                  {/* ✅ Show count badge on tab */}
+                  {count > 0 && (
+                    <View
+                      style={[
+                        styles.countBadge,
+                        {
+                          backgroundColor: isActive
+                            ? 'rgba(255,255,255,0.25)'
+                            : theme.colors.primary,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.countText,
+                          { color: isActive ? '#fff' : '#fff' },
+                        ]}
+                      >
+                        {count > 99 ? '99+' : count}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </TouchableOpacity>
             );
@@ -756,6 +801,7 @@ const AllTransactions = () => {
         onIndexChange={setIndex}
         initialLayout={{ width: layout.width }}
         style={styles.tabView}
+        lazy // ✅ Only render tab when first visited — avoids double API calls on mount
       />
     </SafeAreaView>
   );
@@ -966,14 +1012,12 @@ const createStyles = theme =>
       paddingHorizontal: 16,
       paddingVertical: 4,
     },
-
     segmentedControl: {
       flexDirection: 'row',
       borderRadius: 12,
       padding: 4,
       gap: 6,
     },
-
     segment: {
       flex: 1,
       paddingVertical: 10,
@@ -982,26 +1026,23 @@ const createStyles = theme =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-
     segmentContent: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 6,
     },
-
     segmentText: {
       fontSize: 14,
       fontWeight: '600',
     },
-
     countBadge: {
       height: 20,
-      width: 20,
+      minWidth: 20,
+      paddingHorizontal: 4,
       justifyContent: 'center',
       alignItems: 'center',
       borderRadius: 10,
     },
-
     countText: {
       fontSize: 9,
       fontWeight: '700',

@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { Icon } from 'react-native-paper';
 import {
   View,
   StyleSheet,
@@ -128,7 +129,6 @@ const ProductReport = () => {
       grandTotal: products.reduce((s, r) => s + toNum(r.grandTotal), 0),
     };
   }, [products]);
-
 
   const ensureAndroidDownloadPermission = async () => {
     if (Platform.OS !== 'android') return true;
@@ -426,34 +426,126 @@ const ProductReport = () => {
 
   const renderItem = ({ item }) => {
     const date = item.date ? new Date(item.date).toLocaleDateString() : '-';
+
     return (
-      <Card mode="elevated" style={styles.card}>
-        <Card.Title
-          title={item.product || 'Product'}
-          subtitle={date}
-          titleVariant="titleMedium"
-        />
-        <Card.Content style={styles.rowBetween}>
-          <View style={{ flex: 1, paddingRight: 8 }}>
-            <Text variant="bodyMedium" numberOfLines={1}>
-              Invoice: {item.invoiceNumber}
+      <Card
+        mode="outlined"
+        style={styles.card}
+        contentStyle={{
+          paddingHorizontal: 16,
+          paddingTop: 12,
+          paddingBottom: 12,
+        }}
+      >
+        {/* Header: Product name + Invoice number */}
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1 }}>
+            <Text variant="titleMedium" numberOfLines={1}>
+              {item.product || 'Product'}
             </Text>
-            <Text variant="bodySmall" style={styles.muted} numberOfLines={1}>
-              Unit: {item.unit} | Qty: {item.quantity}
-            </Text>
-            <Text variant="bodySmall" style={styles.muted} numberOfLines={1}>
-              Price: ₹{item.price} | GST: {item.gstRate}%
+            <Text variant="labelSmall" style={styles.muted}>
+              Invoice: {item.invoiceNumber || '-'}
             </Text>
           </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text variant="titleMedium">
+          <View
+            style={[
+              styles.tag,
+              { backgroundColor: theme.colors.primaryContainer },
+            ]}
+          >
+            <Text style={[styles.tagText, { color: theme.colors.primary }]}>
+              {item.unit || '-'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Date + GST rate row */}
+        <View style={styles.cardMeta}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Icon
+              source="calendar"
+              size={12}
+              color={theme.colors.onSurfaceVariant}
+            />
+            <Text
+              variant="labelSmall"
+              style={{ marginLeft: 4, letterSpacing: 0.4 }}
+            >
+              {date}
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.tag,
+              { backgroundColor: theme.colors.secondaryContainer },
+            ]}
+          >
+            <Text style={[styles.tagText, { color: theme.colors.secondary }]}>
+              GST {item.gstRate}%
+            </Text>
+          </View>
+        </View>
+
+        {/* Totals row */}
+        <View style={styles.cardDetails}>
+          <View style={styles.detailCol}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Icon
+                source="package-variant"
+                size={14}
+                color={theme.colors.onSurfaceVariant}
+              />
+              <Text variant="labelSmall" style={{ marginLeft: 4 }}>
+                Qty
+              </Text>
+            </View>
+            <Text variant="labelLarge">{item.quantity}</Text>
+          </View>
+
+          <View style={styles.detailCol}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Icon
+                source="currency-inr"
+                size={14}
+                color={theme.colors.onSurfaceVariant}
+              />
+              <Text variant="labelSmall">Price</Text>
+            </View>
+            <Text variant="labelLarge">
+              ₹{Number(item.price || 0).toFixed(2)}
+            </Text>
+          </View>
+
+          <View style={styles.detailCol}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Icon
+                source="receipt"
+                size={14}
+                color={theme.colors.onSurfaceVariant}
+              />
+              <Text variant="labelSmall" style={{ marginLeft: 4 }}>
+                Line Total
+              </Text>
+            </View>
+            <Text variant="labelLarge">
+              ₹{Number(item.lineTotal || 0).toFixed(2)}
+            </Text>
+          </View>
+
+          <View style={styles.detailCol}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Icon
+                source="currency-inr"
+                size={14}
+                color={theme.colors.onSurfaceVariant}
+              />
+              <Text variant="labelSmall">Grand</Text>
+            </View>
+            <Text variant="labelLarge" style={{ fontWeight: '700' }}>
               ₹{Number(item.grandTotal || 0).toFixed(2)}
             </Text>
-            <Text variant="bodySmall" style={styles.muted}>
-              Line Total: ₹{Number(item.lineTotal || 0).toFixed(2)}
-            </Text>
           </View>
-        </Card.Content>
+        </View>
       </Card>
     );
   };
@@ -656,7 +748,31 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   list: { padding: 12 },
-  card: { marginBottom: 10, borderRadius: 12 },
+  card: { marginBottom: 8, borderRadius: 12 },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 6,
+  },
+  cardMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  tag: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+  },
+  tagText: { fontWeight: '500', fontSize: 11 },
+  cardDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  detailCol: { flex: 1 },
   rowBetween: {
     flexDirection: 'row',
     justifyContent: 'space-between',

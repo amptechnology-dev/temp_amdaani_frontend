@@ -330,8 +330,8 @@ const TabNavigator = () => {
         screenOptions={({ route }) => ({
           header: () => (
             <AppHeader
-              showSettings
-              showAvataronRight
+              showSettings={hasPermission(permissions.CAN_MANAGE_SETTINGS)}
+              showAvataronRight={hasPermission(permissions.CAN_MANAGE_SETTINGS)}
               logoUrl={user?.store?.logoUrl}
               avatarUri={`https://ui-avatars.com/api/?name=${encodeURIComponent(
                 store?.name || 'User',
@@ -384,7 +384,8 @@ const TabNavigator = () => {
                 avatarUri={`https://ui-avatars.com/api/?name=${encodeURIComponent(
                   store?.name || 'User',
                 )}&background=random`}
-                showAvatar
+                showAvatar={hasPermission(permissions.CAN_MANAGE_SETTINGS)}
+                showSettings={false}
                 // showBell
                 // showSettings
                 onBellPress={() => {}}

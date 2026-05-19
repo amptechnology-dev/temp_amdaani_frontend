@@ -29,6 +29,7 @@ import Navbar from '../../components/Navbar';
 import FileViewer from 'react-native-file-viewer';
 import CustomAlert from '../../components/CustomAlert';
 import { useAuth } from '../../context/AuthContext';
+import { Icon } from 'react-native-paper';
 
 const ProductWiseSalesReport = () => {
   const theme = useTheme();
@@ -440,18 +441,105 @@ const ProductWiseSalesReport = () => {
   };
 
   const renderItem = ({ item }) => (
-    <Card style={styles.card}>
-      <Card.Title title={item.name} subtitle={`HSN: ${item.hsn || '-'}`} />
-      <Card.Content style={styles.rowBetween}>
-        <View>
-          <Text>Unit: {item.unit}</Text>
-          <Text>Price: ₹{item.sellingPrice}</Text>
+    <Card
+      mode="outlined"
+      style={styles.card}
+      contentStyle={{
+        paddingHorizontal: 16,
+        paddingTop: 12,
+        paddingBottom: 12,
+      }}
+    >
+      {/* Header: Product name + HSN tag */}
+      <View style={styles.cardHeader}>
+        <View style={{ flex: 1 }}>
+          <Text variant="titleMedium" numberOfLines={1}>
+            {item.name}
+          </Text>
+          <Text variant="labelSmall" style={styles.muted}>
+            HSN: {item.hsn || '-'}
+          </Text>
         </View>
-        <View style={{ alignItems: 'flex-end' }}>
-          <Text>Qty: {item.totalSold}</Text>
-          <Text>Total Value: ₹{item.totalRevenue}</Text>
+        <View
+          style={[
+            styles.tag,
+            { backgroundColor: theme.colors.primaryContainer },
+          ]}
+        >
+          <Text style={[styles.tagText, { color: theme.colors.primary }]}>
+            {item.unit || '-'}
+          </Text>
         </View>
-      </Card.Content>
+      </View>
+
+      {/* Divider-like meta row */}
+      <View style={styles.cardMeta}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Icon
+            source="tag-outline"
+            size={12}
+            color={theme.colors.onSurfaceVariant}
+          />
+          <Text variant="labelSmall" style={{ marginLeft: 4 }}>
+            Price: ₹{item.sellingPrice}
+          </Text>
+        </View>
+        <View
+          style={[
+            styles.tag,
+            { backgroundColor: theme.colors.secondaryContainer },
+          ]}
+        >
+          <Text style={[styles.tagText, { color: theme.colors.secondary }]}>
+            Qty Sold: {item.totalSold}
+          </Text>
+        </View>
+      </View>
+
+      {/* Details row */}
+      <View style={styles.cardDetails}>
+        <View style={styles.detailCol}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Icon
+              source="package-variant"
+              size={14}
+              color={theme.colors.onSurfaceVariant}
+            />
+            <Text variant="labelSmall" style={{ marginLeft: 4 }}>
+              Unit
+            </Text>
+          </View>
+          <Text variant="labelLarge">{item.unit || '-'}</Text>
+        </View>
+
+        <View style={styles.detailCol}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Icon
+              source="counter"
+              size={14}
+              color={theme.colors.onSurfaceVariant}
+            />
+            <Text variant="labelSmall" style={{ marginLeft: 4 }}>
+              Qty Sold
+            </Text>
+          </View>
+          <Text variant="labelLarge">{item.totalSold}</Text>
+        </View>
+
+        <View style={styles.detailCol}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Icon
+              source="currency-inr"
+              size={14}
+              color={theme.colors.onSurfaceVariant}
+            />
+            <Text variant="labelSmall">Total Value</Text>
+          </View>
+          <Text variant="labelLarge" style={{ fontWeight: '700' }}>
+            ₹{Number(item.totalRevenue || 0).toFixed(2)}
+          </Text>
+        </View>
+      </View>
     </Card>
   );
 
@@ -636,7 +724,33 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 8 },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   list: { padding: 12 },
-  card: { marginBottom: 10, borderRadius: 12 },
+  card: { marginBottom: 8, borderRadius: 12 },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 6,
+  },
+  cardMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  tag: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+  },
+  tagText: { fontWeight: '500', fontSize: 11 },
+  cardDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  detailCol: { flex: 1 },
+  muted: { color: '#6b7280' },
+  dateBtn: { flex: 1 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between' },
   dateBtn: { flex: 1 },
 });

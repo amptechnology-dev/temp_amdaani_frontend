@@ -48,13 +48,13 @@ const AppHeader = ({
           )}
         </TouchableOpacity>
         <View>
-          <Text variant="titleLarge" style={[styles.headerTitle, { color: theme.colors.primary }]}>
+          <Text
+            variant="titleLarge"
+            style={[styles.headerTitle, { color: theme.colors.primary }]}
+          >
             {title}
           </Text>
-          {
-            tagline &&
-            <Text variant="labelSmall">{tagline}</Text>
-          }
+          {tagline && <Text variant="labelSmall">{tagline}</Text>}
         </View>
       </View>
     );
@@ -82,35 +82,33 @@ const AppHeader = ({
             onPress={onSettingsPress}
           />
         )}
-        {
-          showAvataronRight && (
-            <TouchableOpacity
-              onPress={() => {
-                navigation.navigate('Profile');
-              }}
-            >
-              {logoUrl ? (
-                <Avatar.Image
-                  size={35}
-                  source={{ uri: logoUrl }}
-                  style={styles.logoImage}
-                />
-              ) : (
-                <Avatar.Image
-                  size={35}
-                  source={{ uri: avatarUri }}
-                  style={styles.logoImage}
-                />
-              )}
-            </TouchableOpacity>
-          )
-        }
+        {showAvataronRight && (
+          <TouchableOpacity
+            onPress={() => {
+              navigation.navigate('Profile');
+            }}
+          >
+            {logoUrl ? (
+              <Avatar.Image
+                size={35}
+                source={{ uri: logoUrl }}
+                style={styles.logoImage}
+              />
+            ) : (
+              <Avatar.Image
+                size={35}
+                source={{ uri: avatarUri }}
+                style={styles.logoImage}
+              />
+            )}
+          </TouchableOpacity>
+        )}
       </View>
     );
   };
 
   return (
-    <Appbar.Header style={[{ backgroundColor: theme.colors.surface, }, style]}>
+    <Appbar.Header style={[{ backgroundColor: theme.colors.surface }, style]}>
       <View style={styles.header}>
         {renderLeftContent()}
         {renderRightContent()}

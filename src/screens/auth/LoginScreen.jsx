@@ -785,7 +785,13 @@ const LoginScreen = ({ navigation }) => {
                 >
                   {/* Header */}
                   <View style={styles.header}>
-                    <Text variant="headlineLarge" style={styles.title}>
+                    <Text
+                      variant="headlineLarge"
+                      style={styles.title}
+                      adjustsFontSizeToFit
+                      numberOfLines={1}
+                      minimumFontScale={0.6}
+                    >
                       Welcome to AMDAANI
                     </Text>
                     <Text variant="bodyLarge" style={styles.subtitle}>

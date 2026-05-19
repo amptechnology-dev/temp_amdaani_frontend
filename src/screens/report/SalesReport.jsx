@@ -1,4 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { format } from 'date-fns';
+import { Icon } from 'react-native-paper';
 import {
   View,
   StyleSheet,
@@ -31,6 +33,7 @@ import Navbar from '../../components/Navbar';
 import FileViewer from 'react-native-file-viewer';
 import { useAuth } from '../../context/AuthContext';
 import { useRoute } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 
 const SalesReport = () => {
   const theme = useTheme();
@@ -46,6 +49,7 @@ const SalesReport = () => {
 
   const [dialogVisible, setDialogVisible] = useState(false);
   const [lastSavedPath, setLastSavedPath] = useState(null);
+  const navigation = useNavigation();
 
   // const { authData } = useAuth();   <-- remove this
   const { authState } = useAuth();
@@ -580,40 +584,151 @@ const SalesReport = () => {
 
   const renderItem = ({ item }) => {
     const date = item.invoiceDate
-      ? new Date(item.invoiceDate).toLocaleDateString()
+      ? format(new Date(item.invoiceDate), 'dd MMM yyyy')
       : '-';
+
     return (
-      <Card mode="elevated" style={styles.card}>
-        <Card.Title
-          title={item.invoiceNumber || item._id || 'Invoice'}
-          subtitle={date}
-          titleVariant="titleMedium"
-        />
-        <Card.Content style={styles.rowBetween}>
-          <View style={{ flex: 1, paddingRight: 8 }}>
-            <Text variant="bodyMedium" numberOfLines={1}>
-              {item.customerName || '-'}
-            </Text>
-            <Text variant="bodySmall" style={styles.muted} numberOfLines={1}>
-              {item.customerMobile || '-'}
-            </Text>
-            <Text variant="bodySmall" style={styles.muted} numberOfLines={1}>
-              {item.customerAddress || '-'}
+      <Card
+        style={styles.card}
+        contentStyle={{
+          paddingHorizontal: 16,
+          paddingTop: 12,
+          paddingBottom: 12,
+        }}
+        mode="outlined"
+        onPress={() =>
+          navigation.navigate('InvoiceDetail', { invoiceId: item._id })
+        }
+      >
+        {/* Header: Customer + Invoice Number */}
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              {!item?.customerName && (
+                <Icon
+                  source="phone"
+                  size={16}
+                  color={theme.colors.onSurfaceVariant}
+                />
+              )}
+              <Text
+                variant="titleMedium"
+                style={{ marginLeft: !item?.customerName ? 4 : 0 }}
+                numberOfLines={1}
+              >
+                {item.customerName?.trim() || item.customerMobile}
+              </Text>
+            </View>
+            {item.customerName?.trim() ? (
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  marginTop: 2,
+                }}
+              >
+                <Icon
+                  source="phone"
+                  size={14}
+                  color={theme.colors.onSurfaceVariant}
+                />
+                <Text variant="labelSmall" style={{ marginLeft: 4 }}>
+                  {item.customerMobile}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+          <Text variant="titleSmall">
+            {'#'}
+            {item.invoiceNumber || item._id}
+          </Text>
+        </View>
+
+        {/* Date + Type tag */}
+        <View style={styles.cardMeta}>
+          <View
+            style={[
+              styles.tag,
+              { backgroundColor: theme.colors.primaryContainer },
+            ]}
+          >
+            <Text style={[styles.tagText, { color: theme.colors.primary }]}>
+              {String(item.type || '').toUpperCase()}
             </Text>
           </View>
-          <View style={{ alignItems: 'flex-end' }}>
-            <Text variant="titleMedium">
-              ₹{Number(item.grandTotal || 0).toFixed(2)}
-            </Text>
-            <Text variant="bodySmall" style={styles.muted}>
-              {item.type?.toUpperCase() || '-'}
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Icon
+              source="calendar"
+              size={12}
+              color={theme.colors.onSurfaceVariant}
+            />
+            <Text
+              variant="labelSmall"
+              style={{ marginLeft: 4, letterSpacing: 0.4 }}
+            >
+              {date}
             </Text>
           </View>
-        </Card.Content>
+        </View>
+
+        {/* Totals row */}
+        <View style={styles.cardDetails}>
+          <View style={styles.detailCol}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Icon
+                source="currency-inr"
+                size={16}
+                color={theme.colors.onSurfaceVariant}
+              />
+              <Text variant="labelLarge">Total</Text>
+            </View>
+            <Text variant="labelLarge">
+              {Number(item.grandTotal || 0).toFixed(2)}
+            </Text>
+          </View>
+
+          <View style={styles.detailCol}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Icon
+                source="sale"
+                size={16}
+                color={theme.colors.onSurfaceVariant}
+              />
+              <Text variant="labelLarge" style={{ marginLeft: 4 }}>
+                GST
+              </Text>
+            </View>
+            <Text variant="labelLarge">
+              {Number(item.gstTotal || 0).toFixed(2)}
+            </Text>
+          </View>
+
+          <View style={styles.detailCol}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Icon
+                source="credit-card-outline"
+                size={16}
+                color={theme.colors.onSurfaceVariant}
+              />
+              <Text variant="labelLarge" style={{ marginLeft: 4 }}>
+                Status
+              </Text>
+            </View>
+            <Text
+              variant="labelLarge"
+              style={{
+                color:
+                  item.paymentStatus === 'paid' ? 'green' : theme.colors.error,
+                textTransform: 'capitalize',
+              }}
+            >
+              {item.paymentStatus || '-'}
+            </Text>
+          </View>
+        </View>
       </Card>
     );
   };
-
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -907,7 +1022,31 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
   list: { padding: 12 },
-  card: { marginBottom: 10, borderRadius: 12 },
+  card: { marginBottom: 8, borderRadius: 12 },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 6,
+  },
+  cardMeta: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  tag: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+  },
+  tagText: { fontWeight: '500', fontSize: 12 },
+  cardDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  detailCol: { flex: 1 },
   rowBetween: {
     flexDirection: 'row',
     justifyContent: 'space-between',

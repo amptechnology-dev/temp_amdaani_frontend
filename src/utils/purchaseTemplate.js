@@ -54,7 +54,7 @@ export const generatePurchaseHTML = ({
     totalTaxable += item.taxableValue || 0;
 
     // ✅ GST total
-    totalGST += isTaxInclusive ? 0 : gstAmount;
+    totalGST += gstAmount ? gstAmount : 0;
 
     totalAmount += total;
   });

@@ -74,6 +74,8 @@ import AddPurchaseItems from './src/screens/Purchase/AddPurchaseItems';
 import AddPurchaseItem from './src/screens/Purchase/AddPurchaseItem';
 import ProfitLossReport from './src/screens/report/ProfitLossReport';
 import StockReport from './src/screens/report/StockReport';
+import UserActivity from './src/screens/menu/UserActivity';
+import ActivePlanDetails from './src/screens/menu/ActivePlanDetails';
 
 const Stack = createStackNavigator();
 
@@ -156,6 +158,9 @@ function RootNavigator() {
         <Stack.Screen name="UserList" component={UsersList} />
         <Stack.Screen name="AddPurchaseItems" component={AddPurchaseItems} />
         <Stack.Screen name="AddPurchaseItem" component={AddPurchaseItem} />
+        <Stack.Screen name="UserActivity" component={UserActivity} />
+        <Stack.Screen name="ActivePlanDetails" component={ActivePlanDetails} />
+
         <Stack.Screen
           name="InvoiceTransactions"
           component={InvoiceTransactions}

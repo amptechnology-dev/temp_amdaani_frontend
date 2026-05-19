@@ -165,6 +165,12 @@ const Menu = () => {
             onPress: () => navigation.navigate('UserList'),
             description: 'Manage application users and roles',
           },
+        hasPermission(permissions.CAN_MANAGE_USERS) && {
+          title: 'User Activity',
+          icon: 'history',
+          onPress: () => navigation.navigate('UserActivity'),
+          description: 'Login history and device activity',
+        },
       ],
     },
     {
@@ -194,7 +200,7 @@ const Menu = () => {
     {
       title: 'Reports & Insights',
       data: [
-        {
+        hasPermission(permissions.CAN_MANAGE_USERS) && {
           title: 'Report',
           icon: 'file-chart',
           onPress: () => navigation.navigate('Report'),
@@ -233,6 +239,12 @@ const Menu = () => {
           icon: 'currency-usd',
           onPress: () => navigation.navigate('Pricings'),
           description: 'Upgrade or manage subscription plans',
+        },
+        {
+          title: 'Plan Details',
+          icon: 'crown-outline',
+          onPress: () => navigation.navigate('ActivePlanDetails'),
+          description: 'View your active plan and payment history',
         },
         {
           title: 'Our Products',

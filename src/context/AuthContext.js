@@ -20,6 +20,7 @@ import SplashScreen from '../screens/SplashScreen';
 import { ensureNotificationPermission } from '../utils/permissions';
 import OnboardingScreen from '../components/OnboardingScreen';
 import { extractErrorMessage } from '../utils/errorHandler';
+import { getDeviceHeaders } from '../utils/deviceInfo';
 
 export const roles = {
   OWNER: 'owner',
@@ -44,6 +45,7 @@ export const permissions = {
   CAN_EDIT_PURCHASES: 'edit_purchases',
   CAN_CANCEL_PURCHASES: 'cancel_purchases',
   CAN_VIEW_PURCHASES: 'view_purchases',
+  CAN_SEE_REPORTS: 'see_reports',
 };
 
 export let isBootstrapping = true; // stays true until splash done
@@ -306,8 +308,13 @@ export const AuthProvider = ({ children }) => {
   };
 
   const verifyOtp = async (phone, otp) => {
+    const deviceHeaders = await getDeviceHeaders();
     try {
-      const res = await api.post('/auth/verify-otp', { phone, otp });
+      const res = await api.post(
+        '/auth/verify-otp',
+        { phone, otp },
+        { headers: deviceHeaders },
+      );
       if (res.success) {
         if (res.data?.user) {
           const newAuthState = {

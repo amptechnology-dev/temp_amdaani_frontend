@@ -807,21 +807,27 @@ export default function Purchase() {
       const netRate = Math.max(0, rawCostPrice - purchaseDiscount);
       const mrp = item.mrp;
       const sellingDiscount = Number(item.sellDiscount ?? 0);
-      const gstRate = Number(item.purchaseGstRate || 0);
-      const isPurchaseTaxInclusive = Boolean(item.isPurchaseTaxInclusive);
-      const isTaxInclusive = Boolean(item.isTaxInclusive);
+      const gstRate = Number(item.purchaseGstRate ?? item.gstRate ?? 0);
+
+      // ✅ FIX: read isPurchaseTaxInclusive first, fallback to isTaxInclusive
+      const isPurchaseTaxInclusive = Boolean(
+        item.isPurchaseTaxInclusive ?? item.isTaxInclusive ?? false,
+      );
+      const isTaxInclusive = isPurchaseTaxInclusive; // keep in sync for serialisation
 
       let baseRate = 0;
       let taxableValue = 0;
       let gstAmount = 0;
       let totalAmount = 0;
 
-      if (isTaxInclusive) {
+      if (isPurchaseTaxInclusive) {
+        // GST already inside the cost price — extract it for reporting
         baseRate = gstRate > 0 ? netRate / (1 + gstRate / 100) : netRate;
         taxableValue = baseRate * qty;
         gstAmount = taxableValue * (gstRate / 100);
         totalAmount = netRate * qty;
       } else {
+        // GST is added on top of the cost price
         baseRate = netRate;
         taxableValue = netRate * qty;
         gstAmount = taxableValue * (gstRate / 100);
