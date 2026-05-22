@@ -15,13 +15,13 @@ import {
 } from 'react-native-paper';
 import Navbar from '../../components/Navbar';
 import api from '../../utils/api';
- 
+
 const ActivePlanDetails = () => {
   const bottom = useSafeAreaInsets().bottom;
   const theme = useTheme();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
- 
+
   const fetchSubscriptionHistory = async () => {
     try {
       setLoading(true);
@@ -35,11 +35,11 @@ const ActivePlanDetails = () => {
       setLoading(false);
     }
   };
- 
+
   useEffect(() => {
     fetchSubscriptionHistory();
   }, []);
- 
+
   const formatDate = dateStr => {
     if (!dateStr) return '—';
     return new Date(dateStr).toLocaleDateString('en-IN', {
@@ -48,7 +48,7 @@ const ActivePlanDetails = () => {
       year: 'numeric',
     });
   };
- 
+
   const formatDateTime = dateStr => {
     if (!dateStr) return '—';
     const d = new Date(dateStr);
@@ -66,13 +66,13 @@ const ActivePlanDetails = () => {
       })
     );
   };
- 
+
   const getDaysRemaining = endDate => {
     if (!endDate) return 0;
     const diff = new Date(endDate) - new Date();
     return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
   };
- 
+
   const getPlanColor = planName => {
     switch (planName?.toLowerCase()) {
       case 'free':
@@ -86,7 +86,7 @@ const ActivePlanDetails = () => {
         return theme.colors.primary;
     }
   };
- 
+
   const getStatusColor = status => {
     switch (status?.toLowerCase()) {
       case 'active':
@@ -99,7 +99,7 @@ const ActivePlanDetails = () => {
         return theme.colors.onSurfaceVariant;
     }
   };
- 
+
   const getPaymentStatusColor = status => {
     switch (status?.toLowerCase()) {
       case 'success':
@@ -112,15 +112,18 @@ const ActivePlanDetails = () => {
         return theme.colors.onSurfaceVariant;
     }
   };
- 
+
   // ── Current Plan Card ─────────────────────────────────────────────────────
   const CurrentPlanCard = ({ plan }) => {
     if (!plan) return null;
     const daysLeft = getDaysRemaining(plan.endDate);
     const planColor = getPlanColor(plan.planName);
     const totalDays = plan.durationDays || 30;
-    const progressPercent = Math.min(100, Math.round((daysLeft / totalDays) * 100));
- 
+    const progressPercent = Math.min(
+      100,
+      Math.round((daysLeft / totalDays) * 100),
+    );
+
     return (
       <Card
         mode="outlined"
@@ -144,32 +147,63 @@ const ActivePlanDetails = () => {
             {plan.status?.toUpperCase()}
           </Text>
         </View>
- 
-        <Divider style={[styles.divider, { backgroundColor: theme.colors.outlineVariant }]} />
- 
+
+        <Divider
+          style={[
+            styles.divider,
+            { backgroundColor: theme.colors.outlineVariant },
+          ]}
+        />
+
         {/* Price + Duration Row */}
         <View style={styles.priceRow}>
           <View style={styles.priceBlock}>
-            <Text style={[styles.priceLabel, { color: theme.colors.onSurfaceVariant }]}>
+            <Text
+              style={[
+                styles.priceLabel,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
               Plan Price
             </Text>
-            <Text style={[styles.priceValue, { color: theme.colors.onSurface }]}>
+            <Text
+              style={[styles.priceValue, { color: theme.colors.onSurface }]}
+            >
               ₹{plan.price}
-              <Text style={[styles.priceSuffix, { color: theme.colors.onSurfaceVariant }]}>
+              <Text
+                style={[
+                  styles.priceSuffix,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
+              >
                 /{plan.durationDays}d
               </Text>
             </Text>
           </View>
           <View style={styles.priceBlock}>
-            <Text style={[styles.priceLabel, { color: theme.colors.onSurfaceVariant }]}>
+            <Text
+              style={[
+                styles.priceLabel,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
               Invoice Limit
             </Text>
-            <Text style={[styles.priceValue, { color: theme.colors.onSurface }]}>
-              {plan.usageLimits?.unlimited ? '∞ Unlimited' : plan.usageLimits?.invoices}
+            <Text
+              style={[styles.priceValue, { color: theme.colors.onSurface }]}
+            >
+              {plan.usageLimits?.unlimited
+                ? '∞ Unlimited'
+                : plan.usageLimits?.invoices}
             </Text>
           </View>
           <View style={styles.priceBlock}>
-            <Text style={[styles.priceLabel, { color: theme.colors.onSurfaceVariant }]}>
+            <Text
+              style={[
+                styles.priceLabel,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
               Days Left
             </Text>
             <Text
@@ -182,13 +216,13 @@ const ActivePlanDetails = () => {
             </Text>
           </View>
         </View>
- 
+
         {/* Progress Bar */}
         <View style={styles.progressContainer}>
           <View
             style={[
               styles.progressTrack,
-              { backgroundColor: theme.colors.surfaceVariant },
+              { backgroundColor: '#BBDEFB' }, // ✅ blue track background
             ]}
           >
             <View
@@ -196,27 +230,51 @@ const ActivePlanDetails = () => {
                 styles.progressFill,
                 {
                   width: `${progressPercent}%`,
-                  backgroundColor: daysLeft <= 7 ? theme.colors.error : planColor,
+                  backgroundColor:
+                    daysLeft <= 7 ? theme.colors.error : '#1E88E5', // ✅ blue fill
                 },
               ]}
             />
           </View>
-          <Text style={[styles.progressText, { color: theme.colors.onSurfaceVariant }]}>
+          <Text
+            style={[
+              styles.progressText,
+              { color: theme.colors.onSurfaceVariant },
+            ]}
+          >
             {progressPercent}% remaining
           </Text>
         </View>
- 
+
         {/* Date Row */}
         <View style={styles.dateRow}>
           <View style={styles.dateBlock}>
-            <Icon source="calendar-start" size={13} color={theme.colors.onSurfaceVariant} />
-            <Text style={[styles.dateLabel, { color: theme.colors.onSurfaceVariant }]}>
+            <Icon
+              source="calendar-start"
+              size={13}
+              color={theme.colors.onSurfaceVariant}
+            />
+            <Text
+              style={[
+                styles.dateLabel,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
               Start: {formatDate(plan.startDate)}
             </Text>
           </View>
           <View style={styles.dateBlock}>
-            <Icon source="calendar-end" size={13} color={theme.colors.onSurfaceVariant} />
-            <Text style={[styles.dateLabel, { color: theme.colors.onSurfaceVariant }]}>
+            <Icon
+              source="calendar-end"
+              size={13}
+              color={theme.colors.onSurfaceVariant}
+            />
+            <Text
+              style={[
+                styles.dateLabel,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
               End: {formatDate(plan.endDate)}
             </Text>
           </View>
@@ -224,7 +282,7 @@ const ActivePlanDetails = () => {
       </Card>
     );
   };
- 
+
   // ── Plan History Card ─────────────────────────────────────────────────────
   const PlanHistoryCard = ({ plan, index }) => {
     const planColor = getPlanColor(plan.planName);
@@ -237,7 +295,12 @@ const ActivePlanDetails = () => {
         <View style={styles.historyHeader}>
           <View style={styles.planTitleRow}>
             <Icon source="crown-outline" size={16} color={planColor} />
-            <Text style={[styles.historyPlanName, { color: theme.colors.onSurface }]}>
+            <Text
+              style={[
+                styles.historyPlanName,
+                { color: theme.colors.onSurface },
+              ]}
+            >
               {plan.planName} Plan
             </Text>
           </View>
@@ -250,17 +313,35 @@ const ActivePlanDetails = () => {
             {plan.status?.toUpperCase()}
           </Text>
         </View>
- 
+
         <View style={styles.historyDetails}>
           <View style={styles.infoItem}>
-            <Icon source="currency-inr" size={12} color={theme.colors.onSurfaceVariant} />
-            <Text style={[styles.infoText, { color: theme.colors.onSurfaceVariant }]}>
+            <Icon
+              source="currency-inr"
+              size={12}
+              color={theme.colors.onSurfaceVariant}
+            />
+            <Text
+              style={[
+                styles.infoText,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
               ₹{plan.price} · {plan.durationDays} days
             </Text>
           </View>
           <View style={styles.infoItem}>
-            <Icon source="calendar-range" size={12} color={theme.colors.onSurfaceVariant} />
-            <Text style={[styles.infoText, { color: theme.colors.onSurfaceVariant }]}>
+            <Icon
+              source="calendar-range"
+              size={12}
+              color={theme.colors.onSurfaceVariant}
+            />
+            <Text
+              style={[
+                styles.infoText,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
               {formatDate(plan.startDate)} → {formatDate(plan.endDate)}
             </Text>
           </View>
@@ -268,14 +349,10 @@ const ActivePlanDetails = () => {
       </Card>
     );
   };
- 
+
   // ── Payment Card ──────────────────────────────────────────────────────────
   const PaymentCard = ({ payment }) => (
-    <Card
-      mode="outlined"
-      style={styles.card}
-      contentStyle={styles.cardContent}
-    >
+    <Card mode="outlined" style={styles.card} contentStyle={styles.cardContent}>
       <View style={styles.paymentHeader}>
         <View style={styles.planTitleRow}>
           <Icon
@@ -283,7 +360,9 @@ const ActivePlanDetails = () => {
             size={18}
             color={theme.colors.primary}
           />
-          <Text style={[styles.paymentMethod, { color: theme.colors.onSurface }]}>
+          <Text
+            style={[styles.paymentMethod, { color: theme.colors.onSurface }]}
+          >
             {payment.method || 'Payment'}
           </Text>
         </View>
@@ -296,21 +375,35 @@ const ActivePlanDetails = () => {
           {payment.status?.toUpperCase()}
         </Text>
       </View>
- 
-      <Divider style={[styles.divider, { backgroundColor: theme.colors.outlineVariant }]} />
- 
+
+      <Divider
+        style={[
+          styles.divider,
+          { backgroundColor: theme.colors.outlineVariant },
+        ]}
+      />
+
       <View style={styles.paymentDetails}>
         <View style={styles.paymentAmountRow}>
-          <Text style={[styles.paymentAmountLabel, { color: theme.colors.onSurfaceVariant }]}>
+          <Text
+            style={[
+              styles.paymentAmountLabel,
+              { color: theme.colors.onSurfaceVariant },
+            ]}
+          >
             Amount Paid
           </Text>
           <Text style={[styles.paymentAmount, { color: '#4CAF50' }]}>
             ₹{payment.amount?.toFixed(2)}
           </Text>
         </View>
- 
+
         <View style={styles.infoItem}>
-          <Icon source="identifier" size={12} color={theme.colors.onSurfaceVariant} />
+          <Icon
+            source="identifier"
+            size={12}
+            color={theme.colors.onSurfaceVariant}
+          />
           <Text
             style={[styles.infoText, { color: theme.colors.onSurfaceVariant }]}
             numberOfLines={1}
@@ -318,18 +411,33 @@ const ActivePlanDetails = () => {
             {payment.transactionId}
           </Text>
         </View>
- 
+
         <View style={styles.infoItem}>
-          <Icon source="clock-outline" size={12} color={theme.colors.onSurfaceVariant} />
-          <Text style={[styles.infoText, { color: theme.colors.onSurfaceVariant }]}>
+          <Icon
+            source="clock-outline"
+            size={12}
+            color={theme.colors.onSurfaceVariant}
+          />
+          <Text
+            style={[styles.infoText, { color: theme.colors.onSurfaceVariant }]}
+          >
             {formatDateTime(payment.paidAt || payment.createdAt)}
           </Text>
         </View>
- 
+
         {payment.walletUsed > 0 && (
           <View style={styles.infoItem}>
-            <Icon source="wallet-outline" size={12} color={theme.colors.onSurfaceVariant} />
-            <Text style={[styles.infoText, { color: theme.colors.onSurfaceVariant }]}>
+            <Icon
+              source="wallet-outline"
+              size={12}
+              color={theme.colors.onSurfaceVariant}
+            />
+            <Text
+              style={[
+                styles.infoText,
+                { color: theme.colors.onSurfaceVariant },
+              ]}
+            >
               Wallet used: ₹{payment.walletUsed}
             </Text>
           </View>
@@ -337,7 +445,7 @@ const ActivePlanDetails = () => {
       </View>
     </Card>
   );
- 
+
   // ── Section Header ────────────────────────────────────────────────────────
   const SectionHeader = ({ icon, title }) => (
     <View style={styles.sectionHeader}>
@@ -347,11 +455,14 @@ const ActivePlanDetails = () => {
       </Text>
     </View>
   );
- 
+
   if (loading) {
     return (
       <>
-        <SafeAreaView edges={['top']} style={{ backgroundColor: theme.colors.background }} />
+        <SafeAreaView
+          edges={['top']}
+          style={{ backgroundColor: theme.colors.background }}
+        />
         <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
           <Navbar title="Plan Details" />
           <View style={{ marginTop: 40 }}>
@@ -361,7 +472,7 @@ const ActivePlanDetails = () => {
       </>
     );
   }
- 
+
   return (
     <>
       <SafeAreaView
@@ -370,7 +481,7 @@ const ActivePlanDetails = () => {
       />
       <View style={{ flex: 1, backgroundColor: theme.colors.background }}>
         <Navbar title="Plan Details" />
- 
+
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
@@ -383,13 +494,22 @@ const ActivePlanDetails = () => {
           {data?.currentPlan ? (
             <CurrentPlanCard plan={data.currentPlan} />
           ) : (
-            <Card mode="outlined" style={styles.card} contentStyle={styles.cardContent}>
-              <Text style={{ color: theme.colors.onSurfaceVariant, textAlign: 'center' }}>
+            <Card
+              mode="outlined"
+              style={styles.card}
+              contentStyle={styles.cardContent}
+            >
+              <Text
+                style={{
+                  color: theme.colors.onSurfaceVariant,
+                  textAlign: 'center',
+                }}
+              >
                 No active plan found
               </Text>
             </Card>
           )}
- 
+
           {/* ── Payment History ── */}
           {data?.payments?.length > 0 && (
             <>
@@ -399,7 +519,7 @@ const ActivePlanDetails = () => {
               ))}
             </>
           )}
- 
+
           {/* ── Previous Plans ── */}
           {data?.previousPlans?.length > 0 && (
             <>
@@ -409,7 +529,7 @@ const ActivePlanDetails = () => {
               ))}
             </>
           )}
- 
+
           {/* ── Upcoming Plans ── */}
           {data?.upcomingPlans?.length > 0 && (
             <>
@@ -424,13 +544,11 @@ const ActivePlanDetails = () => {
     </>
   );
 };
- 
+
 const styles = StyleSheet.create({
   scrollContent: {
     padding: 12,
   },
- 
-  // ── Section Header ────────────────────────────────────────────────────────
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -443,8 +561,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
- 
-  // ── Card ──────────────────────────────────────────────────────────────────
   card: {
     borderRadius: 12,
     marginBottom: 10,
@@ -457,8 +573,6 @@ const styles = StyleSheet.create({
     height: 1,
     marginVertical: 10,
   },
- 
-  // ── Current Plan ──────────────────────────────────────────────────────────
   planHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -533,8 +647,6 @@ const styles = StyleSheet.create({
   dateLabel: {
     fontSize: 11,
   },
- 
-  // ── History Card ──────────────────────────────────────────────────────────
   historyHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -548,8 +660,6 @@ const styles = StyleSheet.create({
   historyDetails: {
     gap: 4,
   },
- 
-  // ── Payment Card ──────────────────────────────────────────────────────────
   paymentHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -575,8 +685,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
   },
- 
-  // ── Shared ────────────────────────────────────────────────────────────────
   infoItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -587,5 +695,5 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
 });
- 
+
 export default ActivePlanDetails;

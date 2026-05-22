@@ -104,6 +104,7 @@ const AllTransactions = () => {
       const res = await api.get('/purchase/transactions', {
         params: { startDate, endDate },
       });
+      console.log('Vendor payments response:', res); // ✅ debug log
       if (res.success) {
         setVendorPayments(res.data || []);
       } else {
@@ -232,22 +233,31 @@ const AllTransactions = () => {
 
   // Calculate totals
   const customerTotal = useMemo(() => {
-    return processedCustomerPayments.reduce(
-      (sum, item) => sum + (item.amount || 0),
-      0,
-    );
+    return processedCustomerPayments
+      .filter(item => item.status !== 'cancelled')
+      .reduce((sum, item) => sum + (item.amount || 0), 0);
   }, [processedCustomerPayments]);
 
   const vendorTotal = useMemo(() => {
-    return processedVendorPayments.reduce(
-      (sum, item) => sum + (item.amount || 0),
-      0,
-    );
+    return processedVendorPayments
+      .filter(item => item.status !== 'cancelled')
+      .reduce((sum, item) => sum + (item.amount || 0), 0);
   }, [processedVendorPayments]);
 
   // Calculate transaction counts
-  const customerCount = processedCustomerPayments.length;
-  const vendorCount = processedVendorPayments.length;
+  const customerCount = useMemo(
+    () =>
+      processedCustomerPayments.filter(item => item.status !== 'cancelled')
+        .length,
+    [processedCustomerPayments],
+  );
+
+  const vendorCount = useMemo(
+    () =>
+      processedVendorPayments.filter(item => item.status !== 'cancelled')
+        .length,
+    [processedVendorPayments],
+  );
 
   const styles = createStyles(theme);
 

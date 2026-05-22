@@ -108,9 +108,12 @@ export default function InvoiceDetail() {
   const isWhatsAppVisible = !!invoice?.customerMobile;
 
   const whatsappFabBottom = baseBottom + bottomSafe;
-  const shareFabBottom = isWhatsAppVisible
+  const downloadFabBottom = isWhatsAppVisible
     ? whatsappFabBottom + fabSpacing
     : whatsappFabBottom;
+  const shareFabBottom = isWhatsAppVisible
+    ? downloadFabBottom + fabSpacing
+    : whatsappFabBottom + fabSpacing;
   const cancelFabBottom = shareFabBottom + fabSpacing;
   useEffect(() => {
     const loadPreference = async () => {
@@ -479,6 +482,28 @@ export default function InvoiceDetail() {
     }
   };
 
+  const handleDownload = async () => {
+    try {
+      const file = await RNHTMLtoPDF.convert({
+        html,
+        fileName: `invoice-${invoice.invoiceNumber}`,
+        base64: false,
+      });
+      Toast.show({
+        type: 'success',
+        text1: 'Invoice downloaded',
+        text2: file.filePath,
+      });
+    } catch (err) {
+      console.error('Download error:', err);
+      Toast.show({
+        type: 'error',
+        text1: 'Download failed',
+        text2: err.message || 'Unable to save invoice.',
+      });
+    }
+  };
+
   const handleWhatsAppShare = async () => {
     try {
       // 1. Generate the PDF invoice
@@ -744,7 +769,7 @@ export default function InvoiceDetail() {
             styles.fabWhatsApp,
             {
               backgroundColor: '#25D366',
-              bottom: shareFabBottom, // dynamic
+              bottom: whatsappFabBottom,
             },
           ]}
           onPress={handleWhatsAppShare}
@@ -753,13 +778,26 @@ export default function InvoiceDetail() {
       )}
       <FAB
         size="small"
+        icon="download"
+        style={[
+          styles.fab,
+          {
+            backgroundColor: theme.colors.surface,
+            bottom: downloadFabBottom,
+          },
+        ]}
+        onPress={handleDownload}
+        color={theme.colors.onSurface}
+      />
+      <FAB
+        size="small"
         variant="primary"
         icon="share-variant"
         style={[
           styles.fab,
           {
             backgroundColor: theme.colors.surface,
-            bottom: whatsappFabBottom, // dynamic
+            bottom: shareFabBottom,
           },
         ]}
         onPress={handleShare}

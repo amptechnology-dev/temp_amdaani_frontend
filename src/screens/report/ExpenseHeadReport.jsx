@@ -31,12 +31,46 @@ import FileViewer from 'react-native-file-viewer';
 import CustomAlert from '../../components/CustomAlert';
 import { useAuth } from '../../context/AuthContext';
 
+// ─── helpers ────────────────────────────────────────────────────────────────
+
+/** Group a flat array of records by a key-extractor fn */
+const groupBy = (arr, keyFn) => {
+  const map = {};
+  arr.forEach(item => {
+    const k = keyFn(item);
+    if (!map[k]) map[k] = [];
+    map[k].push(item);
+  });
+  return map;
+};
+
+const currency = n => `₹${Number(n || 0).toFixed(2)}`;
+
+const formatDDMMYYYY = dateStr => {
+  const d = new Date(dateStr);
+  const day = String(d.getDate()).padStart(2, '0');
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const year = d.getFullYear();
+  return `${day}/${month}/${year}`;
+};
+
+const formatShort = date => {
+  if (!date) return 'All';
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const year = String(date.getFullYear()).slice(-2);
+  return `${day}/${month}/${year}`;
+};
+
+// ─── component ───────────────────────────────────────────────────────────────
+
 const ExpenseHeadReport = () => {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const compact = width < 380;
 
-  const [data, setData] = useState([]);
+  // raw flat records from API
+  const [rawData, setRawData] = useState([]);
   const [loading, setLoading] = useState(false);
   const [startDate, setStartDate] = useState(null);
   const [endDate, setEndDate] = useState(null);
@@ -45,16 +79,11 @@ const ExpenseHeadReport = () => {
   const [lastSavedPath, setLastSavedPath] = useState(null);
   const [expandedHeads, setExpandedHeads] = useState({});
 
-  // const { authData } = useAuth();   <-- remove this
   const { authState } = useAuth();
-
-  // derive store with fallbacks
   const store = authState?.user?.store || authState?.store || null;
-
   const storeName = store?.name || store?.storeName || 'N/A';
   const address = (() => {
     if (!store?.address) return 'N/A';
-    // if address object exists, format it, else if string use it directly
     if (typeof store.address === 'object') {
       const a = store.address;
       return [a.street, a.city, a.state, a.postalCode]
@@ -66,40 +95,63 @@ const ExpenseHeadReport = () => {
   const contactNo = store?.contactNo || store?.contactNumber || 'N/A';
   const gstin = store?.gstNumber || store?.gstin || 'N/A';
 
+  // ── Derived grouped data ─────────────────────────────────────────────────
+  /**
+   * Group flat records by vendorName (or fall back to "Unknown Vendor").
+   * Each group becomes one "head" card identical to the old structure:
+   *   { headId, headName, totalAmount, count, expenses: [...] }
+   */
+  const data = useMemo(() => {
+    if (!rawData.length) return [];
+
+    const grouped = groupBy(rawData, r => r.vendorName || 'Unknown Vendor');
+
+    const heads = Object.entries(grouped).map(([vendorName, records]) => {
+      const totalAmount = records.reduce(
+        (s, r) => s + Number(r.grandTotal || r.amount || 0),
+        0,
+      );
+      return {
+        headId: vendorName, // unique key
+        headName: vendorName,
+        totalAmount,
+        count: records.length,
+        expenses: records.map(r => ({
+          _id: r._id,
+          date: r.date,
+          paymentMethod: r.paymentMethod,
+          // "paidTo" ≈ product + invoice for purchase records
+          paidTo: r.productName || '',
+          // notes shows invoice number, qty, rate, gst etc.
+          notes: [
+            r.invoiceNumber ? `Inv# ${r.invoiceNumber}` : null,
+            r.quantity != null ? `Qty: ${r.quantity}` : null,
+            r.rate != null ? `Rate: ${currency(r.rate)}` : null,
+            r.gstRate != null ? `GST: ${r.gstRate}%` : null,
+            r.discount ? `Disc: ${currency(r.discount)}` : null,
+            r.type ? `Type: ${r.type}` : null,
+          ]
+            .filter(Boolean)
+            .join('  |  '),
+          amount: r.grandTotal || r.amount || 0,
+        })),
+      };
+    });
+
+    // sort by totalAmount desc
+    return heads.sort((a, b) => b.totalAmount - a.totalAmount);
+  }, [rawData]);
+
+  // ── auto-fetch when dates change ─────────────────────────────────────────
   useEffect(() => {
-    if (startDate && endDate) {
-      fetchReport();
-    }
+    if (startDate && endDate) fetchReport();
   }, [startDate, endDate]);
-
-  useEffect(() => {
-    setTimeout(() => {
-      // console.log('Auth Data:', authState);
-    }, 3000);
-  }, []);
-
-  const formatDate = date => {
-    if (!date) return 'All';
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = String(date.getFullYear()).slice(-2);
-    return `${day}/${month}/${year}`;
-  };
-
-  const formatDisplayDate = dateString => {
-    const date = new Date(dateString);
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = String(date.getFullYear());
-    return `${day}/${month}/${year}`;
-  };
 
   const formattedRange = useMemo(() => {
-    const s = startDate ? formatDate(startDate) : 'All';
-    const e = endDate ? formatDate(endDate) : 'All';
-    return `${s}  To  ${e}`;
+    return `${formatShort(startDate)}  To  ${formatShort(endDate)}`;
   }, [startDate, endDate]);
 
+  // ── API call ─────────────────────────────────────────────────────────────
   const fetchReport = async () => {
     if (!startDate || !endDate) {
       Alert.alert(
@@ -109,58 +161,53 @@ const ExpenseHeadReport = () => {
       return;
     }
     try {
-      console.log('Fetching expense report...');
       setLoading(true);
-      const res = await api.get('/expense/grouped-by-head', {
+      const res = await api.get('/expense/ledger', {
         params: {
           startDate: startDate.toISOString().split('T')[0],
           endDate: endDate.toISOString().split('T')[0],
         },
       });
 
-      // console.log('Expense Report Response:', res);
-
       if (res?.success) {
-        // Sort by totalAmount (highest first)
-        const sorted = (res.data || []).sort(
-          (a, b) => Number(b.totalAmount || 0) - Number(a.totalAmount || 0),
-        );
-        setData(sorted);
+        const records = Array.isArray(res.data.data) ? res.data.data : [];
+        setRawData(records);
 
-        // Initialize expanded state for all heads
+        // expand first vendor by default
+        const grouped = groupBy(records, r => r.vendorName || 'Unknown Vendor');
+        const keys = Object.keys(grouped);
         const initialExpanded = {};
-        sorted.forEach((head, index) => {
-          initialExpanded[head.headId] = index === 0; // Expand first item by default
+        keys.forEach((k, i) => {
+          initialExpanded[k] = i === 0;
         });
         setExpandedHeads(initialExpanded);
       } else {
-        Alert.alert('No Data', res?.message || 'No expense records found.');
-        setData([]);
+        Alert.alert('No Data', res?.message || 'No records found.');
+        setRawData([]);
       }
     } catch (err) {
       console.error('Fetch error:', err?.message);
-      Alert.alert('Error', 'Failed to fetch expense report.');
+      Alert.alert('Error', 'Failed to fetch report.');
     } finally {
       setLoading(false);
     }
   };
 
   const toggleHeadExpansion = headId => {
-    setExpandedHeads(prev => ({
-      ...prev,
-      [headId]: !prev[headId],
-    }));
+    setExpandedHeads(prev => ({ ...prev, [headId]: !prev[headId] }));
   };
 
-  const totals = useMemo(() => {
-    const toNum = v => Number(v || 0);
-    return {
-      count: data.reduce((s, r) => s + toNum(r.count), 0),
-      totalAmount: data.reduce((s, r) => s + toNum(r.totalAmount), 0),
+  // ── Totals ───────────────────────────────────────────────────────────────
+  const totals = useMemo(
+    () => ({
+      count: data.reduce((s, r) => s + r.count, 0),
+      totalAmount: data.reduce((s, r) => s + Number(r.totalAmount || 0), 0),
       headCount: data.length,
-    };
-  }, [data]);
+    }),
+    [data],
+  );
 
+  // ── Permission helpers ───────────────────────────────────────────────────
   const ensureAndroidDownloadPermission = async () => {
     if (Platform.OS !== 'android') return true;
     if (Platform.Version < 29) {
@@ -177,72 +224,59 @@ const ExpenseHeadReport = () => {
     return true;
   };
 
+  // ── HTML builder ─────────────────────────────────────────────────────────
   const buildHTML = () => {
-    const currency = n => `₹${Number(n || 0).toFixed(2)}`;
     const safe = v => (v ? String(v) : '-');
-    const formatDDMMYYYY = dateStr => {
-      const d = new Date(dateStr);
-      const day = String(d.getDate()).padStart(2, '0');
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const year = d.getFullYear();
-      return `${day}/${month}/${year}`;
-    };
 
-    const Views = data
+    const views = data
       .map(
         head => `
-      <div style="margin-bottom: 20px; page-break-inside: avoid;">
-        <div style="background: #f5f5f5; padding: 12px; border-radius: 8px; margin-bottom: 8px;">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
-            <h3 style="margin: 0; font-size: 16px;">${safe(
-              head.headName,
-            )} (${safe(head.totalAmount)})</h3>
-          </div>
+      <div style="margin-bottom:20px;">
+        <div style="background:#f5f5f5; padding:12px; border-radius:8px; margin-bottom:8px;">
+          <h3 style="margin:0; font-size:16px;">${safe(
+            head.headName,
+          )} — ${currency(head.totalAmount)}</h3>
         </div>
-
-        <table style="width: 100%; border-collapse: collapse; margin-bottom: 16px;">
+        <table style="width:100%; border-collapse:collapse; margin-bottom:16px;">
           <thead>
-            <tr style="background: #fafafa;">
-              <th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd; font-size: 12px;">Sl. No.</th>
-              <th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd; font-size: 12px;">Date</th>
-              <th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd; font-size: 12px;">Payment Method</th>
-              <th style="text-align: left; padding: 8px; border-bottom: 1px solid #ddd; font-size: 12px;">Paid To / Notes</th>
-              <th style="text-align: right; padding: 8px; border-bottom: 1px solid #ddd; font-size: 12px;">Amount</th>
+            <tr style="background:#fafafa;">
+              <th style="text-align:left; padding:8px; border-bottom:1px solid #ddd; font-size:12px;">Sl.</th>
+              <th style="text-align:left; padding:8px; border-bottom:1px solid #ddd; font-size:12px;">Date</th>
+              <th style="text-align:left; padding:8px; border-bottom:1px solid #ddd; font-size:12px;">Product</th>
+              <th style="text-align:left; padding:8px; border-bottom:1px solid #ddd; font-size:12px;">Payment</th>
+              <th style="text-align:left; padding:8px; border-bottom:1px solid #ddd; font-size:12px;">Details</th>
+              <th style="text-align:right; padding:8px; border-bottom:1px solid #ddd; font-size:12px;">Amount</th>
             </tr>
           </thead>
           <tbody>
             ${head.expenses
               .map(
-                (expense, index) => `
+                (exp, idx) => `
               <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #eee; font-size: 11px;">${
-                  index + 1
+                <td style="padding:8px; border-bottom:1px solid #eee; font-size:11px;">${
+                  idx + 1
                 }</td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee; font-size: 11px;">${formatDDMMYYYY(
-                  expense.date,
+                <td style="padding:8px; border-bottom:1px solid #eee; font-size:11px;">${formatDDMMYYYY(
+                  exp.date,
                 )}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee; font-size: 11px;">${safe(
-                  expense.paymentMethod,
+                <td style="padding:8px; border-bottom:1px solid #eee; font-size:11px;">${safe(
+                  exp.paidTo,
                 )}</td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee; font-size: 11px;">
-                  ${safe(expense.paidTo)}
-                  ${
-                    expense.notes
-                      ? `<div style="font-size:10px;color:#666;">${safe(
-                          expense.notes,
-                        )}</div>`
-                      : ''
-                  }
-                </td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee; font-size: 11px; text-align: right;">${currency(
-                  expense.amount,
+                <td style="padding:8px; border-bottom:1px solid #eee; font-size:11px;">${safe(
+                  exp.paymentMethod,
+                )}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee; font-size:11px; color:#555;">${safe(
+                  exp.notes,
+                )}</td>
+                <td style="padding:8px; border-bottom:1px solid #eee; font-size:11px; text-align:right;">${currency(
+                  exp.amount,
                 )}</td>
               </tr>
             `,
               )
               .join('')}
             <tr>
-              <td colspan="4" style="text-align:right; padding:8px; border-top:2px solid #333; font-weight:bold;">Total:</td>
+              <td colspan="5" style="text-align:right; padding:8px; border-top:2px solid #333; font-weight:bold;">Total:</td>
               <td style="text-align:right; padding:8px; border-top:2px solid #333; font-weight:bold;">${currency(
                 head.totalAmount,
               )}</td>
@@ -255,96 +289,46 @@ const ExpenseHeadReport = () => {
       .join('');
 
     return `
-  <html>
-  <head>
-    <meta charset="utf-8" />
-    <style>
-      @page {
-        margin: 30px 24px;
-        @top-right {
-          content: "Page " counter(page) " of " counter(pages);
-          font-size: 10px;
-          color: #666;
-        }
-      }
-
-      body {
-        font-family: -apple-system, Roboto, Segoe UI, Arial;
-        color: #111;
-      }
-
-      h1 {
-        font-size: 20px;
-        margin: 0 0 4px;
-      }
-
-      .muted {
-        color: #666;
-        margin-bottom: 16px;
-      }
-
-      .chips {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-bottom: 16px;
-      }
-
-      .chip {
-        border-radius: 16px;
-        padding: 6px 12px;
-        background: #f2f2f2;
-        font-size: 12px;
-        color: #333;
-        border: 1px solid #ddd;
-      }
-
-      .grand-total {
-        font-weight: bold;
-        margin-top: 16px;
-        border-top: 2px solid #333;
-        padding-top: 8px;
-        display: flex;
-        justify-content: flex-end;
-        font-size: 12px;
-      }
-
-      .footer {
-        margin-top: 14px;
-        color: #666;
-        font-size: 10px;
-      }
-    </style>
-  </head>
-  <body>
-   <h2 style="text-align:center;">${storeName}</h2>
-    <p style="text-align:center;"><b>Address:</b> ${address}</p>
-    <p style="text-align:center;"><b>Contact No:</b> ${contactNo}</p>
-    ${gstin ? `<p style="text-align:center;"><b>GSTIN:</b> ${gstin}</p>` : ''}
-    <h1>Expense Report</h1>
-    <div class="muted">Period From: ${formattedRange}</div>
-
-    <div class="chips">
-      <div class="chip">Grand Total: <b>${currency(
-        totals.totalAmount,
-      )}</b></div>
-    </div>
-
-    ${
-      Views ||
-      '<div style="text-align:center; padding: 40px;">No expense records</div>'
-    }
-
-    <div class="grand-total">
-      Grand Total: ${currency(totals.totalAmount)}
-    </div>
-
-    <div class="footer">Powered by AMDAANI | ${new Date().toLocaleString()}</div>
-  </body>
-  </html>
-  `;
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <style>
+    @page { size: A4; margin:20px 20px; }
+    html, body { margin:0; padding:0; }
+    body { font-family:-apple-system,Roboto,Segoe UI,Arial; color:#111; }
+    h1 { font-size:20px; margin:0 0 4px; }
+    .muted { color:#666; margin-bottom:16px; }
+    .chips { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+    .chip { border-radius:16px; padding:6px 12px; background:#f2f2f2; font-size:12px; color:#333; border:1px solid #ddd; }
+    .grand-total { font-weight:bold; margin-top:16px; border-top:2px solid #333; padding-top:8px; display:flex; justify-content:flex-end; font-size:12px; }
+    .footer { margin-top:14px; color:#666; font-size:10px; }
+  </style>
+</head>
+<body>
+  <h2 style="text-align:center;">${storeName}</h2>
+  <p style="text-align:center;"><b>Address:</b> ${address}</p>
+  <p style="text-align:center;"><b>Contact No:</b> ${contactNo}</p>
+  ${gstin ? `<p style="text-align:center;"><b>GSTIN:</b> ${gstin}</p>` : ''}
+  <h1>Expense Report</h1>
+  <div class="muted">Period From: ${formattedRange}</div>
+  <div class="chips">
+    <div class="chip">Vendors: <b>${totals.headCount}</b></div>
+    <div class="chip">Transactions: <b>${totals.count}</b></div>
+    <div class="chip">Grand Total: <b>${currency(totals.totalAmount)}</b></div>
+  </div>
+  ${
+    views ||
+    '<div style="text-align:center;padding:40px;">No records found</div>'
+  }
+  <div class="grand-total">Grand Total Expenses: ${currency(
+    totals.totalAmount,
+  )}</div>
+  <div class="footer">Powered by AMDAANI | ${new Date().toLocaleString()}</div>
+</body>
+</html>`;
   };
 
+  // ── PDF export ───────────────────────────────────────────────────────────
   const exportPDF = async () => {
     if (!data.length) return Alert.alert('No Data', 'Generate a report first.');
     try {
@@ -358,34 +342,29 @@ const ExpenseHeadReport = () => {
         fileName: `expense_report_${Date.now()}`,
         base64: false,
       });
-
-      const downloadsDir =
+      const dir =
         Platform.OS === 'android'
           ? RNFS.DownloadDirectoryPath
           : RNFS.DocumentDirectoryPath;
-
-      const finalPath = `${downloadsDir}/ExpenseReport_${Date.now()}.pdf`;
-
+      const finalPath = `${dir}/ExpenseReport_${Date.now()}.pdf`;
       await RNFS.copyFile(pdfRes.filePath, finalPath);
-
       try {
         await FileViewer.open(finalPath, { showOpenWithDialog: true });
-      } catch (openErr) {
-        console.warn('No PDF viewer available:', openErr?.message);
+      } catch (e) {
         Alert.alert(
-          'PDF Report Saved',
-          'File has been saved to Downloads folder, but no app is available to open it.',
+          'PDF Saved',
+          'Saved to Downloads. No PDF viewer available.',
         );
       }
-
       setLastSavedPath(finalPath);
       setDialogVisible(true);
     } catch (e) {
       console.error('PDF export error:', e?.message);
-      Alert.alert('Error', 'Could not export or open PDF.');
+      Alert.alert('Error', 'Could not export PDF.');
     }
   };
 
+  // ── Excel export ─────────────────────────────────────────────────────────
   const exportExcel = async () => {
     if (!data.length) return Alert.alert('No Data', 'Generate a report first.');
     try {
@@ -393,85 +372,90 @@ const ExpenseHeadReport = () => {
       const downloadsOk = await ensureAndroidDownloadPermission();
       if (!storageOk || !downloadsOk) return;
 
-      // Flatten all expenses with head information
-      const sheetData = data.flatMap(head =>
-        head.expenses.map(expense => ({
-          'Expense Head': head.headName,
-          Date: formatDisplayDate(expense.date),
-          'Payment Method': expense.paymentMethod,
-          'Paid To': expense.paidTo || '',
-          Amount: expense.amount,
-          Notes: expense.notes || '',
-        })),
-      );
+      // flatten all records for the sheet
+      const sheetData = rawData.map(r => ({
+        Vendor: r.vendorName || '',
+        Date: formatDDMMYYYY(r.date),
+        'Invoice #': r.invoiceNumber || '',
+        Product: r.productName || '',
+        Qty: r.quantity ?? '',
+        Rate: r.rate ?? '',
+        Discount: r.discount ?? '',
+        'GST Rate (%)': r.gstRate ?? '',
+        'GST Amount': r.gstAmount ?? '',
+        'Payment Method': r.paymentMethod || '',
+        Type: r.type || '',
+        'Grand Total': r.grandTotal || r.amount || 0,
+      }));
 
       const ws = XLSX.utils.json_to_sheet(sheetData);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Expenses');
       const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
 
-      const downloadsDir =
+      const dir =
         Platform.OS === 'android'
           ? RNFS.DownloadDirectoryPath
           : RNFS.DocumentDirectoryPath;
-      const finalPath = `${downloadsDir}/ExpenseReport_${Date.now()}.xlsx`;
-
+      const finalPath = `${dir}/ExpenseReport_${Date.now()}.xlsx`;
       await RNFS.writeFile(finalPath, wbout, 'base64');
-
       try {
         await FileViewer.open(finalPath, { showOpenWithDialog: true });
-      } catch (openErr) {
-        console.warn('No Excel viewer available:', openErr?.message);
+      } catch (e) {
+        console.warn('No Excel viewer:', e?.message);
       }
-
       setLastSavedPath(finalPath);
       setDialogVisible(true);
     } catch (e) {
       console.error('Excel export error:', e?.message);
-      Alert.alert('Error', 'Could not export or open Excel.');
+      Alert.alert('Error', 'Could not export Excel.');
     }
   };
 
+  // ── Quick date range helpers ─────────────────────────────────────────────
   const applyThisYear = () => {
     const today = new Date();
-    const currentMonth = today.getMonth() + 1;
     const fyStart =
-      currentMonth >= 4
+      today.getMonth() + 1 >= 4
         ? new Date(today.getFullYear(), 3, 1)
         : new Date(today.getFullYear() - 1, 3, 1);
     setStartDate(fyStart);
     setEndDate(today);
   };
-
   const applyThisMonth = () => {
     const today = new Date();
     setStartDate(new Date(today.getFullYear(), today.getMonth(), 1));
     setEndDate(today);
   };
-
   const applyPreviousMonth = () => {
     const today = new Date();
     setStartDate(new Date(today.getFullYear(), today.getMonth() - 1, 1));
     setEndDate(new Date(today.getFullYear(), today.getMonth(), 0));
   };
 
+  // ── Row renderers ────────────────────────────────────────────────────────
   const renderExpenseItem = expense => (
     <List.Item
-      title={`₹${expense.amount}`}
-      description={expense.paymentMethod}
-      left={props => <List.Icon {...props} icon="cash" />}
-      right={props => (
-        <View style={{ alignItems: 'flex-end' }}>
-          <Text style={{ fontSize: 12, color: '#666' }}>
-            {formatDisplayDate(expense.date)}
+      title={`${expense.paidTo || '—'}  •  ${currency(expense.amount)}`}
+      description={`${formatDDMMYYYY(expense.date)}  |  ${
+        expense.paymentMethod
+      }${expense.notes ? `\n${expense.notes}` : ''}`}
+      left={props => <List.Icon {...props} icon="cart-outline" />}
+      right={() => (
+        <View
+          style={{
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+            paddingRight: 8,
+          }}
+        >
+          <Text style={{ fontWeight: 'bold', fontSize: 13 }}>
+            {currency(expense.amount)}
           </Text>
-          {expense.paidTo && (
-            <Text style={{ fontSize: 12, color: '#666' }}>
-              To: {expense.paidTo}
-            </Text>
-          )}
         </View>
       )}
+      descriptionNumberOfLines={3}
+      descriptionStyle={{ fontSize: 11, color: '#666' }}
     />
   );
 
@@ -479,7 +463,9 @@ const ExpenseHeadReport = () => {
     <Card style={styles.card}>
       <Card.Title
         title={item.headName}
-        subtitle={`Total: ₹${item.totalAmount} | Transactions: ${item.count}`}
+        subtitle={`Total: ${currency(item.totalAmount)}  |  Txns: ${
+          item.count
+        }`}
         right={props => (
           <IconButton
             {...props}
@@ -490,21 +476,65 @@ const ExpenseHeadReport = () => {
       />
       {expandedHeads[item.headId] && (
         <Card.Content style={{ padding: 0 }}>
-          <View>
-            {item.expenses.map((expense, index) => (
-              <View key={index}>
-                {renderExpenseItem(expense)}
-                {index < item.expenses.length - 1 && (
-                  <View style={{ height: 1, backgroundColor: '#ddd' }} />
-                )}
-              </View>
-            ))}
-          </View>
+          {item.expenses.map((expense, index) => (
+            <View key={`${item.headId}_${expense._id ?? index}_${index}`}>
+              {renderExpenseItem(expense)}
+              {index < item.expenses.length - 1 && (
+                <View style={{ height: 1, backgroundColor: '#ddd' }} />
+              )}
+            </View>
+          ))}
         </Card.Content>
       )}
     </Card>
   );
 
+  // ── Grand-total footer shown at bottom of list ───────────────────────────
+  const ListFooter = () =>
+    data.length > 0 ? (
+      <Card style={[styles.card, { backgroundColor: '#1a1a2e' }]}>
+        <Card.Content>
+          <View style={styles.rowBetween}>
+            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>
+              Total Vendors
+            </Text>
+            <Text style={{ color: '#fff', fontSize: 14 }}>
+              {totals.headCount}
+            </Text>
+          </View>
+          <View style={styles.rowBetween}>
+            <Text style={{ color: '#fff', fontSize: 14, fontWeight: '600' }}>
+              Total Transactions
+            </Text>
+            <Text style={{ color: '#fff', fontSize: 14 }}>{totals.count}</Text>
+          </View>
+          <View
+            style={[
+              styles.rowBetween,
+              {
+                marginTop: 8,
+                borderTopColor: '#444',
+                borderTopWidth: 1,
+                paddingTop: 8,
+              },
+            ]}
+          >
+            <Text
+              style={{ color: '#ffd700', fontSize: 16, fontWeight: 'bold' }}
+            >
+              Grand Total Expenses
+            </Text>
+            <Text
+              style={{ color: '#ffd700', fontSize: 16, fontWeight: 'bold' }}
+            >
+              {currency(totals.totalAmount)}
+            </Text>
+          </View>
+        </Card.Content>
+      </Card>
+    ) : null;
+
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -531,6 +561,7 @@ const ExpenseHeadReport = () => {
       />
 
       <View style={[styles.header, compact && { paddingHorizontal: 12 }]}>
+        {/* Date pickers */}
         <View style={styles.row}>
           <Button
             mode="outlined"
@@ -539,7 +570,7 @@ const ExpenseHeadReport = () => {
             style={[styles.dateBtn, compact && { paddingHorizontal: 0 }]}
             contentStyle={{ flexDirection: 'row-reverse' }}
           >
-            {startDate ? formatDate(startDate) : 'Start Date'}
+            {startDate ? formatShort(startDate) : 'Start Date'}
           </Button>
           <Button
             mode="outlined"
@@ -548,7 +579,7 @@ const ExpenseHeadReport = () => {
             style={[styles.dateBtn, compact && { paddingHorizontal: 0 }]}
             contentStyle={{ flexDirection: 'row-reverse' }}
           >
-            {endDate ? formatDate(endDate) : 'End Date'}
+            {endDate ? formatShort(endDate) : 'End Date'}
           </Button>
           <IconButton
             icon="calendar-remove"
@@ -560,6 +591,7 @@ const ExpenseHeadReport = () => {
           />
         </View>
 
+        {/* Quick ranges */}
         <View style={[styles.row, compact && { gap: 4 }]}>
           <Button
             mode="outlined"
@@ -589,6 +621,8 @@ const ExpenseHeadReport = () => {
             Prev Month
           </Button>
         </View>
+
+        {/* Generate */}
         <View style={[styles.row, compact && { gap: 6 }]}>
           <Button
             mode="contained"
@@ -608,24 +642,6 @@ const ExpenseHeadReport = () => {
           >
             {loading ? 'Loading...' : 'Generate'}
           </Button>
-          {/* <Button
-                                    mode="contained-tonal"
-                                    onPress={exportPDF}
-                                    disabled={!invoices.length || loading}
-                                    style={styles.ml8}
-                                    icon="file-export-outline"
-                                >
-                                    Export PDF
-                                </Button>
-                                <Button
-                                    mode="contained-tonal"
-                                    onPress={exportExcel}
-                                    disabled={!invoices.length || loading}
-                                    style={styles.ml8}
-                                    icon="file-excel"
-                                >
-                                    Export Excel
-                                </Button> */}
         </View>
       </View>
 
@@ -636,7 +652,7 @@ const ExpenseHeadReport = () => {
         </View>
       ) : data.length === 0 ? (
         <View style={styles.center}>
-          <Text>No expense records found. Select date range and Generate.</Text>
+          <Text>No records found. Select date range and Generate.</Text>
         </View>
       ) : (
         <FlatList
@@ -644,6 +660,7 @@ const ExpenseHeadReport = () => {
           keyExtractor={item => item.headId}
           renderItem={renderHeadItem}
           contentContainerStyle={styles.list}
+          ListFooterComponent={<ListFooter />}
         />
       )}
 
@@ -687,6 +704,7 @@ const styles = StyleSheet.create({
   card: { marginBottom: 10, borderRadius: 12 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between' },
   dateBtn: { flex: 1 },
+  submitButtonLabel: {},
 });
 
 export default ExpenseHeadReport;

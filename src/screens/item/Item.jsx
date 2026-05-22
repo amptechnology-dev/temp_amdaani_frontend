@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from 'react';
 import {
   View,
   StyleSheet,
@@ -8,7 +14,6 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import {
-  Button,
   Text,
   useTheme,
   Card,
@@ -29,6 +34,8 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
+import AdjustStockBottomSheet from '../../components/BottomSheet/AdjustStocksBottmSheet';
+import SelectStockReasonBottomSheet from '../../components/BottomSheet/SelectStockReasonBottomSheet';
 
 const { width } = Dimensions.get('window');
 
@@ -42,45 +49,41 @@ const Item = ({ navigation }) => {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const route = useRoute();
   const fromMenu = route.params?.fromMenu;
+
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
+  // Stock bottom sheet state
+  const adjustSheetRef = useRef(null);
+  const reasonSheetRef = useRef(null);
+  const [selectedReason, setSelectedReason] = useState(null);
+  const [actionType, setActionType] = useState('add');
+  const [selectedProductForStock, setSelectedProductForStock] = useState(null);
+
   const { bottom } = useSafeAreaInsets();
-  // Transform API response to component format
+
   const transformItem = useCallback(
     item => ({
       id: item._id,
       name: item.name,
       category: item.category ? item.category : null,
       price: item.sellingPrice,
-      sellingPrice: item.sellingPrice, // ← add explicit sellingPrice too
-
-      // DISCOUNT fields — all were missing
+      sellingPrice: item.sellingPrice,
       discountPrice: item.discountPrice || 0,
       discountType: item.discountType || 'amount',
       discountPercentage: item.discountPercentage || 0,
-
-      // PURCHASE DISCOUNT fields — all were missing
       purchaseDiscountType: item.purchaseDiscountType || 'amount',
       purchaseDiscountPercentage: item.purchaseDiscountPercentage || 0,
       purchaseDiscountPrice: item.purchaseDiscountPrice || 0,
-
-      // TAX fields — isTaxInclusive was missing
       isTaxInclusive: item.isTaxInclusive ?? false,
       isPurchaseTaxInclusive: item.isPurchaseTaxInclusive ?? false,
       gstRate: item.gstRate || 0,
-
-      // STOCK & SALES
       sellCount: item.sellCount || 0,
       currentStock: item.currentStock || 0,
-
-      // PRICING
       costPrice: item.costPrice || 0,
       lastPurchasePrice: item.lastPurchasePrice || 0,
-
-      // META
       status: item.status,
       unit: item.unit,
       sku: item.sku || '',
@@ -90,15 +93,12 @@ const Item = ({ navigation }) => {
       tags: item.tags || [],
       createdAt: item.createdAt,
       updatedAt: item.updatedAt,
-
-      // unused but kept
       sales: 0,
       revenue: 0,
     }),
     [],
   );
 
-  // Initial API call function
   const fetchItems = useCallback(
     async (page = 1, isLoadMore = false) => {
       try {
@@ -109,30 +109,21 @@ const Item = ({ navigation }) => {
         }
 
         const response = await api.get(`/product?page=${page}&limit=20000`);
-        console.log('Product Response:', response);
 
         if (response && response.data) {
           const { docs, hasNextPage, page: currentPage } = response.data;
-
-          // Transform the API response
           const transformedItems = docs.map(transformItem);
 
-          console.log('');
-
-          // Sort items by sellCount in descending order (highest first)
           transformedItems.sort(
             (a, b) => (b.sellCount || 0) - (a.sellCount || 0),
           );
 
           if (isLoadMore) {
-            // Append new items for load more
             setItems(prevItems => [...prevItems, ...transformedItems]);
           } else {
-            // Replace items for initial load/refresh
             setItems(transformedItems);
           }
 
-          // Update pagination states
           setCurrentPage(currentPage);
           setHasNextPage(hasNextPage);
         }
@@ -146,80 +137,61 @@ const Item = ({ navigation }) => {
     [transformItem],
   );
 
-  // Load more function
   const loadMoreItems = useCallback(() => {
     if (hasNextPage && !loadingMore && !loading) {
-      const nextPage = currentPage + 1;
-      fetchItems(nextPage, true);
+      fetchItems(currentPage + 1, true);
     }
   }, [hasNextPage, loadingMore, loading, currentPage, fetchItems]);
 
-  // Refresh function - reset to first page
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await fetchItems(1, false);
     setRefreshing(false);
   }, [fetchItems]);
 
-  // Initial load
   useFocusEffect(
     useCallback(() => {
       fetchItems(1, false);
     }, [fetchItems]),
   );
 
-  // Filter items - client side filtering for loaded items
   const filteredItems = useMemo(() => {
     let filtered = items.filter(item =>
       item.name.toLowerCase().includes(searchQuery.toLowerCase()),
     );
-
     if (selectedCategory !== 'all') {
       filtered = filtered.filter(
         item => (item.category?.name || 'Uncategorised') === selectedCategory,
       );
     }
-
     return filtered;
   }, [items, searchQuery, selectedCategory]);
 
-  // Find the top selling product from filtered items
   const topSellingProduct = useMemo(() => {
     if (items.length === 0) return null;
-
     return items.reduce((top, current) => {
       const topSell = top.sellCount || 0;
       const currentSell = current.sellCount || 0;
-
-      if (currentSell > topSell) {
-        return current;
-      } else if (currentSell === topSell) {
+      if (currentSell > topSell) return current;
+      else if (currentSell === topSell)
         return current.price > top.price ? current : top;
-      } else {
-        return top;
-      }
+      else return top;
     });
   }, [items]);
 
   const orderedItems = useMemo(() => {
     if (!topSellingProduct) return filteredItems;
-
-    // Jab user search ya filter kar raha hai, normal order rakho
-    if (searchQuery.trim() !== '' || selectedCategory !== 'all') {
+    if (searchQuery.trim() !== '' || selectedCategory !== 'all')
       return filteredItems;
-    }
-
-    // Sirf default view me top-selling ko top par lao
     const rest = filteredItems.filter(item => item.id !== topSellingProduct.id);
     return [topSellingProduct, ...rest];
   }, [filteredItems, topSellingProduct, searchQuery, selectedCategory]);
 
   const categories = useMemo(() => {
-    const cats = [
+    return [
       'all',
       ...new Set(items.map(item => item.category?.name || 'Uncategorised')),
     ];
-    return cats;
   }, [items]);
 
   const formatCurrency = amount => {
@@ -229,10 +201,19 @@ const Item = ({ navigation }) => {
     }).format(amount);
   };
 
-  // Render footer with loading indicator
+  // Handler to open bottom sheet with correct action type
+  const openStockSheet = useCallback((item, type) => {
+    setSelectedProductForStock(item);
+    setActionType(type);
+    setSelectedReason(null);
+    // Small delay to ensure state is set before presenting
+    setTimeout(() => {
+      adjustSheetRef.current?.present();
+    }, 50);
+  }, []);
+
   const renderFooter = () => {
     if (!loadingMore) return null;
-
     return (
       <View style={styles.footerContainer}>
         <ActivityIndicator size="small" />
@@ -244,8 +225,6 @@ const Item = ({ navigation }) => {
       </View>
     );
   };
-
-  console.log('items ', items);
 
   const renderItemCard = ({ item }) => {
     const isTopSelling =
@@ -278,7 +257,7 @@ const Item = ({ navigation }) => {
               >
                 {`${item.category?.name || 'No Category'} • ${item.unit}`}
               </Text>
-              {item.hsn && (
+              {item.hsn ? (
                 <Text
                   variant="bodySmall"
                   style={[
@@ -288,32 +267,69 @@ const Item = ({ navigation }) => {
                 >
                   HSN : {item.hsn}
                 </Text>
-              )}
+              ) : null}
 
               {isStockEnabled && (
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => {
-                    navigation.navigate('StockTransactionScreen', {
-                      id: item.id,
-                      costPrice: item.costPrice || 0,
-                      currentStock: item.currentStock,
-                      name: item.name,
-                    });
-                  }}
-                  style={[
-                    styles.stocksButton,
-                    {
-                      backgroundColor: theme.colors.primaryContainer,
-                      borderColor: theme.colors.primary + 20,
-                      width: 120,
-                    },
-                  ]}
-                >
-                  <Text variant="bodySmall" style={[styles.brand]}>
-                    Stock: {item.currentStock}
-                  </Text>
-                </TouchableOpacity>
+                <View style={styles.stockRow}>
+                  {/* − Stock Button */}
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={e => {
+                      e.stopPropagation();
+                      openStockSheet(item, 'reduce');
+                    }}
+                    style={[
+                      styles.stockActionButton,
+                      { backgroundColor: theme.colors.primaryContainer },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.stockActionText,
+                        { color: theme.colors.error },
+                      ]}
+                    >
+                      − Stock
+                    </Text>
+                  </TouchableOpacity>
+
+                  {/* Stock Count Badge */}
+                  <View
+                    style={[
+                      styles.stockBadge,
+                      { backgroundColor: theme.colors.primaryContainer },
+                    ]}
+                  >
+                    <Text
+                      variant="bodySmall"
+                      style={[styles.brand, { color: theme.colors.primary }]}
+                    >
+                      {item.currentStock}
+                    </Text>
+                  </View>
+
+                  {/* + Stock Button */}
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={e => {
+                      e.stopPropagation();
+                      openStockSheet(item, 'add');
+                    }}
+                    style={[
+                      styles.stockActionButton,
+                      { backgroundColor: theme.colors.primaryContainer },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.stockActionText,
+                        { color: theme.colors.primary },
+                      ]}
+                    >
+                      + Stock
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               )}
             </View>
 
@@ -413,7 +429,6 @@ const Item = ({ navigation }) => {
         style={styles.searchbar}
         inputStyle={styles.searchInput}
       />
-
       {categories.length > 1 && (
         <View style={styles.categoryContainer}>
           <FlatList
@@ -435,18 +450,6 @@ const Item = ({ navigation }) => {
           />
         </View>
       )}
-      {/* 
-      {filteredItems.length > 0 && (
-        <View style={styles.summaryContainer}>
-          <Text
-            variant="bodyMedium"
-            style={{ color: theme.colors.onSurfaceVariant }}
-          >
-            {filteredItems.length} item{filteredItems.length !== 1 ? 's' : ''}
-            {loadingMore && ' • Loading more...'}
-          </Text>
-        </View>
-      )} */}
     </View>
   );
 
@@ -467,10 +470,9 @@ const Item = ({ navigation }) => {
       style={[styles.container, { backgroundColor: theme.colors.background }]}
     >
       {fromMenu && <Navbar title={'Items'} />}
-      {/* Fixed Header */}
+
       {renderFixedHeader()}
 
-      {/* FlatList with auto infinite scroll */}
       <FlatList
         data={orderedItems}
         renderItem={renderItemCard}
@@ -490,12 +492,13 @@ const Item = ({ navigation }) => {
           />
         }
         onEndReached={loadMoreItems}
-        onEndReachedThreshold={0.5} // Load more when 50% from the end
+        onEndReachedThreshold={0.5}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={true}
         maxToRenderPerBatch={10}
         windowSize={10}
       />
+
       {hasPermission(permissions.CAN_MANAGE_PRODUCTS) && (
         <FAB
           variant="primary"
@@ -518,9 +521,44 @@ const Item = ({ navigation }) => {
                 text2: 'You do not have permission to create items.',
               });
             }
-          }} // Use your actual screen name here
-          // label="Create Item"
+          }}
         />
+      )}
+
+      {/* Stock Bottom Sheets — always mounted, key forces remount on product/type change */}
+      {selectedProductForStock && (
+        <>
+          <AdjustStockBottomSheet
+            key={`${selectedProductForStock.id}-${actionType}`}
+            ref={adjustSheetRef}
+            productId={selectedProductForStock.id}
+            costPrice={selectedProductForStock.costPrice || 0}
+            selectedReason={selectedReason}
+            initialActionType={actionType}
+            onActionTypeChange={setActionType}
+            onOpenReason={() => {
+              adjustSheetRef.current?.close();
+              setTimeout(() => {
+                reasonSheetRef.current?.present();
+              }, 250);
+            }}
+            onStockAdjusted={() => {
+              fetchItems(1, false);
+            }}
+          />
+          <SelectStockReasonBottomSheet
+            ref={reasonSheetRef}
+            actionType={actionType}
+            selectedReason={selectedReason}
+            onSelect={reasonItem => {
+              setSelectedReason(reasonItem);
+              reasonSheetRef.current?.close();
+              setTimeout(() => {
+                adjustSheetRef.current?.present();
+              }, 250);
+            }}
+          />
+        </>
       )}
     </SafeAreaView>
   );
@@ -646,15 +684,29 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
-  stocksButton: {
-    //width: 85,
-    borderWidth: 1,
+  stockRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+  },
+  stockActionButton: {
     borderRadius: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     justifyContent: 'center',
-    alignItems: 'flex-start',
-    marginTop: 2,
+    alignItems: 'center',
+  },
+  stockActionText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  stockBadge: {
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    minWidth: 36,
+    alignItems: 'center',
   },
 });
 

@@ -40,6 +40,8 @@ import unitsData from '../../assets/data/units.json';
 import categoriesData from '../../assets/data/categories.json';
 import DiscountTypeSelectorBottomSheet from '../../components/BottomSheet/DiscountTypeSelectorBottomSheet';
 import TaxRateSelectorBottomSheet from '../../components/BottomSheet/TaxRateSelectorBottomSheet';
+import AdjustStockBottomSheet from '../../components/BottomSheet/AdjustStocksBottmSheet';
+import SelectStockReasonBottomSheet from '../../components/BottomSheet/SelectStockReasonBottomSheet';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import api from '../../utils/api';
 import HsnCodeSelectorBottomSheet from '../../components/BottomSheet/HsnCodeSelectorBottomSheet';
@@ -113,6 +115,10 @@ const AddItem = () => {
   const taxOptionSheet = useBottomSheet();
   const discountTypeSheet = useBottomSheet();
   const taxRateSheet = useBottomSheet();
+  const adjustSheetRef = useRef(null);
+  const reasonSheetRef = useRef(null);
+  const [selectedReason, setSelectedReason] = useState(null);
+  const [actionType, setActionType] = useState('add');
 
   const defaultTaxOption = useMemo(
     () => ({
@@ -562,6 +568,16 @@ const AddItem = () => {
   const getTaxRateText = rate =>
     rate ? `${rate.rate}% ${rate.label.includes('IGST') ? 'IGST' : 'GST'}` : '';
 
+  const productId = itemToEdit?.id || itemToEdit?._id;
+
+  const openOpeningStockSheet = useCallback(() => {
+    setSelectedReason(null);
+    setActionType('add');
+    setTimeout(() => {
+      adjustSheetRef.current?.present();
+    }, 50);
+  }, []);
+
   return (
     <View style={styles.container}>
       <SafeAreaView
@@ -570,25 +586,17 @@ const AddItem = () => {
         <Navbar
           title={isEditMode ? 'Edit Item' : 'Add New Item'}
           rightComponent={
-            isEditMode &&
             isStockEnabled && (
               <View>
                 {hasPermission(permissions.CAN_MANAGE_STOCKS) && (
                   <Button
                     icon={'warehouse'}
                     mode="outlined"
-                    onPress={() => {
-                      navigation.navigate('StockTransactionScreen', {
-                        id: itemToEdit.id,
-                        costPrice: itemToEdit?.costPrice || 0,
-                        currentStock: itemToEdit?.currentStock || 0,
-                        name: itemToEdit?.name || '',
-                      });
-                    }}
+                    onPress={openOpeningStockSheet}
                     style={styles.button}
                     contentStyle={styles.buttonContent}
                   >
-                    Stocks
+                    Opening Stock
                   </Button>
                 )}
               </View>
@@ -941,6 +949,34 @@ const AddItem = () => {
                         ]}
                       />
 
+                      {/* Purchase Price Input */}
+                      <TextInput
+                        label="Purchase Price"
+                        mode="outlined"
+                        value={values.purchasePrice}
+                        onChangeText={handleChange('purchasePrice')}
+                        onBlur={() => setFieldTouched('purchasePrice', true)}
+                        style={[styles.input]}
+                        theme={{ roundness: 12 }}
+                        contentStyle={styles.salesPriceInputContent}
+                        placeholder="Enter purchase price"
+                        keyboardType="numeric"
+                        maxLength={15}
+                        error={touched.purchasePrice && !!errors.purchasePrice}
+                      />
+                      {touched.purchasePrice && errors.purchasePrice && (
+                        <Text
+                          style={{
+                            color: theme.colors.error,
+                            fontSize: 12,
+                            marginTop: -4,
+                            marginBottom: 8,
+                          }}
+                        >
+                          {errors.purchasePrice}
+                        </Text>
+                      )}
+
                       {/* Sales Price Input with inline Tax Option Button */}
                       <View style={styles.salesPriceInputContainer}>
                         <TextInput
@@ -1030,38 +1066,10 @@ const AddItem = () => {
                         </Text>
                       )}
 
-                      {/* Purchase Price Input */}
-                      <TextInput
-                        label="Purchase Price"
-                        mode="outlined"
-                        value={values.purchasePrice}
-                        onChangeText={handleChange('purchasePrice')}
-                        onBlur={() => setFieldTouched('purchasePrice', true)}
-                        style={[styles.input]}
-                        theme={{ roundness: 12 }}
-                        contentStyle={styles.salesPriceInputContent}
-                        placeholder="Enter purchase price"
-                        keyboardType="numeric"
-                        maxLength={15}
-                        error={touched.purchasePrice && !!errors.purchasePrice}
-                      />
-                      {touched.purchasePrice && errors.purchasePrice && (
-                        <Text
-                          style={{
-                            color: theme.colors.error,
-                            fontSize: 12,
-                            marginTop: -4,
-                            marginBottom: 8,
-                          }}
-                        >
-                          {errors.purchasePrice}
-                        </Text>
-                      )}
-
                       {/* Discount Price Input with inline Discount Type Button */}
                       <View style={styles.discountPriceInputContainer}>
                         <TextInput
-                          label="Discount"
+                          label="Discount on Sales"
                           mode="outlined"
                           value={values.discountPrice}
                           onChangeText={handleChange('discountPrice')}
@@ -1069,8 +1077,7 @@ const AddItem = () => {
                           style={styles.input}
                           theme={{ roundness: 12 }}
                           contentStyle={styles.discountPriceInputContent}
-                          placeholder="Enter discount"
-                          keyboardType="numeric"
+                          placeholder="Enter discount on sales"
                           maxLength={10}
                           error={
                             touched.discountPrice && !!errors.discountPrice
@@ -1184,29 +1191,6 @@ const AddItem = () => {
                     {/* Tax Rate Section - Conditionally Rendered */}
                     {storedata?.gstNumber && (
                       <>
-                        <View style={styles.headerSection}>
-                          <Icon
-                            source="percent"
-                            size={24}
-                            color={theme.colors.primary}
-                          />
-                          <Text
-                            style={[
-                              styles.headerTitle,
-                              { color: theme.colors.onSurface },
-                            ]}
-                          >
-                            Tax Rate
-                          </Text>
-                        </View>
-
-                        <Divider
-                          style={[
-                            styles.divider,
-                            { backgroundColor: theme.colors.outline },
-                          ]}
-                        />
-
                         <View style={styles.inputContainer}>
                           <TextInput
                             label="Tax Rate"
@@ -1487,6 +1471,39 @@ const AddItem = () => {
                       setFieldError('selectedDiscountType', undefined);
                     }, 0);
                     discountTypeSheet.close();
+                  }}
+                />
+                <AdjustStockBottomSheet
+                  ref={adjustSheetRef}
+                  productId={productId}
+                  costPrice={Number(itemToEdit?.costPrice || 0)}
+                  selectedReason={selectedReason}
+                  initialActionType={actionType}
+                  onActionTypeChange={setActionType}
+                  onOpenReason={() => {
+                    adjustSheetRef.current?.close();
+                    setTimeout(() => {
+                      reasonSheetRef.current?.present();
+                    }, 250);
+                  }}
+                  onStockAdjusted={() => {
+                    Toast.show({
+                      type: 'success',
+                      text1: 'Success',
+                      text2: 'Opening stock updated successfully.',
+                    });
+                  }}
+                />
+                <SelectStockReasonBottomSheet
+                  ref={reasonSheetRef}
+                  actionType={actionType}
+                  selectedReason={selectedReason}
+                  onSelect={reasonItem => {
+                    setSelectedReason(reasonItem);
+                    reasonSheetRef.current?.close();
+                    setTimeout(() => {
+                      adjustSheetRef.current?.present();
+                    }, 250);
                   }}
                 />
                 <TaxRateSelectorBottomSheet

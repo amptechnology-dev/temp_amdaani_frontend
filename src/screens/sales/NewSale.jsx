@@ -216,6 +216,13 @@ export default function NewSale() {
     };
   }, []);
 
+  const isCustomerValid = Boolean(
+    (formikRef.current?.values?.contactNumber?.trim()?.length >= 10 ||
+      mobileQuery?.trim()?.length >= 10) &&
+      (formikRef.current?.values?.partyName?.trim()?.length >= 2 ||
+        nameQuery?.trim()?.length >= 2),
+  );
+
   // Helper to compute FAB bottom position (respects keyboard and safe-area)
   const computeFabBottom = offset =>
     keyboardHeight
@@ -1970,27 +1977,19 @@ export default function NewSale() {
                       <View style={{ flex: 1 }}>
                         <TouchableWithoutFeedback
                           onPress={() => {
-                            if (
-                              !formikRef.current?.values?.contactNumber?.trim()
-                            ) {
+                            if (!isCustomerValid) {
                               Toast.show({
                                 type: 'error',
                                 text1: 'Customer Required',
                                 text2:
-                                  'Please add customer mobile number first',
+                                  'Please add customer mobile number and name first',
                               });
                             }
                           }}
                         >
                           <View
                             pointerEvents={
-                              !Boolean(selectedCustomer) &&
-                              !Boolean(
-                                formikRef.current?.values?.contactNumber?.trim()
-                                  ?.length >= 10,
-                              )
-                                ? 'box-only'
-                                : 'auto'
+                              !isCustomerValid ? 'box-only' : 'auto'
                             }
                           >
                             <TextInput
@@ -1998,11 +1997,7 @@ export default function NewSale() {
                               dense
                               left={<TextInput.Icon icon="currency-inr" />}
                               right={
-                                !Boolean(selectedCustomer) &&
-                                !Boolean(
-                                  formikRef.current?.values?.contactNumber?.trim()
-                                    ?.length >= 10,
-                                ) && (
+                                !isCustomerValid && (
                                   <TextInput.Icon
                                     icon="lock"
                                     size={16}
@@ -2012,34 +2007,22 @@ export default function NewSale() {
                               }
                               value={paidAmount === 0 ? '' : String(paidAmount)}
                               onChangeText={txt => {
-                                if (
-                                  !Boolean(selectedCustomer) &&
-                                  !Boolean(
-                                    formikRef.current?.values?.contactNumber?.trim()
-                                      ?.length >= 10,
-                                  )
-                                ) {
-                                  return;
-                                }
+                                if (!isCustomerValid) return;
 
-                                // Allow only numbers and one decimal point
                                 let cleanValue = txt
-                                  .replace(/[^0-9.]/g, '') // Remove non-numeric characters except decimal point
-                                  .replace(/^(\d*\.?\d{0,2}).*$/, '$1') // Limit to 2 decimal places
-                                  .replace(/^(\d+\.\d*)\./g, '$1'); // Remove extra decimal points
+                                  .replace(/[^0-9.]/g, '')
+                                  .replace(/^(\d*\.?\d{0,2}).*$/, '$1')
+                                  .replace(/^(\d+\.\d*)\./g, '$1');
 
-                                // If the value starts with a decimal, add a leading zero
                                 if (cleanValue.startsWith('.')) {
                                   cleanValue = '0' + cleanValue;
                                 }
 
-                                // Parse to number and validate against max amount
                                 const numeric = parseFloat(cleanValue) || 0;
                                 const maxAmount = Number(
                                   invoiceCalculations?.netTotal ?? 0,
                                 );
 
-                                // Update state with validated and formatted value
                                 if (!isNaN(numeric)) {
                                   const validatedValue = Math.min(
                                     Math.max(0, numeric),
@@ -2052,7 +2035,6 @@ export default function NewSale() {
                                 }
                               }}
                               onBlur={() => {
-                                // Format the value on blur
                                 if (paidAmount > 0) {
                                   setPaidAmount(prev => {
                                     const value = parseFloat(prev).toFixed(2);
@@ -2062,16 +2044,7 @@ export default function NewSale() {
                                   });
                                 }
                               }}
-                              // editable={Boolean(
-                              //   formikRef.current?.values?.contactNumber?.trim(),
-                              // )}
-                              editable={
-                                Boolean(selectedCustomer) ||
-                                Boolean(
-                                  formikRef.current?.values?.contactNumber?.trim()
-                                    ?.length >= 10,
-                                )
-                              }
+                              editable={isCustomerValid}
                               keyboardType="decimal-pad"
                               returnKeyType="done"
                               blurOnSubmit={true}

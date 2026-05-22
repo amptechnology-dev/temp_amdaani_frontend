@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View,
   ScrollView,
@@ -26,10 +26,8 @@ import BaseBottomSheet from './BaseBottomSheet';
 import api from '../../utils/api';
 import Toast from 'react-native-toast-message';
 
-// ✅ Validation Schema
 const validationSchema = Yup.object().shape({
   actionType: Yup.string().required('Please select an action'),
-
   adjustmentDate: Yup.date()
     .transform((value, originalValue) => {
       if (originalValue instanceof Date && isValid(originalValue))
@@ -39,37 +37,43 @@ const validationSchema = Yup.object().shape({
     })
     .typeError('Invalid date format')
     .required('Date is required'),
-
   quantity: Yup.number()
     .typeError('Quantity must be a number')
     .positive('Quantity must be greater than 0')
     .integer('Quantity must be an integer')
     .required('Quantity is required'),
-
   rate: Yup.number()
     .typeError('Cost Price must be a number')
-    .positive('Cost Price be greater than 0')
+    .positive('Cost Price must be greater than 0')
     .required('Cost Price is required'),
-
   reason: Yup.object().nullable().required('Reason is required'),
-
   remarks: Yup.string()
     .max(200, 'Remarks can be up to 200 characters')
     .nullable(),
 });
+
+const SyncReasonWithFormik = ({ selectedReason, setFieldValue }) => {
+  useEffect(() => {
+    if (selectedReason) {
+      setFieldValue('reason', selectedReason);
+    }
+  }, [selectedReason, setFieldValue]);
+  return null;
+};
 
 const AdjustStockBottomSheet = React.forwardRef(
   (
     {
       productId,
       costPrice,
-      onStockAdjusted, // callback after success
+      onStockAdjusted,
       title = 'Adjust Stock',
       snapPoints = ['70%', '90%'],
       selectedReason,
       onOpenReason,
       initialSnapIndex = -1,
       onActionTypeChange,
+      initialActionType = 'add',
       ...props
     },
     ref,
@@ -79,22 +83,12 @@ const AdjustStockBottomSheet = React.forwardRef(
     const [reason, setReason] = useState(null);
 
     const initialValues = {
-      actionType: 'add',
+      actionType: initialActionType,
       adjustmentDate: new Date(),
       quantity: '',
       rate: costPrice?.toString() || '',
       reason: null,
       remarks: '',
-    };
-
-    const SyncReasonWithFormik = ({ selectedReason, setFieldValue }) => {
-      useEffect(() => {
-        if (selectedReason) {
-          setFieldValue('reason', selectedReason);
-        }
-      }, [selectedReason, setFieldValue]);
-
-      return null;
     };
 
     useEffect(() => {
@@ -105,7 +99,6 @@ const AdjustStockBottomSheet = React.forwardRef(
       if (ref?.current) ref.current.close();
     }, [ref]);
 
-    // ✅ Safe date formatter
     const formatDate = date =>
       isValid(date) ? format(date, 'dd/MM/yyyy') : '';
 
@@ -126,10 +119,7 @@ const AdjustStockBottomSheet = React.forwardRef(
           date: formattedDate,
         };
 
-        // console.log('📤 Final API Body:', body);
-
         const res = await api.post('/product/adjust-stock', body);
-        // console.log('✅ Adjust Stock Response:', res);
 
         if (res.success) {
           Toast.show({
@@ -144,37 +134,42 @@ const AdjustStockBottomSheet = React.forwardRef(
           throw new Error(res.message || 'Failed to adjust stock');
         }
       } catch (error) {
-        // console.log('❌ Adjust Stock Error:', error.message);
         Alert.alert('Error', error.message || 'Something went wrong');
       } finally {
         setSubmitting(false);
       }
     };
 
-    // 🧱 Header Component
-    const renderHeader = useMemo(
-      () => (
-        <View style={styles.customHeader}>
-          <View style={styles.titleHeader}>
-            <Text style={[styles.title, { color: theme.colors.onSurface }]}>
-              {title}
-            </Text>
-            <IconButton
-              icon="close"
-              size={24}
-              iconColor={theme.colors.onSurface}
-              onPress={handleClose}
-            />
-          </View>
-          <Divider bold />
+    const renderHeader = (
+      <View style={styles.customHeader}>
+        <View style={styles.titleHeader}>
+          <Text style={[styles.title, { color: theme.colors.onSurface }]}>
+            {title}
+          </Text>
+          <IconButton
+            icon="close"
+            size={24}
+            iconColor={theme.colors.onSurface}
+            onPress={handleClose}
+          />
         </View>
-      ),
-      [theme, title, handleClose],
+        <Divider bold />
+      </View>
     );
 
-    // 📄 Form UI
-    const FormContent = useMemo(
-      () => (
+    return (
+      <BaseBottomSheet
+        ref={ref}
+        title={title}
+        contentType="scroll"
+        headerComponent={renderHeader}
+        initialSnapIndex={initialSnapIndex}
+        snapPoints={snapPoints}
+        keyboardBehavior="interactive"
+        enablePanDownToClose={true}
+        enableDismissOnClose={true}
+        {...props}
+      >
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           style={{ flex: 1 }}
@@ -192,7 +187,7 @@ const AdjustStockBottomSheet = React.forwardRef(
               setFieldTouched,
               handleChange,
               handleBlur,
-              handleSubmit,
+              handleSubmit: formikSubmit,
               isSubmitting,
             }) => (
               <>
@@ -206,7 +201,7 @@ const AdjustStockBottomSheet = React.forwardRef(
                   showsVerticalScrollIndicator={false}
                   keyboardShouldPersistTaps="handled"
                 >
-                  {/* 🔘 Action Type */}
+                  {/* Action Type */}
                   <Text style={styles.label}>Select Action</Text>
                   <SegmentedButtons
                     value={values.actionType}
@@ -234,7 +229,7 @@ const AdjustStockBottomSheet = React.forwardRef(
                     {errors.actionType}
                   </HelperText>
 
-                  {/* 📅 Date Picker */}
+                  {/* Date Picker */}
                   <TextInput
                     label="Adjustment Date"
                     mode="outlined"
@@ -266,7 +261,7 @@ const AdjustStockBottomSheet = React.forwardRef(
                     onCancel={() => setDatePickerVisible(false)}
                   />
 
-                  {/* 📦 Quantity */}
+                  {/* Quantity */}
                   <TextInput
                     label="Quantity"
                     mode="outlined"
@@ -285,7 +280,7 @@ const AdjustStockBottomSheet = React.forwardRef(
                     </HelperText>
                   )}
 
-                  {/* 💰 Rate */}
+                  {/* Rate */}
                   <TextInput
                     label="Cost Price"
                     mode="outlined"
@@ -304,6 +299,7 @@ const AdjustStockBottomSheet = React.forwardRef(
                     </HelperText>
                   )}
 
+                  {/* Reason */}
                   <TouchableOpacity activeOpacity={0.7} onPress={onOpenReason}>
                     <TextInput
                       label="Select Reason *"
@@ -318,16 +314,14 @@ const AdjustStockBottomSheet = React.forwardRef(
                       theme={{ roundness: 12 }}
                     />
                   </TouchableOpacity>
-
                   {touched.reason && !reason && (
                     <HelperText type="error">Reason is required</HelperText>
                   )}
-
                   {errors.reason && touched.reason && (
                     <HelperText type="error">{errors.reason}</HelperText>
                   )}
 
-                  {/* 📝 Remarks */}
+                  {/* Remarks */}
                   <TextInput
                     label="Remarks (Optional)"
                     mode="outlined"
@@ -348,11 +342,11 @@ const AdjustStockBottomSheet = React.forwardRef(
                     </HelperText>
                   )}
 
-                  {/* 🟩 Submit Button */}
+                  {/* Submit */}
                   <View style={styles.actions}>
                     <Button
                       mode="contained"
-                      onPress={handleSubmit}
+                      onPress={formikSubmit}
                       loading={isSubmitting}
                       disabled={isSubmitting}
                       style={styles.submitButton}
@@ -368,24 +362,6 @@ const AdjustStockBottomSheet = React.forwardRef(
             )}
           </Formik>
         </KeyboardAvoidingView>
-      ),
-      [isDatePickerVisible, theme, reason, onOpenReason],
-    );
-
-    return (
-      <BaseBottomSheet
-        ref={ref}
-        title={title}
-        contentType="scroll"
-        headerComponent={renderHeader}
-        initialSnapIndex={initialSnapIndex}
-        snapPoints={snapPoints}
-        keyboardBehavior="interactive"
-        enablePanDownToClose={true}
-        enableDismissOnClose={true}
-        {...props}
-      >
-        {FormContent}
       </BaseBottomSheet>
     );
   },

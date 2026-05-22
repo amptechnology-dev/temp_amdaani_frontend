@@ -51,19 +51,31 @@ const ReportScreen = () => {
     {
       id: '7',
       title: 'Stock Report',
-      description:
-        'Stock levels and movement analysis',
+      description: 'Stock levels and movement analysis',
       icon: 'package-variant',
       route: 'StockReport',
     },
     {
       id: '8',
       title: 'Profit & Loss Report',
-      description:
-        'Profit and loss analysis for the selected period',
+      description: 'Profit and loss analysis for the selected period',
       icon: 'chart-bar',
       route: 'ProfitLossReport',
-    }
+    },
+    {
+      id: '9',
+      title: 'Purchase Report',
+      description: 'Purchase analysis and vendor performance tracking',
+      icon: 'package-variant',
+      route: 'PurchaseReport',
+    },
+    {
+      id: '10',
+      title: 'Purchase Report',
+      description: 'Purchase analysis and vendor performance tracking',
+      icon: 'package-variant',
+      route: 'PurchaseReport',
+    },
   ];
 
   const renderReportCard = ({ item }) => (
