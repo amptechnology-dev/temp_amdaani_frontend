@@ -107,7 +107,9 @@ const PurchaseReport = () => {
       const query = params.length ? `?${params.join('&')}` : '';
       const res = await api.get(`/purchase/report${query}`);
       // api utility may return axios response (res.data) or already-unwrapped ({ success, data })
+      console.log('res', res);
       let rows = res?.data?.data ?? res?.data ?? [];
+      console.log('res', res);
       // ensure it's always an array
       if (!Array.isArray(rows)) rows = [];
       // client-side date filter fallback (if API doesn't filter)
@@ -230,13 +232,10 @@ const PurchaseReport = () => {
       (s, it) => s + Number(it.quantity || 0),
       0,
     );
-    const discountPct =
-      purchase.grandTotal > 0
-        ? (
-            (Number(purchase.discountTotal || 0) / purchase.grandTotal) *
-            100
-          ).toFixed(1)
-        : '0.0';
+    const discountPct = (purchase.items || []).reduce(
+      (s, it) => s + Number(it.discount || 0),
+      0,
+    );
 
     // ✅ New fields
     const gstTotal = Number(purchase.gstTotal || 0);
@@ -249,6 +248,7 @@ const PurchaseReport = () => {
       billDate: purchase.date
         ? new Date(purchase.date).toLocaleDateString('en-IN')
         : '-',
+      invoiceNumber: purchase.invoiceNumber || '-',
       supplierName: purchase.vendorName || '-',
       supplierMobile: purchase.vendorMobile || '-',
       totalItemsQty: totalQty,
@@ -280,6 +280,7 @@ const PurchaseReport = () => {
     const headRow = `
   <tr>
     <th align="center">SL</th>
+    <th align="center">Bill No</th>
     <th align="left">Bill Date</th>
     <th align="left">Supplier Name</th>
     <th align="left">Supplier Mobile</th>
@@ -288,9 +289,9 @@ const PurchaseReport = () => {
     <th align="right">Taxable Value</th>
     <th align="right">CGST</th>
     <th align="right">SGST</th>
-    <th align="right">Tax</th>
-    <th align="center">Payment Status</th>
+    <th align="right">Total Gst Tax</th>
     <th align="right">Net Amount</th>
+    <th align="center">Payment Status</th>
   </tr>`;
 
     // bodyRows map — add 3 new <td> cells after discount:
@@ -306,6 +307,7 @@ const PurchaseReport = () => {
         return `
     <tr>
       <td align="center">${d.sl}</td>
+       <td align="center">${d.invoiceNumber}</td>
       <td>${d.billDate}</td>
       <td>${d.supplierName}</td>
       <td>${d.supplierMobile}</td>
@@ -315,8 +317,8 @@ const PurchaseReport = () => {
       <td align="right">${d.cgst}</td>
       <td align="right">${d.sgst}</td>
       <td align="right">${d.tax}</td>
-      <td align="center" style="color:${statusColor}; font-weight:600; text-transform:capitalize;">${d.paymentStatus}</td>
       <td align="right">${d.netAmount}</td>
+       <td align="center" style="color:${statusColor}; font-weight:600; text-transform:capitalize;">${d.paymentStatus}</td>
     </tr>`;
       })
       .join('');

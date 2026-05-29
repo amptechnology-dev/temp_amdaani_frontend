@@ -62,8 +62,10 @@ const PurchaseCartItemBottomSheet = forwardRef(
   ({ item, onUpdate, purchase }, ref) => {
     const theme = useTheme();
 
-    const defaultTaxOption = { id: 'without_tax', label: 'No Tax' };
-    const withTaxOption = { id: 'with_tax', label: 'With Tax' };
+    const defaultTaxOption = { id: 'without_tax', label: 'Exclude Tax' };
+    const withTaxOption = { id: 'with_tax', label: 'Include Tax' };
+
+    console.log('upte ', item);
 
     // ── HSN Code state ─────────────────────────────────────────────────────
     const [selectedHsnCode, setSelectedHsnCode] = useState(null);
@@ -291,9 +293,9 @@ const PurchaseCartItemBottomSheet = forwardRef(
             label: `${hsnCode.gstRate}% GST`,
           };
           setPurchaseTaxRate(rate);
-          setPurchaseTaxOption(withTaxOption);
+          setPurchaseTaxOption(defaultTaxOption);
           setTaxRate(rate);
-          setTaxOption(withTaxOption);
+          setTaxOption(defaultTaxOption);
         } else {
           setPurchaseTaxRate(null);
           setPurchaseTaxOption(defaultTaxOption);
@@ -303,7 +305,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
 
         hsnSelectorSheet.close();
       },
-      [hsnSelectorSheet],
+      [hsnSelectorSheet, defaultTaxOption],
     );
 
     // ── HSN create handler ─────────────────────────────────────────────────
@@ -319,9 +321,9 @@ const PurchaseCartItemBottomSheet = forwardRef(
             label: `${newHsn.gstRate}% GST`,
           };
           setPurchaseTaxRate(rate);
-          setPurchaseTaxOption(withTaxOption);
+          setPurchaseTaxOption(defaultTaxOption);
           setTaxRate(rate);
-          setTaxOption(withTaxOption);
+          setTaxOption(defaultTaxOption);
         } else {
           setPurchaseTaxRate(null);
           setPurchaseTaxOption(defaultTaxOption);
@@ -331,7 +333,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
 
         setHsnCodeRefreshKey(Date.now());
       },
-      [hsnCreateSheet],
+      [hsnCreateSheet, defaultTaxOption],
     );
 
     const TAX_RATES = [0, 5, 12, 18, 28];
@@ -543,9 +545,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
                         },
                       ]}
                     >
-                      {purchaseTaxOption?.id === 'with_tax'
-                        ? 'Tax Incl.'
-                        : 'No Tax'}
+                      {purchaseTaxOption?.label || 'Exclude Tax'}
                     </Text>
                   </TouchableOpacity>
                 </View>
@@ -748,7 +748,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
                     },
                   ]}
                 >
-                  {taxOption?.id === 'with_tax' ? 'Tax Incl.' : 'No Tax'}
+                  {taxOption?.label || 'Exclude Tax'}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1106,11 +1106,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 8,
     borderWidth: 1,
-    minWidth: 88,
+    minWidth: 108,
     justifyContent: 'center',
   },
   taxBadgeText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
   },
   discountRow: {

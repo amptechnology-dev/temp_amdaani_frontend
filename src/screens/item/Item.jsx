@@ -10,17 +10,17 @@ import {
   StyleSheet,
   FlatList,
   RefreshControl,
-  Dimensions,
   TouchableOpacity,
 } from 'react-native';
 import {
   Text,
   useTheme,
-  Card,
   Chip,
   Searchbar,
   ActivityIndicator,
   FAB,
+  Icon,
+  Surface,
 } from 'react-native-paper';
 import LottieView from 'lottie-react-native';
 import { useFocusEffect, useRoute } from '@react-navigation/native';
@@ -37,8 +37,6 @@ import {
 import AdjustStockBottomSheet from '../../components/BottomSheet/AdjustStocksBottmSheet';
 import SelectStockReasonBottomSheet from '../../components/BottomSheet/SelectStockReasonBottomSheet';
 
-const { width } = Dimensions.get('window');
-
 const Item = ({ navigation }) => {
   const theme = useTheme();
   const { isStockEnabled, hasPermission } = useAuth();
@@ -50,12 +48,10 @@ const Item = ({ navigation }) => {
   const route = useRoute();
   const fromMenu = route.params?.fromMenu;
 
-  // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
   const [hasNextPage, setHasNextPage] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  // Stock bottom sheet state
   const adjustSheetRef = useRef(null);
   const reasonSheetRef = useRef(null);
   const [selectedReason, setSelectedReason] = useState(null);
@@ -201,16 +197,20 @@ const Item = ({ navigation }) => {
     }).format(amount);
   };
 
-  // Handler to open bottom sheet with correct action type
   const openStockSheet = useCallback((item, type) => {
     setSelectedProductForStock(item);
     setActionType(type);
     setSelectedReason(null);
-    // Small delay to ensure state is set before presenting
-    setTimeout(() => {
-      adjustSheetRef.current?.present();
-    }, 50);
   }, []);
+
+  useEffect(() => {
+    if (selectedProductForStock) {
+      const t = setTimeout(() => {
+        adjustSheetRef.current?.present();
+      }, 100);
+      return () => clearTimeout(t);
+    }
+  }, [selectedProductForStock, actionType]);
 
   const renderFooter = () => {
     if (!loadingMore) return null;
@@ -232,166 +232,205 @@ const Item = ({ navigation }) => {
       item.id === topSellingProduct.id &&
       (item.sellCount || 0) > 0;
 
+    const displayPrice =
+      item.discountPrice > 0 ? item.price - item.discountPrice : item.price;
+
+    const showStockButton =
+      isStockEnabled && hasPermission(permissions.CAN_MANAGE_STOCKS);
+
     return (
-      <Card
-        mode="outlined"
-        style={[styles.itemCard, { backgroundColor: theme.colors.surface }]}
-        onPress={() => navigation.navigate('AddItem', { item: item })}
+      <Surface
+        style={[
+          styles.itemCard,
+          {
+            backgroundColor: theme.colors.surface,
+            borderColor: isTopSelling
+              ? theme.colors.primary
+              : theme.colors.outlineVariant,
+          },
+        ]}
+        elevation={1}
       >
-        <Card.Content style={styles.cardContent}>
-          <View style={styles.cardRow}>
+        <TouchableOpacity
+          activeOpacity={0.72}
+          style={styles.cardPressArea}
+          onPress={() => navigation.navigate('AddItem', { item })}
+        >
+          {/* ── Main row: left info + right column ── */}
+          <View style={styles.cardMainRow}>
+            {/* LEFT: name / category / meta */}
             <View style={styles.itemInfo}>
-              <Text
-                variant="titleSmall"
-                style={styles.itemName}
-                numberOfLines={1}
-              >
-                {item.name}
-              </Text>
+              <View style={styles.nameRow}>
+                <Text
+                  variant="titleSmall"
+                  style={styles.itemName}
+                  numberOfLines={2}
+                >
+                  {item.name}
+                </Text>
+                {isTopSelling && (
+                  <Chip
+                    icon="trophy"
+                    compact
+                    mode="flat"
+                    style={[
+                      styles.topSellingChip,
+                      { backgroundColor: theme.colors.primaryContainer },
+                    ]}
+                    textStyle={[
+                      styles.topSellingChipText,
+                      { color: theme.colors.onPrimaryContainer },
+                    ]}
+                  >
+                    Top Selling Product
+                  </Chip>
+                )}
+              </View>
+
               <Text
                 variant="bodySmall"
                 style={[
                   styles.category,
                   { color: theme.colors.onSurfaceVariant },
                 ]}
+                numberOfLines={1}
               >
                 {`${item.category?.name || 'No Category'} • ${item.unit}`}
               </Text>
-              {item.hsn ? (
-                <Text
-                  variant="bodySmall"
-                  style={[
-                    styles.brand,
-                    { color: theme.colors.onSurfaceVariant },
-                  ]}
-                >
-                  HSN : {item.hsn}
-                </Text>
-              ) : null}
 
-              {isStockEnabled && (
-                <View style={styles.stockRow}>
-                  {/* − Stock Button */}
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={e => {
-                      e.stopPropagation();
-                      openStockSheet(item, 'reduce');
-                    }}
+              <View style={styles.metaRow}>
+                {item.hsn ? (
+                  <Text
+                    variant="bodySmall"
                     style={[
-                      styles.stockActionButton,
-                      { backgroundColor: theme.colors.primaryContainer },
+                      styles.metaText,
+                      { color: theme.colors.onSurfaceVariant },
                     ]}
+                    numberOfLines={1}
                   >
-                    <Text
-                      style={[
-                        styles.stockActionText,
-                        { color: theme.colors.error },
-                      ]}
-                    >
-                      − Stock
-                    </Text>
-                  </TouchableOpacity>
+                    HSN {item.hsn}
+                  </Text>
+                ) : null}
 
-                  {/* Stock Count Badge */}
+                {isStockEnabled && item.currentStock !== undefined && (
                   <View
                     style={[
                       styles.stockBadge,
-                      { backgroundColor: theme.colors.primaryContainer },
+                      {
+                        backgroundColor:
+                          item.currentStock <= 5
+                            ? '#ffebee'
+                            : item.currentStock <= 20
+                            ? '#fff3e0'
+                            : '#e8f5e9',
+                        borderWidth: 1,
+                        borderColor:
+                          item.currentStock <= 5
+                            ? '#f44336'
+                            : item.currentStock <= 20
+                            ? '#ff9800'
+                            : '#4caf50',
+                        alignSelf: 'flex-start',
+                      },
                     ]}
                   >
                     <Text
-                      variant="bodySmall"
-                      style={[styles.brand, { color: theme.colors.primary }]}
+                      style={{
+                        fontSize: 10,
+                        fontWeight: '600',
+                        color:
+                          item.currentStock <= 5
+                            ? '#c62828'
+                            : item.currentStock <= 20
+                            ? '#e65100'
+                            : '#2e7d32',
+                      }}
                     >
-                      {item.currentStock}
+                      {item.currentStock} in stock
                     </Text>
                   </View>
-
-                  {/* + Stock Button */}
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={e => {
-                      e.stopPropagation();
-                      openStockSheet(item, 'add');
-                    }}
-                    style={[
-                      styles.stockActionButton,
-                      { backgroundColor: theme.colors.primaryContainer },
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.stockActionText,
-                        { color: theme.colors.primary },
-                      ]}
-                    >
-                      + Stock
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+                )}
+              </View>
             </View>
 
-            <View style={styles.rightSection}>
-              <View
-                style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}
-              >
-                {item.discountPrice > 0 && (
+            {/* RIGHT: price / sold + stock button below */}
+            <View style={styles.rightColumn}>
+              {/* Price block */}
+              <View style={styles.priceBlock}>
+                {item.discountPrice > 0 ? (
+                  <>
+                    <Text
+                      style={[styles.price, { color: theme.colors.primary }]}
+                      numberOfLines={1}
+                    >
+                      {formatCurrency(displayPrice)}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.originalPrice,
+                        { color: theme.colors.onSurfaceVariant },
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {formatCurrency(item.price)}
+                    </Text>
+                  </>
+                ) : (
                   <Text
-                    variant="titleMedium"
                     style={[styles.price, { color: theme.colors.primary }]}
+                    numberOfLines={1}
                   >
-                    {formatCurrency(item.price - item.discountPrice)}
+                    {formatCurrency(displayPrice)}
                   </Text>
                 )}
-                <Text
-                  variant="titleMedium"
+
+                <View style={styles.soldRow}>
+                  <Icon
+                    source="cart-outline"
+                    size={12}
+                    color={theme.colors.onSurfaceVariant}
+                  />
+                  <Text
+                    style={[
+                      styles.soldText,
+                      { color: theme.colors.onSurfaceVariant },
+                    ]}
+                  >
+                    {item.sellCount} sold
+                  </Text>
+                </View>
+              </View>
+
+              {/* Stock button pinned below price block */}
+              {showStockButton && (
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  onPress={() => openStockSheet(item, 'add')}
                   style={[
-                    styles.price,
-                    {
-                      textDecorationLine:
-                        item.discountPrice > 0 ? 'line-through' : 'none',
-                      color:
-                        item.discountPrice > 0
-                          ? theme.colors.onSurfaceVariant
-                          : theme.colors.primary,
-                      fontSize: item.discountPrice > 0 ? 12 : 16,
-                    },
+                    styles.stockButton,
+                    { backgroundColor: theme.colors.primaryContainer },
                   ]}
                 >
-                  {formatCurrency(item.price)}
-                </Text>
-              </View>
-              <Text
-                variant="titleMedium"
-                style={{ color: theme.colors.onSurface, fontSize: 12 }}
-              >
-                Total Sales : {item.sellCount}
-              </Text>
-              {isTopSelling && (
-                <View style={styles.topSellingChipContainer}>
-                  <Chip
-                    icon="trophy"
-                    mode="flat"
+                  <Icon
+                    source="database-plus"
+                    size={18}
+                    color={theme.colors.primary}
+                  />
+                  <Text
                     style={[
-                      styles.topSellingChip,
-                      { backgroundColor: theme.colors.surfaceVariant },
+                      styles.stockButtonLabel,
+                      { color: theme.colors.primary },
                     ]}
-                    textStyle={[
-                      styles.topSellingChipText,
-                      { color: theme.colors.onPrimaryContainer },
-                    ]}
-                    compact
                   >
-                    Top Selling Product
-                  </Chip>
-                </View>
+                    Stock
+                  </Text>
+                </TouchableOpacity>
               )}
             </View>
           </View>
-        </Card.Content>
-      </Card>
+        </TouchableOpacity>
+      </Surface>
     );
   };
 
@@ -525,8 +564,7 @@ const Item = ({ navigation }) => {
         />
       )}
 
-      {/* Stock Bottom Sheets — always mounted, key forces remount on product/type change */}
-      {selectedProductForStock && (
+      {isStockEnabled && selectedProductForStock && (
         <>
           <AdjustStockBottomSheet
             key={`${selectedProductForStock.id}-${actionType}`}
@@ -543,6 +581,7 @@ const Item = ({ navigation }) => {
               }, 250);
             }}
             onStockAdjusted={() => {
+              setSelectedProductForStock(null);
               fetchItems(1, false);
             }}
           />
@@ -586,10 +625,6 @@ const styles = StyleSheet.create({
   categoryChip: {
     marginRight: 8,
   },
-  summaryContainer: {
-    alignItems: 'center',
-    marginBottom: 12,
-  },
   listContainer: {
     paddingHorizontal: 16,
     paddingBottom: 16,
@@ -598,48 +633,110 @@ const styles = StyleSheet.create({
     flexGrow: 1,
   },
   itemCard: {
-    marginBottom: 8,
+    marginBottom: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    overflow: 'hidden',
   },
-  cardContent: {
-    paddingVertical: 12,
+  // ── No extra paddingRight here; right column handles its own space ──
+  cardPressArea: {
+    paddingVertical: 14,
+    paddingHorizontal: 14,
   },
-  cardRow: {
+  cardMainRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'flex-start',
+    justifyContent: 'space-between',
   },
   itemInfo: {
     flex: 1,
     marginRight: 12,
+    minWidth: 0,
+  },
+  nameRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+    marginBottom: 4,
   },
   itemName: {
-    fontWeight: '600',
-    marginBottom: 4,
+    flex: 1,
+    fontWeight: '700',
+    fontSize: 15,
+    lineHeight: 20,
     textTransform: 'capitalize',
   },
   category: {
     fontSize: 12,
-    marginBottom: 2,
+    marginBottom: 8,
     textTransform: 'capitalize',
   },
-  brand: {
-    fontSize: 12,
-    fontWeight: '600',
-    textTransform: 'capitalize',
+  metaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
   },
-  rightSection: {
+  metaText: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginRight: 8,
+  },
+
+  // ── RIGHT COLUMN: price block + stock button stacked vertically ──
+  rightColumn: {
+    alignItems: 'flex-end', // everything right-aligned
+    justifyContent: 'flex-start',
+    minWidth: 88,
+    maxWidth: 120,
+  },
+  priceBlock: {
     alignItems: 'flex-end',
+    marginBottom: 10, // gap between price info and button
   },
   price: {
+    fontSize: 16,
     fontWeight: '700',
-    marginBottom: 4,
+    textAlign: 'right',
   },
-  topSellingChipContainer: {
-    marginTop: 4,
+  originalPrice: {
+    fontSize: 11,
+    textDecorationLine: 'line-through',
+    textAlign: 'right',
+    marginTop: 2,
+  },
+  soldRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+  },
+  soldText: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginLeft: 3,
+  },
+
+  // ── Stock button: pill shape, right-aligned under price ──
+  stockButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+  },
+  stockButtonLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    marginLeft: 4,
+  },
+
+  topSellingChip: {
+    height: 30,
+    marginTop: 1,
+    marginLeft: 6,
   },
   topSellingChipText: {
     fontSize: 10,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   emptyContainer: {
     flex: 1,
@@ -660,14 +757,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 12,
-  },
   footerContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -684,29 +773,12 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
   },
-  stockRow: {
+  stockBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 6,
-  },
-  stockActionButton: {
-    borderRadius: 4,
+    borderRadius: 20,
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  stockActionText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  stockBadge: {
-    borderRadius: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    minWidth: 36,
-    alignItems: 'center',
+    paddingVertical: 4,
   },
 });
 

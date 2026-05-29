@@ -870,7 +870,15 @@ const AddItems = () => {
                 />
               </TouchableOpacity>
 
-              <View style={styles.quantityDisplay}>
+              <TouchableOpacity
+                onPress={() => {
+                  if (inCart && cartItem) {
+                    setSelectedCartItem(cartItem);
+                    presentItemSheet();
+                  }
+                }}
+                style={styles.quantityDisplay}
+              >
                 <Text
                   style={[
                     styles.quantityText,
@@ -884,7 +892,7 @@ const AddItems = () => {
                   {displayQty || 0}
                 </Text>
                 {/* <Text style={styles.quantityLabel}>Qty</Text> */}
-              </View>
+              </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.qtyButton}

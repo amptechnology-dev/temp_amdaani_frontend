@@ -5,7 +5,7 @@ import React, {
   useImperativeHandle,
 } from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
-import { useTheme, Text, IconButton, Divider } from 'react-native-paper';
+import { useTheme, Text, IconButton } from 'react-native-paper';
 import {
   BottomSheetView,
   BottomSheetScrollView,
@@ -82,20 +82,16 @@ const BaseBottomSheet = forwardRef(
     const insets = useSafeAreaInsets();
     const bottomSheetRef = React.useRef(null);
 
-    // Expose methods through ref - FIXED to match BottomSheetModal API
+    // Expose methods through ref
     useImperativeHandle(ref, () => ({
-      // BottomSheetModal methods
       present: () => bottomSheetRef.current?.snapToIndex(0),
       dismiss: () => bottomSheetRef.current?.dismiss(),
-      close: () => bottomSheetRef.current?.close(), // dismiss is the correct method for BottomSheetModal
-      // Regular BottomSheet methods (these might not work with BottomSheetModal)
+      close: () => bottomSheetRef.current?.close(),
       expand: () => bottomSheetRef.current?.expand?.(),
       collapse: () => bottomSheetRef.current?.collapse?.(),
       snapToIndex: index => bottomSheetRef.current?.snapToIndex?.(index),
       snapToPosition: position =>
         bottomSheetRef.current?.snapToPosition?.(position),
-
-      // Additional utility methods
       forceClose: () => bottomSheetRef.current?.forceClose?.(),
     }));
 
@@ -115,14 +111,13 @@ const BaseBottomSheet = forwardRef(
           style={[props.style, styles.backdrop]}
         />
       ),
-      [],
+      [backdropbehavior],
     );
 
     // Custom handle component
     const renderHandle = useCallback(
       props => {
         if (!showHandle) return null;
-
         return (
           <BottomSheetHandle
             {...props}
@@ -144,7 +139,6 @@ const BaseBottomSheet = forwardRef(
     // Custom header component
     const renderHeader = useCallback(() => {
       if (!showHeader && !headerComponent) return null;
-
       if (headerComponent) return headerComponent;
 
       return (
@@ -199,7 +193,6 @@ const BaseBottomSheet = forwardRef(
     const renderFooter = useCallback(
       props => {
         if (!showFooter && !footerComponent) return null;
-
         return (
           <BottomSheetFooter {...props} bottomInset={0}>
             <View
@@ -219,7 +212,10 @@ const BaseBottomSheet = forwardRef(
       [showFooter, footerComponent, theme, insets.bottom],
     );
 
-    // Render content based on type
+    // Render content based on type.
+    // Each branch renders the header itself — exactly ONE header per render.
+    // The <BottomSheet> return below does NOT call renderHeader() to avoid
+    // the double-header bug that existed in the previous version.
     const renderContent = useCallback(() => {
       const baseStyle = [
         styles.content,
@@ -228,49 +224,60 @@ const BaseBottomSheet = forwardRef(
       ];
 
       switch (contentType) {
+        // 'scroll' uses BottomSheetScrollView which is REQUIRED for
+        // keyboardBehavior="interactive" to lift the sheet above the keyboard.
+        // Never wrap this in KeyboardAvoidingView — @gorhom handles it internally.
         case 'scroll':
           return (
-            <BottomSheetScrollView
-              style={baseStyle}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingBottom: 120 }}
-            >
-              {children}
-            </BottomSheetScrollView>
+            <>
+              {renderHeader()}
+              <BottomSheetScrollView
+                style={baseStyle}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={{ paddingBottom: 120 }}
+              >
+                {children}
+              </BottomSheetScrollView>
+            </>
           );
 
         case 'flatlist':
           return (
-            <BottomSheetFlatList
-              data={data}
-              renderItem={renderItem}
-              keyExtractor={keyExtractor}
-              // ListHeaderComponent={showHeader ? renderHeader() : null}
-              ListFooterComponent={showFooter ? footerComponent : null}
-              contentContainerStyle={[
-                { paddingBottom: 24 },
-                contentContainerStyle,
-              ]}
-              showsVerticalScrollIndicator={true}
-              keyboardShouldPersistTaps="handled"
-            />
+            <>
+              {renderHeader()}
+              <BottomSheetFlatList
+                data={data}
+                renderItem={renderItem}
+                keyExtractor={keyExtractor}
+                ListFooterComponent={showFooter ? footerComponent : null}
+                contentContainerStyle={[
+                  { paddingBottom: 24 },
+                  contentContainerStyle,
+                ]}
+                showsVerticalScrollIndicator={true}
+                keyboardShouldPersistTaps="handled"
+              />
+            </>
           );
 
         case 'sectionlist':
           return (
-            <BottomSheetSectionList
-              sections={sections}
-              renderItem={renderItem}
-              renderSectionHeader={renderSectionHeader}
-              keyExtractor={keyExtractor}
-              style={baseStyle}
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-            />
+            <>
+              {renderHeader()}
+              <BottomSheetSectionList
+                sections={sections}
+                renderItem={renderItem}
+                renderSectionHeader={renderSectionHeader}
+                keyExtractor={keyExtractor}
+                style={baseStyle}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              />
+            </>
           );
 
-        default:
+        default: // 'view'
           return (
             <BottomSheetView
               style={[
@@ -278,7 +285,7 @@ const BaseBottomSheet = forwardRef(
                   flex: 1,
                   borderTopLeftRadius: 24,
                   borderTopRightRadius: 24,
-                  overflow: 'hidden', // <- keeps corners rounded
+                  overflow: 'hidden',
                   backgroundColor: theme.colors.surface,
                 },
                 contentContainerStyle,
@@ -299,14 +306,15 @@ const BaseBottomSheet = forwardRef(
       renderSectionHeader,
       theme,
       contentContainerStyle,
+      renderHeader,
+      showFooter,
+      footerComponent,
     ]);
 
-    // Handle sheet changes
+    // Handle sheet index changes
     const handleSheetChanges = useCallback(
       index => {
         onChange?.(index);
-
-        // Add haptic feedback on iOS
         if (Platform.OS === 'ios' && index >= 0) {
           try {
             const { HapticFeedback } = require('react-native');
@@ -347,7 +355,8 @@ const BaseBottomSheet = forwardRef(
         style={[styles.container, containerStyle]}
         {...restProps}
       >
-        {renderHeader()}
+        {/* renderContent() owns ALL header rendering for every contentType.
+            Do NOT add renderHeader() here — it causes a double header render. */}
         {renderContent()}
       </BottomSheet>
     );

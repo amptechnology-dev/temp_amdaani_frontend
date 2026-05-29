@@ -46,7 +46,7 @@ const validationSchema = Yup.object().shape({
     .typeError('Cost Price must be a number')
     .positive('Cost Price must be greater than 0')
     .required('Cost Price is required'),
-  reason: Yup.object().nullable().required('Reason is required'),
+  reason: Yup.string().nullable().required('Reason is required'),
   remarks: Yup.string()
     .max(200, 'Remarks can be up to 200 characters')
     .nullable(),
@@ -54,8 +54,8 @@ const validationSchema = Yup.object().shape({
 
 const SyncReasonWithFormik = ({ selectedReason, setFieldValue }) => {
   useEffect(() => {
-    if (selectedReason) {
-      setFieldValue('reason', selectedReason);
+    if (selectedReason?.id) {
+      setFieldValue('reason', selectedReason.id); // ✅ passing id string
     }
   }, [selectedReason, setFieldValue]);
   return null;
@@ -80,7 +80,7 @@ const AdjustStockBottomSheet = React.forwardRef(
   ) => {
     const theme = useTheme();
     const [isDatePickerVisible, setDatePickerVisible] = useState(false);
-    const [reason, setReason] = useState(null);
+    const [reason, setReason] = useState('');
 
     const initialValues = {
       actionType: initialActionType,
@@ -91,8 +91,13 @@ const AdjustStockBottomSheet = React.forwardRef(
       remarks: '',
     };
 
+    console.log(
+      'AdjustStockBottomSheet rendered with selectedReason:',
+      selectedReason,
+    );
+
     useEffect(() => {
-      setReason(selectedReason);
+      setReason(selectedReason?.id || '');
     }, [selectedReason]);
 
     const handleClose = useCallback(() => {
@@ -115,9 +120,11 @@ const AdjustStockBottomSheet = React.forwardRef(
           quantity: finalQuantity,
           rate: Number(values.rate),
           remarks: values.remarks || '',
-          reason: reason,
+          transactionType: reason,
           date: formattedDate,
         };
+
+        console.log('Submitting stock adjustment with body:', body);
 
         const res = await api.post('/product/adjust-stock', body);
 
@@ -304,7 +311,7 @@ const AdjustStockBottomSheet = React.forwardRef(
                     <TextInput
                       label="Select Reason *"
                       mode="outlined"
-                      value={reason?.name || ''}
+                      value={selectedReason?.name || ''}
                       editable={false}
                       left={<TextInput.Icon icon="file-document-outline" />}
                       right={<TextInput.Icon icon="chevron-down" />}

@@ -1515,7 +1515,7 @@ export default function NewSale() {
                         styles.dropdown,
                         {
                           backgroundColor: theme.colors.surface,
-                          top: inputLayout.y + 0,
+                          top: inputLayout.y + 30,
                           left: inputLayout.x + 16,
                           width: inputLayout.width - 32,
                           opacity: dropdownAnim,

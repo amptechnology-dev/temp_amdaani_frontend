@@ -69,13 +69,6 @@ const ReportScreen = () => {
       icon: 'package-variant',
       route: 'PurchaseReport',
     },
-    {
-      id: '10',
-      title: 'Purchase Report',
-      description: 'Purchase analysis and vendor performance tracking',
-      icon: 'package-variant',
-      route: 'PurchaseReport',
-    },
   ];
 
   const renderReportCard = ({ item }) => (

@@ -7,13 +7,13 @@ import BaseBottomSheet from './BaseBottomSheet';
 const TAX_OPTIONS = [
     {
         id: 'with_tax',
-        label: 'With Tax',
+        label: 'Include Tax',
         description: 'Price includes applicable taxes',
         icon: 'plus-circle-outline'
     },
     {
         id: 'without_tax',
-        label: 'Without Tax',
+        label: 'Exclude Tax',
         description: 'Price excludes taxes (tax will be added)',
         icon: 'minus-circle-outline'
     }

@@ -22,6 +22,7 @@ import RNHTMLtoPDF from 'react-native-html-to-pdf';
 import Share from 'react-native-share';
 import { generateInvoiceHTML } from '../utils/invoiceTemplate';
 import { generateThermalInvoiceHTML } from '../utils/generateThermalInvoiceHTML';
+import { generateA5InvoiceHTML } from '../utils/generateA5InvoiceHTML';
 import { Printer } from '../native/Printer';
 import { printThermalInvoice } from '../utils/printThermal';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -302,6 +303,44 @@ export default function InvoiceDetail() {
   const html =
     printMode === 'thermal'
       ? generateThermalInvoiceHTML({
+          createdInvoice: true,
+          invoiceData: invoice,
+          formValues: {
+            customerName: invoice.customerName,
+            contactNumber: invoice.customerMobile,
+            customerAddress: invoice.customerAddress || '',
+            customerGstNumber: invoice.customerGstNumber || '',
+          },
+          cartItems: enrichedItems,
+          invoiceCalculations: {
+            subtotal: subtotal,
+            totalTax: invoice.gstTotal,
+            discountTotal: invoice.discountTotal || 0,
+            grandTotal: grandTotalRaw,
+            netTotal,
+            grandTotalRaw,
+            gstBreakdown: isGstInvoice ? gstBreakdown : {},
+          },
+          invoiceNumber: invoice.invoiceNumber,
+          currentDate: new Date(invoice.invoiceDate).toLocaleDateString(
+            'en-IN',
+          ),
+          currentTime: new Date(invoice.invoiceDate).toLocaleTimeString(
+            'en-IN',
+            { hour12: false },
+          ),
+          invoiceDate: invoice.invoiceDate,
+          storedata: effectiveStoredata,
+          isGstInvoice,
+          isFreePlan,
+          payment: {
+            paid: paidAmount,
+            due: dueAmount,
+            status: invoice.paymentStatus || 'unpaid',
+          },
+        })
+      : printMode === 'a5'
+      ? generateA5InvoiceHTML({
           createdInvoice: true,
           invoiceData: invoice,
           formValues: {
@@ -684,6 +723,10 @@ export default function InvoiceDetail() {
                   if (payload?.mode === 'a4') {
                     setPrintMode('a4');
                     await AsyncStorage.setItem('printMode', 'a4');
+                    await AsyncStorage.removeItem('selectedPrinter');
+                  } else if (payload?.mode === 'a5') {
+                    setPrintMode('a5');
+                    await AsyncStorage.setItem('printMode', 'a5');
                     await AsyncStorage.removeItem('selectedPrinter');
                   } else if (payload?.mode === 'thermal') {
                     setPrintMode('thermal');

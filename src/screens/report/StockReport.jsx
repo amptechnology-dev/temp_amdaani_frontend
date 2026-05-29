@@ -1,5 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { Icon } from 'react-native-paper';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -8,6 +7,8 @@ import {
   Platform,
   PermissionsAndroid,
   useWindowDimensions,
+  ScrollView,
+  TouchableOpacity,
 } from 'react-native';
 import {
   Text,
@@ -18,8 +19,10 @@ import {
   Portal,
   Dialog,
   IconButton,
+  Divider,
+  Menu,
+  TextInput,
 } from 'react-native-paper';
-import DateTimePickerModal from 'react-native-modal-datetime-picker';
 import RNHTMLtoPDF from 'react-native-html-to-pdf';
 import RNFS from 'react-native-fs';
 import XLSX from 'xlsx';
@@ -31,6 +34,106 @@ import FileViewer from 'react-native-file-viewer';
 import { useAuth } from '../../context/AuthContext';
 import { useRoute } from '@react-navigation/native';
 
+/*
+  API response shape (per record) — current:
+  {
+    openingQty         : 0,
+    purchaseQty        : 1,
+    returnInQty        : 0,
+    saleQty            : 0,
+    returnOutQty       : 1,
+    damageQty          : 0,
+    closingStock       : 0,
+    currentStockValue  : 0,
+    avgStockValue      : 0,
+    adjustmentQty      : 0,
+    itemDescription    : "Pen",
+    lastPurchaseRate   : 80,
+    avgPurchaseRate    : 80,
+  }
+*/
+
+// ─── transaction type config ───────────────────────────────────────────────────
+
+const AS_ON_DATE_TYPES = new Set([
+  'DAMAGE',
+  'SALE',
+  'SALE_RETURN',
+  'PURCHASE_RETURN',
+  'PURCHASE_REVERSE',
+  'STOCK_REDUCE',
+  'RETURN_TO_VENDOR',
+  'TRANSFER',
+]);
+
+const TRANSACTION_TYPES = [
+  { key: null, label: 'All', icon: '📦' },
+  { key: 'DAMAGE', label: 'Damage', icon: '🔴' },
+  { key: 'PURCHASE_RETURN', label: 'Purch. Return', icon: '↩️' },
+  { key: 'SALE_RETURN', label: 'Sale Return', icon: '↪️' },
+  { key: 'EXPIRED', label: 'Expired', icon: '📅' },
+];
+
+// ─── helpers ──────────────────────────────────────────────────────────────────
+
+// Total inward = purchase + returnIn (fallback to older fields)
+const totalIn = r =>
+  (r.purchaseQty || 0) +
+  (r.returnInQty || 0) +
+  (r.saleReturnQty || 0) +
+  (r.adjustmentInQty || 0);
+
+// Total outward = sale + returnOut + damage (fallback to older fields)
+const totalOut = r =>
+  (r.saleQty || 0) +
+  (r.returnOutQty || 0) +
+  (r.damageQty || 0) +
+  (r.purchaseReturnQty || 0) +
+  (r.purchaseReverseQty || 0) +
+  (r.stockReduceQty || 0) +
+  (r.returnToVendorQty || 0) +
+  (r.transferQty || 0) +
+  (r.adjustmentOutQty || 0);
+
+const currency = v => `₹${Number(v || 0).toFixed(2)}`;
+const safe = v => (v === undefined || v === null || v === '' ? '-' : String(v));
+const num = v => Number(v || 0);
+
+const fmtDisplay = date => {
+  if (!date) return 'All';
+  const d = String(date.getDate()).padStart(2, '0');
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const y = String(date.getFullYear()).slice(-2);
+  return `${d}/${m}/${y}`;
+};
+
+const fmtQuery = date => {
+  if (!date) return undefined;
+  const yyyy = date.getFullYear();
+  const mm = String(date.getMonth() + 1).padStart(2, '0');
+  const dd = String(date.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
+const currentFinancialYear = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const startYear = today.getMonth() + 1 >= 4 ? year : year - 1;
+  return `${startYear}-${String(startYear + 1).slice(-2)}`;
+};
+
+// ─── ONE unified fetch function ───────────────────────────────────────────────
+
+const fetchStockData = async (financialYear, txType, itemName) => {
+  const params = {};
+  if (financialYear) params.financialYear = financialYear;
+  if (txType) params.transactionType = txType;
+  if (itemName) params.itemName = itemName;
+  return api.get('/invoice/stock-report', { params });
+};
+
+// ─── component ────────────────────────────────────────────────────────────────
+
 const StockReport = () => {
   const theme = useTheme();
   const { width } = useWindowDimensions();
@@ -38,247 +141,218 @@ const StockReport = () => {
 
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [startDate, setStartDate] = useState(null);
-  const [endDate, setEndDate] = useState(null);
-  const [pickerMode, setPickerMode] = useState(null);
+  const [financialYear, setFinancialYear] = useState(currentFinancialYear());
+  const [activeType, setActiveType] = useState(null);
   const [dialogVisible, setDialogVisible] = useState(false);
   const [lastSavedPath, setLastSavedPath] = useState(null);
-  const [hasFetched, setHasFetched] = useState(false); // ✅ track if user has generated at least once
+  const [hasFetched, setHasFetched] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [productSearch, setProductSearch] = useState('');
+
+  const fyRef = useRef(financialYear);
+  const typeRef = useRef(activeType);
+  const searchRef = useRef(productSearch);
+  useEffect(() => {
+    fyRef.current = financialYear;
+  }, [financialYear]);
+  useEffect(() => {
+    typeRef.current = activeType;
+  }, [activeType]);
+  useEffect(() => {
+    searchRef.current = productSearch;
+  }, [productSearch]);
+
+  const fyOptions = useMemo(() => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const start = today.getMonth() + 1 >= 4 ? year : year - 1;
+    const opts = [];
+    for (let i = 0; i < 8; i++) {
+      const sy = start - i;
+      const ey = sy + 1;
+      opts.push(`${sy}-${String(ey).slice(-2)}`);
+    }
+    return opts;
+  }, []);
 
   const { authState } = useAuth();
-  const store = authState?.user?.store || authState?.store || null;
   const route = useRoute();
+
   const dashboardFlag = route?.params?.dashboardFlag || false;
   const dashboardWeeklyFlag = route?.params?.dashboardWeeklyFlag || false;
   const dashboardMonthlyFlag = route?.params?.dashboardMonthlyFlag || false;
   const dashboardTodayFlag = route?.params?.dashboardTodayFlag || false;
 
-  const formatDate = date => {
-    if (!date) return 'All';
-    const day = String(date.getDate()).padStart(2, '0');
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const year = String(date.getFullYear()).slice(-2);
-    return `${day}/${month}/${year}`;
-  };
+  // ── core fetch ───────────────────────────────────────────────────────────────
 
-  const formattedRange = useMemo(() => {
-    const s = startDate ? formatDate(startDate) : 'All';
-    const e = endDate ? formatDate(endDate) : 'All';
-    return `${s} - ${e}`;
-  }, [startDate, endDate]);
-
-  const formatQueryDate = date => {
-    if (!date) return undefined;
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, '0');
-    const dd = String(date.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
-  };
-
-  // ✅ FIX: Accept explicit date params to avoid stale closure on auto-fetch
-  const fetchRecords = useCallback(
-    async (start = startDate, end = endDate) => {
-      if (!start || !end) {
-        Alert.alert('Missing Dates', 'Please select both start and end dates.');
-        return;
-      }
-      try {
-        setLoading(true);
-        // ✅ FIX: Correct endpoint — matches backend route for stock report
-        const res = await api.get('/invoice/stock-report', {
-          params: {
-            startDate: formatQueryDate(start),
-            endDate: formatQueryDate(end),
-          },
-        });
-
-        const rows = res?.data || [];
-        setRecords(rows);
-        setHasFetched(true);
-      } catch (e) {
-        console.error('Stock report fetch error:', e?.message);
-        Alert.alert('Error', 'Failed to fetch stock report data.');
-      } finally {
-        setLoading(false);
-      }
-    },
-    [startDate, endDate],
-  );
-
-  // ✅ FIX: Dashboard flags set dates AND immediately fetch in one go — no race condition
-  useEffect(() => {
-    const today = new Date();
-    let start = null;
-    let end = null;
-
-    if (dashboardFlag) {
-      const currentMonth = today.getMonth() + 1;
-      const fyStart =
-        currentMonth >= 4
-          ? new Date(today.getFullYear(), 3, 1)
-          : new Date(today.getFullYear() - 1, 3, 1);
-      start = fyStart;
-      end = today;
-    } else if (dashboardWeeklyFlag) {
-      const weekStart = new Date(today);
-      weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-      start = weekStart;
-      end = today;
-    } else if (dashboardMonthlyFlag) {
-      start = new Date(today.getFullYear(), today.getMonth(), 1);
-      end = today;
-    } else if (dashboardTodayFlag) {
-      start = today;
-      end = today;
+  const runFetch = async (fy, txType, itemName) => {
+    if (!fy) {
+      Alert.alert('Missing Filter', 'Please select a financial year.');
+      return;
     }
+    try {
+      setLoading(true);
+      const res = await fetchStockData(fy, txType, itemName);
 
-    if (start && end) {
-      setStartDate(start);
-      setEndDate(end);
-      // ✅ FIX: Pass dates directly instead of relying on state update propagating first
-      fetchRecords(start, end);
+      console.log('Stock report API response:', res);
+      // Support both flat array and { data: [...] } shapes
+      const rows = Array.isArray(res?.data) ? res.data : res?.data?.data || [];
+      setRecords(rows);
+      setHasFetched(true);
+    } catch (e) {
+      console.error('Stock report fetch error:', e?.message);
+      Alert.alert('Error', 'Failed to fetch stock report data.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── dashboard auto-fetch ─────────────────────────────────────────────────────
+
+  useEffect(() => {
+    // Dashboard routes may request an immediate fetch — use the current financial year
+    if (
+      dashboardFlag ||
+      dashboardWeeklyFlag ||
+      dashboardMonthlyFlag ||
+      dashboardTodayFlag
+    ) {
+      runFetch(financialYear, null);
     }
   }, [
     dashboardFlag,
     dashboardWeeklyFlag,
     dashboardMonthlyFlag,
     dashboardTodayFlag,
+    financialYear,
   ]);
 
-  // ✅ Quick-select helpers — set state AND fetch immediately
-  const applyRange = (start, end) => {
-    setStartDate(start);
-    setEndDate(end);
-    fetchRecords(start, end);
-  };
+  // ── date quick-selects ───────────────────────────────────────────────────────
 
-  const applyThisYear = () => {
-    const today = new Date();
-    const currentMonth = today.getMonth() + 1;
-    const fyStart =
-      currentMonth >= 4
-        ? new Date(today.getFullYear(), 3, 1)
-        : new Date(today.getFullYear() - 1, 3, 1);
-    applyRange(fyStart, today);
-  };
-
-  const applyThisMonth = () => {
-    const today = new Date();
-    applyRange(new Date(today.getFullYear(), today.getMonth(), 1), today);
-  };
-
-  const applyPreviousMonth = () => {
-    const today = new Date();
-    applyRange(
-      new Date(today.getFullYear(), today.getMonth() - 1, 1),
-      new Date(today.getFullYear(), today.getMonth(), 0),
-    );
-  };
-
-  // ✅ FIX: Clear also resets hasFetched so the empty state message is correct
-  const clearDates = () => {
-    setStartDate(null);
-    setEndDate(null);
+  const clearAll = () => {
+    setFinancialYear(currentFinancialYear());
+    setActiveType(null);
+    setProductSearch('');
     setRecords([]);
     setHasFetched(false);
   };
 
-  const totals = useMemo(() => {
-    return {
+  // ── type chip handler ────────────────────────────────────────────────────────
+
+  const handleTypeSelect = type => {
+    setActiveType(type);
+    setRecords([]);
+    setHasFetched(false);
+    runFetch(fyRef.current, type, searchRef.current);
+  };
+
+  // ── Generate button ──────────────────────────────────────────────────────────
+
+  const handleGenerate = () => {
+    runFetch(fyRef.current, typeRef.current, searchRef.current);
+  };
+
+  // ── derived ──────────────────────────────────────────────────────────────────
+
+  const formattedRange = `FY ${financialYear}`;
+  const isAsOnDate = activeType && AS_ON_DATE_TYPES.has(activeType);
+  const activeTypeMeta = TRANSACTION_TYPES.find(t => t.key === activeType);
+
+  const totals = useMemo(
+    () => ({
       count: records.length,
-      // ✅ FIX: Only use field names that backend actually returns
-      itemValue: records.reduce(
-        (sum, rec) => sum + Number(rec.itemValue || 0),
-        0,
-      ),
-      quantity: records.reduce(
-        (sum, rec) => sum + Number(rec.quantity || 0),
-        0,
-      ),
-    };
-  }, [records]);
+      // Use currentStockValue (new field)
+      stockValue: records.reduce((s, r) => s + num(r.currentStockValue), 0),
+      closingQty: records.reduce((s, r) => s + num(r.closingStock), 0),
+      totalIn: records.reduce((s, r) => s + totalIn(r), 0),
+      totalOut: records.reduce((s, r) => s + totalOut(r), 0),
+    }),
+    [records],
+  );
+
+  // ── permissions ──────────────────────────────────────────────────────────────
 
   const ensureAndroidDownloadPermission = async () => {
     if (Platform.OS !== 'android') return true;
     if (Platform.Version < 29) {
-      const granted = await PermissionsAndroid.request(
+      const g = await PermissionsAndroid.request(
         PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
         {
           title: 'Storage Permission',
-          message: 'Allow saving reports to Downloads folder',
+          message: 'Allow saving reports to Downloads',
           buttonPositive: 'OK',
         },
       );
-      return granted === PermissionsAndroid.RESULTS.GRANTED;
+      return g === PermissionsAndroid.RESULTS.GRANTED;
     }
     return true;
   };
 
-  const currency = value => `₹${Number(value || 0).toFixed(2)}`;
-  // ✅ FIX: safe now only used for strings that might be null/undefined
-  const safe = value =>
-    value === undefined || value === null || value === '' ? '-' : String(value);
+  // ── HTML for PDF ─────────────────────────────────────────────────────────────
+  // Columns (last 3 updated):
+  //   ... Transfer | Closing Stock | Avg Stock Value | Current Stock Value
 
   const buildHTML = () => {
+    const txLabel = activeTypeMeta?.label || 'All';
     const bodyRows = records
-      .map((record, index) => {
-        return `
-          <tr>
-            <td>${index + 1}</td>
-            <td>${safe(record.itemDescription)}</td>
-            <td align="right">${currency(record.itemValue)}</td>
-            <td align="right">${safe(record.quantity)}</td>
-            <td align="right">${safe(record.totalIn)}</td>
-            <td align="right">${safe(record.totalOut)}</td>
-          </tr>`;
-      })
+      .map(
+        (r, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${safe(r.itemDescription)}</td>
+        <td align="right">${num(r.openingStock)}</td>
+        <td align="right">${num(r.purchaseQty)}</td>
+        <td align="right">${num(r.returnInQty)}</td>
+        <td align="right">${num(r.saleQty)}</td>
+        <td align="right">${num(r.returnOutQty)}</td>
+        <td align="right">${num(r.damageQty)}</td>
+        <td align="right">${num(r.adjustmentQty)}</td>
+        <td align="right">${num(r.closingStock)}</td>
+        <td align="right">${num(r.currentStockValue)}</td>
+        <td align="right">${num(r.averageStockValue)}</td>
+      </tr>`,
+      )
       .join('');
 
     return `
-      <html>
-      <head>
-        <meta charset="utf-8" />
-        <style>
-          body { font-family: -apple-system, Roboto, Segoe UI, Arial; margin: 0; padding: 16px; color: #111; }
-          h1 { font-size: 20px; margin-bottom: 4px; }
-          .muted { color: #666; margin-bottom: 16px; }
-          .summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
-          .chip { border-radius: 16px; padding: 6px 12px; background: #f2f2f2; font-size: 12px; color: #333; border: 1px solid #ddd; }
-          table { border-collapse: collapse; width: 100%; page-break-inside: auto; }
-          tr { page-break-inside: avoid; page-break-after: auto; }
-          th, td { border-bottom: 1px solid #eee; padding: 8px 6px; font-size: 11px; word-wrap: break-word; }
-          th { background: #fafafa; font-weight: 700; }
-          .footer { margin-top: 14px; color: #666; font-size: 10px; }
-        </style>
-      </head>
-      <body>
+      <html><head><meta charset="utf-8"/>
+      <style>
+        body { font-family: Roboto, Arial; margin:0; padding:16px; color:#111; font-size:11px; }
+        h1   { font-size:18px; margin-bottom:2px; }
+        .sub { color:#666; margin-bottom:14px; }
+        .chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+        .chip  { background:#f0f0f0; border:1px solid #ddd; border-radius:12px; padding:4px 10px; font-size:10px; }
+        table  { border-collapse:collapse; width:100%; }
+        th, td { border-bottom:1px solid #eee; padding:6px 5px; font-size:10px; }
+        th     { background:#fafafa; font-weight:700; }
+        .footer{ margin-top:14px; color:#888; font-size:9px; }
+      </style></head><body>
         <h1>Stock Report</h1>
-        <div class="muted">Period: ${formattedRange}</div>
-        <div class="summary">
-          <div class="chip">Records: ${totals.count}</div>
-          <div class="chip">Total Value: ${currency(totals.itemValue)}</div>
-          <div class="chip">Total Qty: ${totals.quantity}</div>
+        <div class="sub">Period: ${formattedRange} · Type: ${txLabel}</div>
+        <div class="chips">
+          <div class="chip">Items: ${totals.count}</div>
+          <div class="chip">Current Stock Value: ${totals.stockValue}</div>
+          <div class="chip">Closing Stock: ${totals.closingQty}</div>
+          <div class="chip">Total In: ${totals.totalIn}</div>
+          <div class="chip">Total Out: ${totals.totalOut}</div>
         </div>
         <table>
-          <thead>
-            <tr>
-              <th>SL NO</th>
-              <th>Item Description</th>
-              <th align="right">Item Value</th>
-              <th align="right">Quantity</th>
-              <th align="right">Total In</th>
-              <th align="right">Total Out</th>
-            </tr>
-          </thead>
+          <thead><tr>
+            <th>SL no</th><th>item</th>
+            <th>Opening Stock</th><th>Purchase</th><th>Purchase Return</th>
+            <th>Sale</th><th>Sales Return</th><th>Damage</th><th>Adjustment</th>
+            <th>Closing</th><th>Current Stock </th><th>Average Stock Value</th>
+          </tr></thead>
           <tbody>${
             bodyRows ||
-            `<tr><td colspan="6" align="center">No records</td></tr>`
+            `<tr><td colspan="13" align="center">No records</td></tr>`
           }</tbody>
         </table>
-        <div class="footer">Powered by AMDAANI | ${new Date().toLocaleString()}</div>
-      </body>
-      </html>`;
+        <div class="footer">Generated ${new Date().toLocaleString()}</div>
+      </body></html>`;
   };
+
+  // ── export PDF ───────────────────────────────────────────────────────────────
 
   const exportPDF = async () => {
     if (!records.length) {
@@ -286,228 +360,220 @@ const StockReport = () => {
       return;
     }
     try {
-      const storageOk = await ensureStoragePermission();
-      const downloadsOk = await ensureAndroidDownloadPermission();
-      if (!storageOk || !downloadsOk) return;
-
-      const html = buildHTML();
+      const ok1 = await ensureStoragePermission();
+      const ok2 = await ensureAndroidDownloadPermission();
+      if (!ok1 || !ok2) return;
       const pdfRes = await RNHTMLtoPDF.convert({
-        html,
+        html: buildHTML(),
         fileName: `Stock_Report_${Date.now()}`,
         base64: false,
         orientation: 'landscape',
       });
-      const downloadsDir =
+      const dir =
         Platform.OS === 'android'
           ? RNFS.DownloadDirectoryPath
           : RNFS.DocumentDirectoryPath;
-      const baseName = `Stock_Report_${new Date().toISOString().slice(0, 10)}`;
-      let finalPath = `${downloadsDir}/${baseName}.pdf`;
-      if (await RNFS.exists(finalPath)) {
-        finalPath = `${downloadsDir}/${baseName}_${Date.now()}.pdf`;
-      }
-      await RNFS.copyFile(pdfRes.filePath, finalPath);
+      const base = `Stock_Report_${new Date().toISOString().slice(0, 10)}`;
+      let path = `${dir}/${base}.pdf`;
+      if (await RNFS.exists(path)) path = `${dir}/${base}_${Date.now()}.pdf`;
+      await RNFS.copyFile(pdfRes.filePath, path);
       try {
-        await FileViewer.open(finalPath, { showOpenWithDialog: true });
+        await FileViewer.open(path, { showOpenWithDialog: true });
       } catch {
-        Alert.alert(
-          'PDF Saved',
-          'Saved to Downloads. No PDF viewer available to open it.',
-        );
+        Alert.alert('PDF Saved', 'Saved to Downloads. No PDF viewer found.');
       }
-      setLastSavedPath(finalPath);
+      setLastSavedPath(path);
       setDialogVisible(true);
     } catch (e) {
       console.error('PDF export error:', e?.message);
-      Alert.alert('Export Failed', 'Could not generate PDF. Please try again.');
+      Alert.alert('Export Failed', 'Could not generate PDF.');
     }
   };
+
+  // ── export Excel ─────────────────────────────────────────────────────────────
+  // Last 3 columns: Closing Stock | Avg Stock Value | Current Stock Value
 
   const exportExcel = async () => {
     if (!records.length) {
       Alert.alert('No Data', 'No records to export.');
       return;
     }
-    const storageOk = await ensureStoragePermission();
-    const downloadsOk = await ensureAndroidDownloadPermission();
-    if (!storageOk || !downloadsOk) return;
-
+    const ok1 = await ensureStoragePermission();
+    const ok2 = await ensureAndroidDownloadPermission();
+    if (!ok1 || !ok2) return;
     try {
-      // ✅ FIX: Use exact field names returned by backend
-      const data = records.map((record, index) => ({
-        'SL NO': index + 1,
-        'Item Description': safe(record.itemDescription),
-        'Item Value': Number(record.itemValue || 0),
-        Quantity: Number(record.quantity || 0),
-        'Total In': Number(record.totalIn || 0),
-        'Total Out': Number(record.totalOut || 0),
+      const data = records.map((r, i) => ({
+        'SL no': i + 1,
+        item: safe(r.itemDescription),
+        Opening: num(r.openingQty),
+        Purchase: num(r.purchaseQty),
+        'Ret. In': num(r.returnInQty),
+        Sale: num(r.saleQty),
+        'Ret. Out': num(r.returnOutQty),
+        Damage: num(r.damageQty),
+        'Closing Stock': num(r.closingStock),
+        'Currant stck value': num(r.currentStockValue),
+        'Avrage stock value': num(r.avgStockValue),
       }));
-
       const ws = XLSX.utils.json_to_sheet(data);
-      ws['!cols'] = Object.keys(data[0]).map(key => ({
-        wch: Math.max(12, key.length + 2),
+      ws['!cols'] = Object.keys(data[0]).map(k => ({
+        wch: Math.max(12, k.length + 2),
       }));
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Stock Report');
-      const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-      const downloadsDir =
+      const out = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+      const dir =
         Platform.OS === 'android'
           ? RNFS.DownloadDirectoryPath
           : RNFS.DocumentDirectoryPath;
-      const baseName = `Stock_Report_${new Date().toISOString().slice(0, 10)}`;
-      let finalPath = `${downloadsDir}/${baseName}.xlsx`;
-      if (await RNFS.exists(finalPath)) {
-        finalPath = `${downloadsDir}/${baseName}_${Date.now()}.xlsx`;
-      }
-      await RNFS.writeFile(finalPath, wbout, 'base64');
+      const base = `Stock_Report_${new Date().toISOString().slice(0, 10)}`;
+      let path = `${dir}/${base}.xlsx`;
+      if (await RNFS.exists(path)) path = `${dir}/${base}_${Date.now()}.xlsx`;
+      await RNFS.writeFile(path, out, 'base64');
       try {
-        await FileViewer.open(finalPath, { showOpenWithDialog: true });
+        await FileViewer.open(path, { showOpenWithDialog: true });
       } catch {
         Alert.alert(
           'Excel Saved',
-          'Saved to Downloads. No Excel viewer available to open it.',
+          'Saved to Downloads. No Excel viewer found.',
         );
       }
-      setLastSavedPath(finalPath);
+      setLastSavedPath(path);
       setDialogVisible(true);
     } catch (e) {
       console.error('Excel export error:', e?.message);
-      Alert.alert(
-        'Export Failed',
-        'Could not generate Excel file. Please try again.',
-      );
+      Alert.alert('Export Failed', 'Could not generate Excel file.');
     }
   };
 
-  // ✅ FIX: renderItem only uses fields the backend actually returns
-  const renderItem = ({ item, index }) => (
-    <Card
-      mode="outlined"
-      style={styles.card}
-      contentStyle={{
-        paddingHorizontal: 16,
-        paddingTop: 12,
-        paddingBottom: 12,
-      }}
-    >
-      {/* Header: Item description + Item value */}
-      <View style={styles.cardHeader}>
-        <View style={{ flex: 1 }}>
-          <Text variant="titleMedium" numberOfLines={2}>
-            {index + 1}. {safe(item.itemDescription)}
-          </Text>
-        </View>
-        <Text variant="titleMedium" style={{ color: theme.colors.primary }}>
-          {currency(item.itemValue)}
-        </Text>
-      </View>
+  // ── card renderer ─────────────────────────────────────────────────────────────
 
-      {/* Meta: Qty tag + In/Out tags */}
-      <View style={styles.cardMeta}>
-        <View
-          style={[
-            styles.tag,
-            { backgroundColor: theme.colors.primaryContainer },
-          ]}
-        >
-          <Text style={[styles.tagText, { color: theme.colors.primary }]}>
-            Qty: {safe(item.quantity)}
-          </Text>
-        </View>
-        <View style={{ flexDirection: 'row', gap: 6 }}>
-          <View style={[styles.tag, { backgroundColor: '#dcfce7' }]}>
-            <Text style={[styles.tagText, { color: '#16a34a' }]}>
-              ▲ In: {safe(item.totalIn)}
+  const renderItem = ({ item: r, index }) => {
+    const tIn = totalIn(r);
+    const tOut = totalOut(r);
+    return (
+      <Card mode="outlined" style={styles.card}>
+        <Card.Content style={styles.cardContent}>
+          <View style={styles.cardHeader}>
+            <Text variant="titleMedium" style={{ flex: 1 }} numberOfLines={2}>
+              {index + 1}. {safe(r.itemDescription)}
             </Text>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text variant="labelSmall" style={styles.mutedText}>
+                Current Stock Value
+              </Text>
+              <Text
+                variant="titleMedium"
+                style={{ color: theme.colors.primary, fontWeight: '700' }}
+              >
+                {num(r.currentStockValue)}
+              </Text>
+            </View>
           </View>
-          <View
-            style={[
-              styles.tag,
-              { backgroundColor: theme.colors.errorContainer },
-            ]}
+
+          <View style={styles.tagRow}>
+            <View
+              style={[
+                styles.tag,
+                { backgroundColor: theme.colors.primaryContainer },
+              ]}
+            >
+              <Text style={[styles.tagText, { color: theme.colors.primary }]}>
+                Closing Stock: {num(r.closingStock)}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.tag,
+                { backgroundColor: theme.colors.surfaceVariant },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.tagText,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
+              >
+                Avg Stock Value: {num(r.avgStockValue)}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.tag,
+                { backgroundColor: theme.colors.surfaceVariant },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.tagText,
+                  { color: theme.colors.onSurfaceVariant },
+                ]}
+              >
+                Opening: {num(r.openingQty)}
+              </Text>
+            </View>
+          </View>
+
+          <Divider style={{ marginVertical: 10 }} />
+
+          <Text
+            variant="labelSmall"
+            style={[styles.mutedText, { marginBottom: 6 }]}
           >
-            <Text style={[styles.tagText, { color: theme.colors.error }]}>
-              ▼ Out: {safe(item.totalOut)}
-            </Text>
-          </View>
-        </View>
-      </View>
-
-      {/* Details row */}
-      <View style={styles.cardDetails}>
-        <View style={styles.detailCol}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Icon
-              source="package-variant"
-              size={14}
-              color={theme.colors.onSurfaceVariant}
-            />
-            <Text variant="labelSmall" style={{ marginLeft: 4 }}>
-              Quantity
-            </Text>
-          </View>
-          <Text variant="labelLarge">{safe(item.quantity)}</Text>
-        </View>
-
-        <View style={styles.detailCol}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Icon
-              source="arrow-down-circle-outline"
-              size={14}
+            INWARD (+{tIn})
+          </Text>
+          <View style={styles.detailGrid}>
+            <StatCol
+              label="Purchase"
+              value={num(r.purchaseQty)}
               color="#16a34a"
             />
-            <Text variant="labelSmall" style={{ marginLeft: 4 }}>
-              Total In
-            </Text>
+            <StatCol
+              label="Ret. In"
+              value={num(r.returnInQty)}
+              color="#16a34a"
+            />
           </View>
-          <Text variant="labelLarge" style={{ color: '#16a34a' }}>
-            {safe(item.totalIn)}
-          </Text>
-        </View>
 
-        <View style={styles.detailCol}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Icon
-              source="arrow-up-circle-outline"
-              size={14}
+          <Divider style={{ marginVertical: 10 }} />
+
+          <Text
+            variant="labelSmall"
+            style={[styles.mutedText, { marginBottom: 6 }]}
+          >
+            OUTWARD (−{tOut})
+          </Text>
+          <View style={styles.detailGrid}>
+            <StatCol
+              label="Sale"
+              value={num(r.saleQty)}
               color={theme.colors.error}
             />
-            <Text variant="labelSmall" style={{ marginLeft: 4 }}>
-              Total Out
-            </Text>
-          </View>
-          <Text variant="labelLarge" style={{ color: theme.colors.error }}>
-            {safe(item.totalOut)}
-          </Text>
-        </View>
-
-        <View style={styles.detailCol}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Icon
-              source="currency-inr"
-              size={14}
-              color={theme.colors.onSurfaceVariant}
+            <StatCol
+              label="Ret. Out"
+              value={num(r.returnOutQty)}
+              color={theme.colors.error}
             />
-            <Text variant="labelSmall">Value</Text>
+            <StatCol
+              label="Damage"
+              value={num(r.damageQty)}
+              color={theme.colors.error}
+            />
           </View>
-          <Text
-            variant="labelLarge"
-            style={{ fontWeight: '700', color: theme.colors.primary }}
-          >
-            {currency(item.itemValue)}
-          </Text>
-        </View>
-      </View>
-    </Card>
-  );
+        </Card.Content>
+      </Card>
+    );
+  };
 
-  // ✅ Determine the right empty state message
-  const emptyMessage =
-    !startDate || !endDate
-      ? 'Select a date range and tap Generate.'
-      : hasFetched
-      ? 'No stock records found for the selected period.'
-      : 'Tap Generate to load the report.';
+  // ── empty state ───────────────────────────────────────────────────────────────
+
+  const emptyMessage = !financialYear
+    ? 'Select a financial year and tap Generate.'
+    : hasFetched
+    ? `No stock records found for ${formattedRange}.`
+    : 'Tap Generate to load the report.';
+
+  // ─────────────────────────────────────────────────────────────────────────────
 
   return (
     <SafeAreaView
@@ -523,175 +589,208 @@ const StockReport = () => {
               iconColor="red"
               onPress={exportPDF}
               disabled={!records.length || loading}
-              accessibilityLabel="Export PDF"
             />
             <IconButton
               icon="file-excel"
               iconColor="green"
               onPress={exportExcel}
               disabled={!records.length || loading}
-              accessibilityLabel="Export Excel"
             />
           </>
         }
       />
 
+      {/* ── Controls ── */}
       <View style={[styles.header, compact && { paddingHorizontal: 12 }]}>
-        {/* Date pickers */}
+        {/* Financial year selector */}
         <View style={[styles.row, compact && { gap: 6 }]}>
-          <Button
-            mode="outlined"
-            onPress={() => setPickerMode('start')}
-            style={[styles.dateBtn, compact && { paddingHorizontal: 0 }]}
-            icon="calendar-start"
-            contentStyle={{ flexDirection: 'row-reverse' }}
+          <Menu
+            visible={menuVisible}
+            onDismiss={() => setMenuVisible(false)}
+            anchor={
+              <Button
+                mode="outlined"
+                onPress={() => setMenuVisible(true)}
+                style={[styles.dateBtn, compact && { paddingHorizontal: 0 }]}
+                icon="calendar"
+              >
+                {financialYear || 'Select FY'}
+              </Button>
+            }
           >
-            {startDate ? formatDate(startDate) : 'Start Date'}
-          </Button>
-          <Button
-            mode="outlined"
-            onPress={() => setPickerMode('end')}
-            style={[styles.dateBtn, compact && { paddingHorizontal: 0 }]}
-            icon="calendar-end"
-            contentStyle={{ flexDirection: 'row-reverse' }}
-          >
-            {endDate ? formatDate(endDate) : 'End Date'}
-          </Button>
+            {fyOptions.map(fy => (
+              <Menu.Item
+                key={fy}
+                onPress={() => {
+                  setFinancialYear(fy);
+                  setMenuVisible(false);
+                }}
+                title={fy}
+              />
+            ))}
+          </Menu>
           <IconButton
             icon="calendar-remove"
             mode="contained-tonal"
             size={20}
-            onPress={clearDates}
+            onPress={clearAll}
             style={styles.iconBtn}
-            disabled={loading || (!startDate && !endDate)}
-            accessibilityLabel="Clear date range"
+            disabled={loading || !financialYear}
           />
         </View>
 
-        {/* Quick-select buttons */}
-        <View style={[styles.row, compact && { gap: 4 }]}>
-          <Button
-            mode="outlined"
-            compact
-            onPress={applyThisYear}
-            style={{ flex: 1 }}
-            labelStyle={{ fontSize: 11 }}
-            disabled={loading}
+        {/* Product Search Input */}
+        <TextInput
+          mode="outlined"
+          label="Search Product Name"
+          placeholder="e.g., Paracetamol, Pen, Medicine..."
+          value={productSearch}
+          onChangeText={setProductSearch}
+          left={<TextInput.Icon icon="magnify" />}
+          right={
+            productSearch ? (
+              <TextInput.Icon
+                icon="close"
+                onPress={() => setProductSearch('')}
+              />
+            ) : null
+          }
+          style={styles.searchInput}
+        />
+
+        {/* Transaction Type chips */}
+        <View>
+          <Text
+            variant="labelSmall"
+            style={[styles.mutedText, { marginBottom: 6 }]}
           >
-            This Year
-          </Button>
-          <Button
-            mode="outlined"
-            compact
-            onPress={applyThisMonth}
-            style={{ flex: 1 }}
-            labelStyle={{ fontSize: 11 }}
-            disabled={loading}
+            Filter by Type
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.typeChipsContainer}
           >
-            This Month
-          </Button>
-          <Button
-            mode="outlined"
-            compact
-            onPress={applyPreviousMonth}
-            style={{ flex: 1 }}
-            labelStyle={{ fontSize: 11 }}
-            disabled={loading}
-          >
-            Prev Month
-          </Button>
+            {TRANSACTION_TYPES.map(({ key, label, icon }) => {
+              const isActive = activeType === key;
+              return (
+                <TouchableOpacity
+                  key={String(key)}
+                  onPress={() => handleTypeSelect(key)}
+                  disabled={loading}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.typeChip,
+                    {
+                      backgroundColor: isActive
+                        ? theme.colors.primary
+                        : theme.colors.surfaceVariant,
+                      borderColor: isActive
+                        ? theme.colors.primary
+                        : theme.colors.outline,
+                      opacity: loading ? 0.5 : 1,
+                    },
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.typeChipText,
+                      {
+                        color: isActive
+                          ? theme.colors.onPrimary
+                          : theme.colors.onSurfaceVariant,
+                      },
+                    ]}
+                  >
+                    {icon} {label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+          {isAsOnDate && (
+            <Text
+              variant="labelSmall"
+              style={[styles.mutedText, { marginTop: 4, fontStyle: 'italic' }]}
+            >
+              ℹ️ Using End Date as "As On Date" for this filter
+            </Text>
+          )}
         </View>
 
-        {/* Generate button */}
-        <View style={[styles.row, compact && { gap: 6 }]}>
-          <Button
-            mode="contained"
-            onPress={() => fetchRecords(startDate, endDate)}
-            disabled={!startDate || !endDate || loading}
-            style={{ flex: 1 }}
-            labelStyle={[
-              styles.submitButtonLabel,
-              {
-                color:
-                  !startDate || !endDate
-                    ? theme.colors.onBackground
-                    : theme.colors.onSurface,
-              },
-            ]}
-            icon={loading ? 'progress-clock' : 'refresh'}
-          >
-            {loading ? 'Loading...' : 'Generate'}
-          </Button>
-        </View>
+        {/* Generate */}
+        <Button
+          mode="contained"
+          onPress={handleGenerate}
+          disabled={!financialYear || loading}
+          style={{ borderRadius: 8 }}
+          icon={loading ? 'progress-clock' : 'refresh'}
+        >
+          {loading ? 'Loading…' : 'Generate'}
+        </Button>
       </View>
 
+      {/* ── Body ── */}
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator />
-          <Text style={styles.mt8}>Loading...</Text>
+          <Text style={styles.mt8}>Loading…</Text>
         </View>
       ) : records.length === 0 ? (
         <View style={styles.center}>
-          <Text style={styles.muted}>{emptyMessage}</Text>
+          <Text style={styles.mutedText}>{emptyMessage}</Text>
         </View>
       ) : (
         <>
-          {/* Summary card */}
           <View style={styles.summaryWrap}>
             <Card mode="elevated" style={styles.summaryCard}>
               <Card.Content style={styles.summaryContent}>
-                <View style={styles.summaryHeader}>
-                  <Text variant="labelSmall" style={styles.summaryLabel}>
-                    Range
-                  </Text>
-                  <Text
-                    variant="titleSmall"
-                    numberOfLines={1}
-                    style={styles.summaryValue}
-                  >
+                <View style={styles.summaryTopRow}>
+                  <Text variant="labelSmall" style={styles.mutedText}>
                     {formattedRange}
                   </Text>
+                  {activeType && (
+                    <View
+                      style={[
+                        styles.activeBadge,
+                        { backgroundColor: theme.colors.primaryContainer },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.activeBadgeText,
+                          { color: theme.colors.primary },
+                        ]}
+                      >
+                        {activeTypeMeta?.icon} {activeTypeMeta?.label}
+                      </Text>
+                    </View>
+                  )}
                 </View>
-                <View
-                  style={[styles.hr, { backgroundColor: theme.colors.outline }]}
-                />
                 <View style={styles.summaryRow}>
-                  <View style={styles.summaryCol}>
-                    <Text variant="labelSmall" style={styles.summaryLabel}>
-                      Count
-                    </Text>
-                    <Text variant="titleMedium" style={styles.summaryValue}>
-                      {totals.count}
-                    </Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.vDivider,
-                      { backgroundColor: theme.colors.outline },
-                    ]}
+                  <SummaryCol label="Items" value={String(totals.count)} />
+                  <SummaryDivider />
+                  <SummaryCol
+                    label="Stock Value"
+                    value={String(totals.stockValue)}
                   />
-                  <View style={styles.summaryCol}>
-                    <Text variant="labelSmall" style={styles.summaryLabel}>
-                      Total Value
-                    </Text>
-                    <Text variant="titleMedium" style={styles.summaryValue}>
-                      {currency(totals.itemValue)}
-                    </Text>
-                  </View>
-                  <View
-                    style={[
-                      styles.vDivider,
-                      { backgroundColor: theme.colors.outline },
-                    ]}
+                  <SummaryDivider />
+                  <SummaryCol
+                    label="Closing Stock"
+                    value={String(totals.closingQty)}
                   />
-                  <View style={styles.summaryCol}>
-                    <Text variant="labelSmall" style={styles.summaryLabel}>
-                      Total Qty
-                    </Text>
-                    <Text variant="titleMedium" style={styles.summaryValue}>
-                      {totals.quantity}
-                    </Text>
-                  </View>
+                  <SummaryDivider />
+                  <SummaryCol
+                    label="Total In"
+                    value={String(totals.totalIn)}
+                    green
+                  />
+                  <SummaryDivider />
+                  <SummaryCol
+                    label="Total Out"
+                    value={String(totals.totalOut)}
+                    red
+                  />
                 </View>
               </Card.Content>
             </Card>
@@ -707,18 +806,7 @@ const StockReport = () => {
         </>
       )}
 
-      {/* Date picker modal */}
-      <DateTimePickerModal
-        isVisible={!!pickerMode}
-        mode="date"
-        maximumDate={new Date()}
-        onConfirm={date => {
-          if (pickerMode === 'start') setStartDate(date);
-          if (pickerMode === 'end') setEndDate(date);
-          setPickerMode(null);
-        }}
-        onCancel={() => setPickerMode(null)}
-      />
+      {/* Date picker removed — using financialYear filter */}
 
       {/* Save dialog */}
       <Portal>
@@ -740,9 +828,54 @@ const StockReport = () => {
   );
 };
 
+// ─── presentational helpers ───────────────────────────────────────────────────
+
+const StatCol = ({ label, value, color }) => (
+  <View style={styles.statCol}>
+    <Text variant="labelSmall" style={styles.mutedText}>
+      {label}
+    </Text>
+    <Text
+      variant="labelLarge"
+      style={[{ fontWeight: '700' }, color && { color }]}
+    >
+      {value}
+    </Text>
+  </View>
+);
+
+const SummaryCol = ({ label, value, green, red }) => {
+  const theme = useTheme();
+  const color = green ? '#16a34a' : red ? theme.colors.error : undefined;
+  return (
+    <View style={styles.summaryCol}>
+      <Text variant="labelSmall" style={styles.mutedText}>
+        {label}
+      </Text>
+      <Text
+        variant="titleSmall"
+        style={[{ fontWeight: '700' }, color && { color }]}
+      >
+        {value}
+      </Text>
+    </View>
+  );
+};
+
+const SummaryDivider = () => {
+  const theme = useTheme();
+  return (
+    <View
+      style={[styles.vDivider, { backgroundColor: theme.colors.outline }]}
+    />
+  );
+};
+
+// ─── styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 16, gap: 12, paddingTop: 8 },
+  header: { paddingHorizontal: 16, gap: 10, paddingTop: 8, paddingBottom: 4 },
   row: { flexDirection: 'row', gap: 8, alignItems: 'center' },
   dateBtn: { flex: 1 },
   iconBtn: { margin: 0 },
@@ -752,62 +885,67 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
   },
+  mt8: { marginTop: 8 },
+  mutedText: { color: '#6b7280' },
+
+  typeChipsContainer: { paddingVertical: 2, gap: 8, flexDirection: 'row' },
+  typeChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  typeChipText: { fontSize: 12, fontWeight: '600' },
+
   summaryWrap: { paddingHorizontal: 10, paddingVertical: 6 },
-  summaryCard: { borderRadius: 10 },
-  summaryContent: { paddingVertical: 6 },
-  summaryHeader: { marginBottom: 4 },
-  summaryLabel: { fontSize: 11 },
-  summaryValue: { fontWeight: '600' },
-  hr: { height: StyleSheet.hairlineWidth, marginVertical: 6 },
+  summaryCard: { borderRadius: 12 },
+  summaryContent: { paddingVertical: 8 },
+  summaryTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
   summaryRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    marginTop: 6,
   },
   summaryCol: { flex: 1, alignItems: 'center' },
   vDivider: {
     width: StyleSheet.hairlineWidth,
-    height: '100%',
-    marginHorizontal: 8,
+    height: 32,
+    marginHorizontal: 4,
   },
-  list: { padding: 12, paddingBottom: 24 },
-  card: { marginBottom: 8, borderRadius: 12 },
+  activeBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  activeBadgeText: { fontSize: 11, fontWeight: '700' },
+
+  list: { padding: 12, paddingBottom: 32 },
+  card: { marginBottom: 10, borderRadius: 14 },
+  cardContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 14 },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 6,
+    marginBottom: 10,
   },
-  cardMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
+  tagRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   tag: {
     paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
+    paddingVertical: 3,
+    borderRadius: 6,
     alignSelf: 'flex-start',
   },
   tagText: { fontWeight: '600', fontSize: 11 },
-  cardDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  detailGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 0 },
+  statCol: { minWidth: '24%', flex: 1, marginBottom: 6 },
+  searchInput: {
+    marginBottom: 12,
+    fontSize: 14,
   },
-  detailCol: { flex: 1 },
-  rowBetween: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  stockMeta: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 2,
-  },
-  muted: { color: '#6b7280' },
-  mt8: { marginTop: 8 },
 });
 
 export default StockReport;

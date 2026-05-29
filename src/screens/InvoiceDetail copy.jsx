@@ -1,6 +1,20 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, StyleSheet, Platform, Linking, Dimensions, TouchableOpacity } from 'react-native';
-import { Button, FAB, Icon, IconButton, Surface, useTheme } from 'react-native-paper';
+import {
+  View,
+  StyleSheet,
+  Platform,
+  Linking,
+  Dimensions,
+  TouchableOpacity,
+} from 'react-native';
+import {
+  Button,
+  FAB,
+  Icon,
+  IconButton,
+  Surface,
+  useTheme,
+} from 'react-native-paper';
 import { WebView } from 'react-native-webview';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import RNPrint from 'react-native-print';
@@ -74,6 +88,7 @@ export default function InvoiceDetail() {
     const loadPreference = async () => {
       if (!printMode) {
         const savedMode = await AsyncStorage.getItem('printMode');
+        console.log('save mode', savedMode);
         setPrintMode(savedMode || 'a4'); // fallback default
       }
     };
@@ -241,84 +256,84 @@ export default function InvoiceDetail() {
   const html =
     printMode === 'thermal'
       ? generateThermalInvoiceHTML({
-        createdInvoice: true,
-        invoiceData: invoice,
-        formValues: {
-          customerName: invoice.customerName,
-          contactNumber: invoice.customerMobile,
-          customerAddress: invoice.customerAddress || '',
-          customerGstNumber: invoice.customerGstNumber || '',
-        },
-        cartItems: enrichedItems,
-        invoiceCalculations: {
-          subtotal: subtotal,
-          totalTax: invoice.gstTotal,
-          discountTotal: invoice.discountTotal || 0,
-          grandTotal: grandTotalRaw,
-          netTotal,
-          grandTotalRaw,
-          gstBreakdown: isGstInvoice ? gstBreakdown : {},
-        },
-        invoiceNumber: invoice.invoiceNumber,
-        currentDate: new Date(invoice.invoiceDate).toLocaleDateString(
-          'en-IN',
-        ),
-        currentTime: new Date(invoice.invoiceDate).toLocaleTimeString(
-          'en-IN',
-          { hour12: false },
-        ),
-        invoiceDate: invoice.invoiceDate,
-        storedata: storedata || {},
-        isGstInvoice,
-        isFreePlan,
-        payment: {
-          paid: paidAmount,
-          due: dueAmount,
-          status: invoice.paymentStatus || 'unpaid',
-        },
-      })
-      : generateInvoiceHTML({
-        createdInvoice: true,
-        invoiceData: invoice,
-        formValues: {
-          customerName: invoice.customerName,
-          contactNumber: invoice.customerMobile,
-          customerAddress: invoice.customerAddress || '',
-          customerGstNumber: invoice.customerGstNumber || '',
-        },
-        cartItems: enrichedItems, // ✅ fixed
-        invoiceCalculations: {
-          subtotal: subtotal,
-          totalTax: invoice.gstTotal,
-          discountTotal: invoice.discountTotal || 0,
-          grandTotal: grandTotalRaw,
-          netTotal,
-          grandTotalRaw,
-          totalQuantity: invoice.items.reduce(
-            (sum, i) => sum + i.quantity,
-            0,
+          createdInvoice: true,
+          invoiceData: invoice,
+          formValues: {
+            customerName: invoice.customerName,
+            contactNumber: invoice.customerMobile,
+            customerAddress: invoice.customerAddress || '',
+            customerGstNumber: invoice.customerGstNumber || '',
+          },
+          cartItems: enrichedItems,
+          invoiceCalculations: {
+            subtotal: subtotal,
+            totalTax: invoice.gstTotal,
+            discountTotal: invoice.discountTotal || 0,
+            grandTotal: grandTotalRaw,
+            netTotal,
+            grandTotalRaw,
+            gstBreakdown: isGstInvoice ? gstBreakdown : {},
+          },
+          invoiceNumber: invoice.invoiceNumber,
+          currentDate: new Date(invoice.invoiceDate).toLocaleDateString(
+            'en-IN',
           ),
-          itemCount: invoice.items.length,
-          gstBreakdown: isGstInvoice ? gstBreakdown : {},
-        },
-        invoiceNumber: invoice.invoiceNumber,
-        currentDate: new Date(invoice.invoiceDate).toLocaleDateString(
-          'en-IN',
-        ),
-        currentTime: new Date(invoice.invoiceDate).toLocaleTimeString(
-          'en-IN',
-          { hour12: false },
-        ),
-        invoiceDate: invoice.invoiceDate,
-        storedata: storedata || {},
-        isGstInvoice,
-        isFreePlan,
-        payment: {
-          paid: paidAmount,
-          due: dueAmount,
-          status: invoice.paymentStatus || 'unpaid',
-        },
-      });
+          currentTime: new Date(invoice.invoiceDate).toLocaleTimeString(
+            'en-IN',
+            { hour12: false },
+          ),
+          invoiceDate: invoice.invoiceDate,
+          storedata: storedata || {},
+          isGstInvoice,
+          isFreePlan,
+          payment: {
+            paid: paidAmount,
+            due: dueAmount,
+            status: invoice.paymentStatus || 'unpaid',
+          },
+        })
+      : generateInvoiceHTML({
+          createdInvoice: true,
+          invoiceData: invoice,
+          formValues: {
+            customerName: invoice.customerName,
+            contactNumber: invoice.customerMobile,
+            customerAddress: invoice.customerAddress || '',
+            customerGstNumber: invoice.customerGstNumber || '',
+          },
+          cartItems: enrichedItems, // ✅ fixed
+          invoiceCalculations: {
+            subtotal: subtotal,
+            totalTax: invoice.gstTotal,
+            discountTotal: invoice.discountTotal || 0,
+            grandTotal: grandTotalRaw,
+            netTotal,
+            grandTotalRaw,
+            totalQuantity: invoice.items.reduce(
+              (sum, i) => sum + i.quantity,
+              0,
+            ),
+            itemCount: invoice.items.length,
+            gstBreakdown: isGstInvoice ? gstBreakdown : {},
+          },
+          invoiceNumber: invoice.invoiceNumber,
+          currentDate: new Date(invoice.invoiceDate).toLocaleDateString(
+            'en-IN',
+          ),
+          currentTime: new Date(invoice.invoiceDate).toLocaleTimeString(
+            'en-IN',
+            { hour12: false },
+          ),
+          invoiceDate: invoice.invoiceDate,
+          storedata: storedata || {},
+          isGstInvoice,
+          isFreePlan,
+          payment: {
+            paid: paidAmount,
+            due: dueAmount,
+            status: invoice.paymentStatus || 'unpaid',
+          },
+        });
 
   const cancelInvoice = async () => {
     try {
@@ -490,9 +505,7 @@ export default function InvoiceDetail() {
     }
   };
 
-
-
-  const smoothZoom = (newZoom) => {
+  const smoothZoom = newZoom => {
     webViewRef.current?.injectJavaScript(`
     (function() {
       document.body.style.transformOrigin = '0 0';
@@ -514,7 +527,6 @@ export default function InvoiceDetail() {
     setZoomLevel(newZoom);
     smoothZoom(newZoom);
   };
-
 
   return (
     <SafeAreaView
@@ -565,7 +577,11 @@ export default function InvoiceDetail() {
             activeOpacity={0.8}
             style={styles.zoomButton}
           >
-            <Icon source="magnify-plus-outline" size={26} color={theme.colors.primary} />
+            <Icon
+              source="magnify-plus-outline"
+              size={26}
+              color={theme.colors.primary}
+            />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -573,11 +589,14 @@ export default function InvoiceDetail() {
             activeOpacity={0.8}
             style={styles.zoomButton}
           >
-            <Icon source="magnify-minus-outline" size={26} color={theme.colors.primary} />
+            <Icon
+              source="magnify-minus-outline"
+              size={26}
+              color={theme.colors.primary}
+            />
           </TouchableOpacity>
         </View>
       </View>
-
 
       <Surface
         elevation={8}
@@ -618,23 +637,26 @@ export default function InvoiceDetail() {
           }
           style={styles.actionButton}
         >
-          {invoice?.status === 'active' && invoice?.paymentStatus === 'partial' && 'Print Preference'}
+          {invoice?.status === 'active' &&
+            invoice?.paymentStatus === 'partial' &&
+            'Print Preference'}
         </Button>
-        {invoice?.status === 'active' && invoice?.paymentStatus !== 'partial' && (
-          <Button
-            mode="outlined"
-            icon={'pencil'}
-            onPress={() =>
-              navigation.replace('NewSale', {
-                mode: 'edit',
-                invoiceData: invoice,
-              })
-            }
-            style={styles.actionButton}
-          >
-            Edit
-          </Button>
-        )}
+        {invoice?.status === 'active' &&
+          invoice?.paymentStatus !== 'partial' && (
+            <Button
+              mode="outlined"
+              icon={'pencil'}
+              onPress={() =>
+                navigation.replace('NewSale', {
+                  mode: 'edit',
+                  invoiceData: invoice,
+                })
+              }
+              style={styles.actionButton}
+            >
+              Edit
+            </Button>
+          )}
         <Button
           elevation={4}
           mode="contained"
@@ -771,5 +793,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-
 });

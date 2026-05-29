@@ -40,6 +40,7 @@ import unitsData from '../../assets/data/units.json';
 import categoriesData from '../../assets/data/categories.json';
 import DiscountTypeSelectorBottomSheet from '../../components/BottomSheet/DiscountTypeSelectorBottomSheet';
 import TaxRateSelectorBottomSheet from '../../components/BottomSheet/TaxRateSelectorBottomSheet';
+import BaseBottomSheet from '../../components/BottomSheet/BaseBottomSheet';
 import AdjustStockBottomSheet from '../../components/BottomSheet/AdjustStocksBottmSheet';
 import SelectStockReasonBottomSheet from '../../components/BottomSheet/SelectStockReasonBottomSheet';
 import { useNavigation, useRoute } from '@react-navigation/native';
@@ -90,6 +91,18 @@ const validationSchema = Yup.object().shape({
     .max(100, 'Purchase discount percentage cannot be more than 100'),
 });
 
+const openingStockSchema = Yup.object().shape({
+  openingStock: Yup.number()
+    .typeError('Opening stock must be a number')
+    .integer('Opening stock must be an integer')
+    .positive('Opening stock must be greater than 0')
+    .required('Opening stock is required'),
+  value: Yup.number()
+    .typeError('Value must be a number')
+    .positive('Value must be greater than 0')
+    .required('Value is required'),
+});
+
 const AddItem = () => {
   const navigation = useNavigation();
   const route = useRoute();
@@ -117,13 +130,14 @@ const AddItem = () => {
   const taxRateSheet = useBottomSheet();
   const adjustSheetRef = useRef(null);
   const reasonSheetRef = useRef(null);
+  const [showOpeningStockInline, setShowOpeningStockInline] = useState(false);
   const [selectedReason, setSelectedReason] = useState(null);
   const [actionType, setActionType] = useState('add');
 
   const defaultTaxOption = useMemo(
     () => ({
       id: 'without_tax',
-      label: 'Without Tax',
+      label: 'Exclude Tax',
       description: 'Price excludes taxes (tax will be added)',
       icon: 'minus-circle-outline',
     }),
@@ -209,7 +223,7 @@ const AddItem = () => {
       return {
         taxOption: {
           id: 'with_tax',
-          label: 'With Tax',
+          label: 'Include Tax',
           description: 'Price includes/applies tax',
           icon: 'check-decagram',
         },
@@ -232,7 +246,7 @@ const AddItem = () => {
     const taxOption = itemToEdit?.isTaxInclusive
       ? {
           id: 'with_tax',
-          label: 'With Tax',
+          label: 'Include Tax',
           description: 'Price includes/applies tax',
           icon: 'check-decagram',
         }
@@ -353,17 +367,9 @@ const AddItem = () => {
           label: `${newHsn.gstRate}% GST`,
         });
         setFieldValue('selectedTaxOption', {
-          id: 'with_tax',
-          label: 'With Tax',
-          description: 'Price includes/applies tax',
-          icon: 'check-decagram',
-        });
-      } else {
-        setFieldValue('selectedTaxRate', null);
-        setFieldValue('selectedTaxOption', {
-          id: 'without_tax',
-          label: 'Without Tax',
-          description: 'Price excludes taxes (tax will be added)',
+          id: 'without_tax', // ← was 'with_tax'
+          label: 'Exclude Tax', // ← was 'With Tax'
+          description: 'Price excludes taxes (tax will be added on top)',
           icon: 'minus-circle-outline',
         });
       }
@@ -473,6 +479,13 @@ const AddItem = () => {
         isTaxInclusive: values.selectedTaxOption?.id === 'with_tax',
       };
 
+      if (openingStockValues.openingStock) {
+        payload.openingStock = Number(openingStockValues.openingStock);
+      }
+      if (openingStockValues.value) {
+        payload.value = Number(openingStockValues.value);
+      }
+
       if (isEditMode) {
         const id = itemToEdit.id || itemToEdit._id;
         await api.put(`/product/id/${id}`, payload);
@@ -523,6 +536,7 @@ const AddItem = () => {
         }
 
         resetForm();
+        setOpeningStockValues({ openingStock: '', value: '' });
       }
     } catch (error) {
       const message =
@@ -569,13 +583,35 @@ const AddItem = () => {
     rate ? `${rate.rate}% ${rate.label.includes('IGST') ? 'IGST' : 'GST'}` : '';
 
   const productId = itemToEdit?.id || itemToEdit?._id;
+  const [openingStockValues, setOpeningStockValues] = useState({
+    openingStock: '',
+    value: '',
+  });
 
-  const openOpeningStockSheet = useCallback(() => {
-    setSelectedReason(null);
-    setActionType('add');
-    setTimeout(() => {
-      adjustSheetRef.current?.present();
-    }, 50);
+  const openStockAdjustmentScreen = useCallback(() => {
+    navigation.navigate('StockTransactionScreen', {
+      id: productId,
+      costPrice: itemToEdit?.costPrice || 0,
+      currentStock: itemToEdit?.currentStock || 0,
+      name: itemToEdit?.name || '',
+    });
+  }, [navigation, productId, itemToEdit]);
+
+  const openAddOpeningStockInline = useCallback(() => {
+    setShowOpeningStockInline(true);
+  }, []);
+
+  const handleSaveOpeningStock = useCallback(values => {
+    setOpeningStockValues({
+      openingStock: values.openingStock,
+      value: values.value,
+    });
+    setShowOpeningStockInline(false);
+    Toast.show({
+      type: 'success',
+      text1: 'Opening stock saved',
+      text2: `Qty: ${values.openingStock}, Value: ₹${values.value}`,
+    });
   }, []);
 
   return (
@@ -586,17 +622,18 @@ const AddItem = () => {
         <Navbar
           title={isEditMode ? 'Edit Item' : 'Add New Item'}
           rightComponent={
+            isEditMode &&
             isStockEnabled && (
               <View>
                 {hasPermission(permissions.CAN_MANAGE_STOCKS) && (
                   <Button
                     icon={'warehouse'}
                     mode="outlined"
-                    onPress={openOpeningStockSheet}
+                    onPress={openStockAdjustmentScreen}
                     style={styles.button}
                     contentStyle={styles.buttonContent}
                   >
-                    Opening Stock
+                    Stock adjustment
                   </Button>
                 )}
               </View>
@@ -624,42 +661,32 @@ const AddItem = () => {
             isValid,
           }) => {
             const handleHsnCodeSelect = hsnCode => {
-              // console.log('HSN Code selected:', hsnCode);
-
-              // Fix: Check if hsnCode is null (deselect case)
               if (!hsnCode) {
                 setSelectedHsnCode(null);
                 setFieldValue('hsnCode', '');
                 setFieldValue('selectedTaxRate', null);
-                setFieldValue('selectedTaxOption', defaultTaxOption);
+                setFieldValue('selectedTaxOption', defaultTaxOption); // Exclude Tax
                 hsnBottomSheet.close();
                 return;
               }
 
-              // Normal selection case
               setSelectedHsnCode(hsnCode);
               setFieldValue('hsnCode', hsnCode.code);
 
-              // Fix: Create the proper tax rate object structure
               if (hsnCode.gstRate && Number(hsnCode.gstRate) > 0) {
-                const taxRateObject = {
+                setFieldValue('selectedTaxRate', {
                   rate: Number(hsnCode.gstRate),
                   label: `${hsnCode.gstRate}% GST`,
-                };
-
-                // console.log('Setting tax rate:', taxRateObject);
-                setFieldValue('selectedTaxRate', taxRateObject);
-
-                // Also set tax option to 'with_tax' since we have a GST rate
-                const withTaxOption = {
-                  id: 'with_tax',
-                  label: 'With Tax',
-                  description: 'Price includes/applies tax',
-                  icon: 'check-decagram',
-                };
-                setFieldValue('selectedTaxOption', withTaxOption);
+                });
+                // ← FIX: set Exclude Tax (not Include Tax) — tax rate is set separately
+                setFieldValue('selectedTaxOption', {
+                  id: 'without_tax',
+                  label: 'Exclude Tax',
+                  description:
+                    'Price excludes taxes (tax will be added on top)',
+                  icon: 'minus-circle-outline',
+                });
               } else {
-                // If no GST rate, set to without tax
                 setFieldValue('selectedTaxRate', null);
                 setFieldValue('selectedTaxOption', defaultTaxOption);
               }
@@ -680,8 +707,11 @@ const AddItem = () => {
                   style={{ flex: 1 }}
                   contentContainerStyle={styles.scrollContent}
                   enableOnAndroid={true}
+                  enableAutomaticScroll={true}
+                  extraScrollHeight={Platform.OS === 'android' ? 140 : 90}
                   keyboardShouldPersistTaps="always"
                   keyboardDismissMode="on-drag"
+                  keyboardOpeningTime={0}
                 >
                   <View style={styles.content}>
                     {/* Header Section */}
@@ -1039,7 +1069,7 @@ const AddItem = () => {
                               ]}
                               numberOfLines={1}
                             >
-                              {values.selectedTaxOption?.label || 'Without Tax'}
+                              {values.selectedTaxOption?.label || 'Exclude Tax'}
                             </Text>
                             <Icon
                               source="chevron-down"
@@ -1234,8 +1264,87 @@ const AddItem = () => {
                       </>
                     )}
                   </View>
-                  {/* </ScrollView>
-                </KeyboardAvoidingView> */}
+
+                  {!isEditMode && (
+                    <View style={styles.openingStockSection}>
+                      {!showOpeningStockInline ? (
+                        <TouchableOpacity
+                          onPress={openAddOpeningStockInline}
+                          style={{
+                            alignSelf: 'flex-start',
+                            backgroundColor: theme.colors.background,
+                            borderColor: theme.colors.primary + 20,
+                            borderWidth: 1,
+                            borderRadius: 12,
+                            padding: 4,
+                            marginVertical: 4,
+                            paddingHorizontal: 16,
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              color: theme.colors.primary,
+                            }}
+                          >
+                            Add Opening Stock
+                          </Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={{ width: '100%' }}>
+                          <TextInput
+                            label="Opening Stock"
+                            mode="outlined"
+                            value={String(openingStockValues.openingStock)}
+                            onChangeText={text =>
+                              setOpeningStockValues(prev => ({
+                                ...prev,
+                                openingStock: text,
+                              }))
+                            }
+                            style={styles.input}
+                            placeholder="Enter opening stock quantity"
+                            keyboardType="numeric"
+                            theme={{ roundness: 12 }}
+                          />
+
+                          <TextInput
+                            label="Opening Stock Value (in Total)"
+                            mode="outlined"
+                            value={String(openingStockValues.value)}
+                            onChangeText={text =>
+                              setOpeningStockValues(prev => ({
+                                ...prev,
+                                value: text,
+                              }))
+                            }
+                            style={styles.input}
+                            placeholder="Enter total opening stock value"
+                            keyboardType="numeric"
+                            theme={{ roundness: 12 }}
+                          />
+
+                          <View style={{ flexDirection: 'row', marginTop: 8 }}>
+                            <Button
+                              mode="outlined"
+                              onPress={() => setShowOpeningStockInline(false)}
+                              style={{ flex: 1 }}
+                            >
+                              Close
+                            </Button>
+                          </View>
+                        </View>
+                      )}
+
+                      {openingStockValues.openingStock &&
+                        openingStockValues.value && (
+                          <Text style={styles.openingStockSummary}>
+                            Opening Stock: {openingStockValues.openingStock},
+                            Value: ₹{openingStockValues.value}
+                          </Text>
+                        )}
+                    </View>
+                  )}
                 </KeyboardAwareScrollView>
 
                 <View
@@ -1565,7 +1674,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 20,
+    paddingBottom: 120,
   },
   content: {
     paddingHorizontal: 20,
@@ -1723,6 +1832,40 @@ const styles = StyleSheet.create({
   },
   taxRateSection: {
     marginTop: 8,
+  },
+  openingStockSection: {
+    paddingHorizontal: 20,
+    marginBottom: 12,
+  },
+  openingStockButton: {
+    borderRadius: 12,
+    borderWidth: 1,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 16,
+    marginTop: 8,
+  },
+  openingStockButtonContent: {
+    height: 48,
+  },
+  openingStockSummary: {
+    marginTop: 10,
+    color: '#6b6b6b',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  openingStockSheetContent: {
+    paddingBottom: 20,
+  },
+  openingStockSheetButton: {
+    marginTop: 16,
+    borderRadius: 12,
+    height: 50,
+    justifyContent: 'center',
+  },
+  errorText: {
+    color: '#b00020',
+    fontSize: 12,
+    marginBottom: 8,
   },
 });
 

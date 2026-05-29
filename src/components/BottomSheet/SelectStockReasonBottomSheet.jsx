@@ -5,17 +5,18 @@ import { Text, List, Divider, IconButton, useTheme } from 'react-native-paper';
 import BaseBottomSheet from './BaseBottomSheet';
 
 const ADD_REASONS = [
-  { id: 1, name: 'New Purchase' },
-  { id: 2, name: 'Stock Correction (Increase)' },
-  { id: 3, name: 'Return from Customer' },
-  { id: 4, name: 'Free Stock / Bonus' },
+  { id: 'NEW_PURCHASE', name: 'New Purchase' },
+  { id: 'STOCK_CORRECTION', name: 'Stock Correction (Increase)' },
+  { id: 'SALE_RETURN', name: 'Return from Customer' },
+  { id: 'FREE_STOCK', name: 'Free Stock / Bonus' },
 ];
 
 const REMOVE_REASONS = [
-  { id: 5, name: 'Damaged Stock' },
-  { id: 6, name: 'Expired Stock' },
-  { id: 7, name: 'Stock Correction (Decrease)' },
-  { id: 8, name: 'Internal Usage' },
+  { id: 'DAMAGE', name: 'Damaged Stock' },
+  { id: 'EXPIRED', name: 'Expired Stock' },
+  { id: 'STOCK_CORRECTION', name: 'Stock Correction (Decrease)' },
+  { id: 'INTERNAL_USE', name: 'Internal Usage' },
+  { id: 'PURCHASE_RETURN', name: 'Return to Vendor' },
 ];
 
 const SelectStockReasonBottomSheet = forwardRef(
@@ -100,7 +101,7 @@ const SelectStockReasonBottomSheet = forwardRef(
         contentType="flatlist"
         data={reasons}
         renderItem={renderItem}
-        keyExtractor={item => item.id.toString()}
+        keyExtractor={item => item.id}
         headerComponent={renderHeader}
         snapPoints={snapPoints}
         initialSnapIndex={initialSnapIndex}

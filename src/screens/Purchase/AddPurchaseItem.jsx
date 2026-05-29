@@ -136,7 +136,7 @@ const AddPurchaseItem = () => {
   const defaultTaxOption = useMemo(
     () => ({
       id: 'without_tax',
-      label: 'Without Tax',
+      label: 'Exclude Tax',
       description: 'Price excludes taxes (tax will be added)',
       icon: 'minus-circle-outline',
     }),
@@ -146,7 +146,7 @@ const AddPurchaseItem = () => {
   const withTaxOption = useMemo(
     () => ({
       id: 'with_tax',
-      label: 'With Tax',
+      label: 'Include Tax',
       description: 'Price includes/applies tax',
       icon: 'check-decagram',
     }),
@@ -183,7 +183,7 @@ const AddPurchaseItem = () => {
         const isDirty = formikRef.current?.dirty;
 
         if (isDirty) {
-           setAlertVisible(true)
+          setAlertVisible(true);
           return true;
         }
 
@@ -255,7 +255,7 @@ const AddPurchaseItem = () => {
       return {
         taxOption: {
           id: 'with_tax',
-          label: 'With Tax',
+          label: 'Include Tax',
           description: 'Price includes/applies tax',
           icon: 'check-decagram',
         },
@@ -276,14 +276,7 @@ const AddPurchaseItem = () => {
       : null;
 
     // Tax option (with/without) comes directly from isTaxInclusive
-    const taxOption = itemToEdit?.isTaxInclusive
-      ? {
-          id: 'with_tax',
-          label: 'With Tax',
-          description: 'Price includes/applies tax',
-          icon: 'check-decagram',
-        }
-      : defaultTaxOption;
+    const taxOption = itemToEdit?.isTaxInclusive ? withTaxOption : defaultTaxOption;
 
     // Tax rate comes directly from gstRate
     const taxRate =
@@ -315,13 +308,8 @@ const AddPurchaseItem = () => {
           ? String(itemToEdit.purchaseDiscount)
           : '',
       selectedPurchaseDiscountType: defaultDiscountType,
-      selectedPurchaseTaxOption: itemToEdit?.isTaxInclusive
-        ? {
-            id: 'with_tax',
-            label: 'With Tax',
-            description: 'Price includes/applies tax',
-            icon: 'check-decagram',
-          }
+      selectedPurchaseTaxOption: itemToEdit?.isPurchaseTaxInclusive
+        ? withTaxOption
         : defaultTaxOption,
       selectedPurchaseTaxRate:
         itemToEdit?.purchaseGstRate && Number(itemToEdit.purchaseGstRate) > 0
@@ -336,6 +324,7 @@ const AddPurchaseItem = () => {
     mapUnitFromItem,
     mapCategoryFromItem,
     defaultTaxOption,
+    withTaxOption,
     defaultDiscountType,
   ]);
 
@@ -377,29 +366,16 @@ const AddPurchaseItem = () => {
           rate: Number(newHsn.gstRate),
           label: `${newHsn.gstRate}% GST`,
         };
-        const withTaxOption = {
-          id: 'with_tax',
-          label: 'With Tax',
-          description: 'Price includes/applies tax',
-          icon: 'check-decagram',
-        };
 
         setFieldValue('selectedTaxRate', taxRateObject);
-        setFieldValue('selectedTaxOption', withTaxOption);
+        setFieldValue('selectedTaxOption', defaultTaxOption);
         setFieldValue('selectedPurchaseTaxRate', taxRateObject);
-        setFieldValue('selectedPurchaseTaxOption', withTaxOption);
+        setFieldValue('selectedPurchaseTaxOption', defaultTaxOption);
       } else {
-        const withoutTaxOption = {
-          id: 'without_tax',
-          label: 'Without Tax',
-          description: 'Price excludes taxes (tax will be added)',
-          icon: 'minus-circle-outline',
-        };
-
         setFieldValue('selectedTaxRate', null);
-        setFieldValue('selectedTaxOption', withoutTaxOption);
+        setFieldValue('selectedTaxOption', defaultTaxOption);
         setFieldValue('selectedPurchaseTaxRate', null);
-        setFieldValue('selectedPurchaseTaxOption', withoutTaxOption);
+        setFieldValue('selectedPurchaseTaxOption', defaultTaxOption);
       }
     }
 
@@ -410,7 +386,7 @@ const AddPurchaseItem = () => {
     // setTimeout(() => {
     //   hsnBottomSheet.expand();
     // }, 400);
-  }, []);
+  }, [defaultTaxOption]);
 
   const handleSelect = ({ field, value, helpers, closeFn, extra }) => {
     const { setFieldValue, setFieldTouched, setFieldError } = helpers;
@@ -638,20 +614,13 @@ const AddPurchaseItem = () => {
                   rate: Number(hsnCode.gstRate),
                   label: `${hsnCode.gstRate}% GST`,
                 };
-                const withTaxOption = {
-                  id: 'with_tax',
-                  label: 'With Tax',
-                  description: 'Price includes/applies tax',
-                  icon: 'check-decagram',
-                };
 
-                // console.log('Setting tax rate:', taxRateObject);
                 setFieldValue('selectedTaxRate', taxRateObject);
-                setFieldValue('selectedTaxOption', withTaxOption);
+                setFieldValue('selectedTaxOption', defaultTaxOption);
                 setFieldValue('selectedPurchaseTaxRate', taxRateObject);
-                setFieldValue('selectedPurchaseTaxOption', withTaxOption);
+                setFieldValue('selectedPurchaseTaxOption', defaultTaxOption);
               } else {
-                // If no GST rate, set to without tax
+                // If no GST rate, set to exclude tax
                 setFieldValue('selectedTaxRate', null);
                 setFieldValue('selectedTaxOption', defaultTaxOption);
                 setFieldValue('selectedPurchaseTaxRate', null);
@@ -1025,7 +994,7 @@ const AddPurchaseItem = () => {
                               numberOfLines={1}
                             >
                               {values.selectedPurchaseTaxOption?.label ||
-                                'Without Tax'}{' '}
+                                'Exclude Tax'}{' '}
                             </Text>
                             <Icon
                               source="chevron-down"
@@ -1321,7 +1290,7 @@ const AddPurchaseItem = () => {
                               ]}
                               numberOfLines={1}
                             >
-                              {values.selectedTaxOption?.label || 'Without Tax'}
+                              {values.selectedTaxOption?.label || 'Exclude Tax'}
                             </Text>
                             <Icon
                               source="chevron-down"

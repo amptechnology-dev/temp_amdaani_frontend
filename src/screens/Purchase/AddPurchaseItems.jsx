@@ -937,7 +937,20 @@ const AddPurchaseItems = () => {
                 />
               </TouchableOpacity>
 
-              <View style={styles.quantityDisplay}>
+              <TouchableOpacity
+                style={styles.quantityDisplay}
+                activeOpacity={0.7}
+                onPress={() => {
+                  if (!inCart) return;
+                  previousQtyMap.current[cartItem._lineId ?? cartItem._id] =
+                    cartItem.qty;
+                  setSelectedCartItem({
+                    ...cartItem,
+                    previousQty: cartItem.qty,
+                  });
+                  presentItemSheet();
+                }}
+              >
                 <Text
                   style={[
                     styles.quantityText,
@@ -950,7 +963,7 @@ const AddPurchaseItems = () => {
                 >
                   {displayQty || 0}
                 </Text>
-              </View>
+              </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.qtyButton}
