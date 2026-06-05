@@ -962,8 +962,20 @@ export const generateInvoiceHTML = ({
                     invoiceData.paymentMethod
                       ? `
                     <div style="margin-bottom: 4px;">
-                      <span style="color: #666;">Payment Method:</span>
-                      <span style="color: #000; font-weight: 600; margin-left: 6px;">${invoiceData.paymentMethod.toUpperCase()}</span>
+                      <span style="color: #666;">${
+                        payment.status === 'paid'
+                          ? 'Payment Method'
+                          : payment.status === 'partial'
+                          ? 'Payment Method'
+                          : ''
+                      }</span>
+                      <span style="color: #000; font-weight: 600; margin-left: 6px;">${
+                        payment.status === 'paid'
+                          ? invoiceData.paymentMethod.toUpperCase()
+                          : payment.status === 'partial'
+                          ? invoiceData.paymentMethod.toUpperCase()
+                          : ''
+                      }</span>
                     </div>`
                       : ''
                   }

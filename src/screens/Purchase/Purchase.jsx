@@ -1205,6 +1205,8 @@ export default function Purchase() {
     );
   };
 
+  console.log('log', invoiceCalculations.computedItems);
+
   const handleAddItems = () => {
     const preparedCart = (cartItems || []).map((item, index) => ({
       ...item,

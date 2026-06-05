@@ -1,4 +1,6 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { format } from 'date-fns';
+import { Icon } from 'react-native-paper';
 import {
   View,
   StyleSheet,
@@ -7,6 +9,7 @@ import {
   Platform,
   PermissionsAndroid,
   useWindowDimensions,
+  TouchableOpacity,
 } from 'react-native';
 import {
   Text,
@@ -16,6 +19,7 @@ import {
   Card,
   Portal,
   Dialog,
+  Divider,
   IconButton,
 } from 'react-native-paper';
 import DateTimePickerModal from 'react-native-modal-datetime-picker';
@@ -27,39 +31,20 @@ import { ensureStoragePermission } from '../../utils/permissions';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Navbar from '../../components/Navbar';
 import FileViewer from 'react-native-file-viewer';
-import CustomAlert from '../../components/CustomAlert';
 import { useAuth } from '../../context/AuthContext';
-import { Icon } from 'react-native-paper';
+import { useNavigation } from '@react-navigation/native';
 
-const ProductWiseSalesReport = () => {
+const SundryDebtorsReport = () => {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const compact = width < 380;
-
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [startDate, setStartDate] = useState(null);
-  const [endDate, setEndDate] = useState(null);
-  const [pickerMode, setPickerMode] = useState(null);
-  const [dialogVisible, setDialogVisible] = useState(false);
-  const [lastSavedPath, setLastSavedPath] = useState(null);
-
-  useEffect(() => {
-    if (startDate && endDate) {
-      fetchReport();
-    }
-  }, [startDate, endDate]);
-
-  // const { authData } = useAuth();   <-- remove this
+  const navigation = useNavigation();
   const { authState } = useAuth();
 
-  // derive store with fallbacks
   const store = authState?.user?.store || authState?.store || null;
-
   const storeName = store?.name || store?.storeName || 'N/A';
   const address = (() => {
     if (!store?.address) return 'N/A';
-    // if address object exists, format it, else if string use it directly
     if (typeof store.address === 'object') {
       const a = store.address;
       return [a.street, a.city, a.state, a.postalCode]
@@ -71,6 +56,17 @@ const ProductWiseSalesReport = () => {
   const contactNo = store?.contactNo || store?.contactNumber || 'N/A';
   const gstin = store?.gstNumber || store?.gstin || 'N/A';
 
+  // ── State ─────────────────────────────────────────────────────────────────
+  const [customers, setCustomers] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [startDate, setStartDate] = useState(null);
+  const [endDate, setEndDate] = useState(null);
+  const [pickerMode, setPickerMode] = useState(null);
+  const [dialogVisible, setDialogVisible] = useState(false);
+  const [lastSavedPath, setLastSavedPath] = useState(null);
+  const [expandedCustomers, setExpandedCustomers] = useState({});
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
   const formatDate = date => {
     if (!date) return 'All';
     const day = String(date.getDate()).padStart(2, '0');
@@ -80,43 +76,69 @@ const ProductWiseSalesReport = () => {
   };
 
   const formattedRange = useMemo(() => {
-    const s = startDate ? formatDate(startDate) : 'All';
-    const e = endDate ? formatDate(endDate) : 'All';
-    return `${s} - ${e}`;
+    return `${startDate ? formatDate(startDate) : 'All'} - ${
+      endDate ? formatDate(endDate) : 'All'
+    }`;
   }, [startDate, endDate]);
 
+  const currency = n => `₹${Number(n || 0).toFixed(2)}`;
+
+  const toggleCustomer = useCallback(id => {
+    setExpandedCustomers(prev => ({ ...prev, [id]: !prev[id] }));
+  }, []);
+
+  // ── Date presets ──────────────────────────────────────────────────────────
+  const applyThisYear = () => {
+    const today = new Date();
+    const m = today.getMonth() + 1;
+    const fyStart =
+      m >= 4
+        ? new Date(today.getFullYear(), 3, 1)
+        : new Date(today.getFullYear() - 1, 3, 1);
+    setStartDate(fyStart);
+    setEndDate(today);
+  };
+  const applyThisMonth = () => {
+    const today = new Date();
+    setStartDate(new Date(today.getFullYear(), today.getMonth(), 1));
+    setEndDate(today);
+  };
+  const applyPreviousMonth = () => {
+    const today = new Date();
+    setStartDate(new Date(today.getFullYear(), today.getMonth() - 1, 1));
+    setEndDate(new Date(today.getFullYear(), today.getMonth(), 0));
+  };
+
+  // ── Fetch ─────────────────────────────────────────────────────────────────
   const fetchReport = async () => {
-    if (!startDate || !endDate) {
-      Alert.alert(
-        'Select Date Range',
-        'Please select both start and end dates.',
-      );
-      return;
-    }
     try {
       setLoading(true);
-      const res = await api.get('/product/sales', {
-        params: {
-          startDate: startDate.toISOString().split('T')[0],
-          endDate: endDate.toISOString().split('T')[0],
-        },
-      });
+      let url = '/invoice/customer-wise-report';
+      const params = [];
 
-      // console.log('Product Wise Sales Report Response:', res);
-
-      if (res?.success) {
-        // ✅ Sort by totalSold (highest first)
-        const sorted = (res.data || []).sort(
-          (a, b) => Number(b.totalSold || 0) - Number(a.totalSold || 0),
-        );
-        setData(sorted);
-      } else {
-        Alert.alert('No Data', res?.message || 'No records found.');
-        setData([]);
+      if (startDate) params.push(`startDate=${startDate.getTime()}`);
+      if (endDate) {
+        const endOfDay = new Date(endDate);
+        endOfDay.setHours(23, 59, 59, 999);
+        params.push(`endDate=${endOfDay.getTime()}`);
       }
-    } catch (err) {
-      console.error('Fetch error:', err?.message);
-      Alert.alert('Error', 'Failed to fetch report.');
+
+      if (params.length) url += `?${params.join('&')}`;
+
+      const res = await api.get(url);
+      if (res?.success) {
+        setCustomers(res.data || []);
+        const expanded = {};
+        (res.data || []).forEach(c => {
+          expanded[c._id ?? c.customerName ?? Math.random()] = true;
+        });
+        setExpandedCustomers(expanded);
+      } else {
+        Alert.alert('Error', res?.message || 'Failed to fetch report.');
+      }
+    } catch (e) {
+      console.error('Report fetch error:', e?.message);
+      Alert.alert('Error', 'Failed to fetch report data.');
     } finally {
       setLoading(false);
     }
@@ -259,15 +281,46 @@ const ProductWiseSalesReport = () => {
     `<svg xmlns="http://www.w3.org/2000/svg" enable-background="new 0 0 576 576" version="1.1" viewBox="0 0 576 576"><style type="text/css">.st0{fill:#66BE69;} .st1{fill:#FCD306;} .st2{fill:#3BC5F3;} .st3{fill:#EF364D;}</style><g><path class="st0" d="m45.6 533.1v-496.3c0-17 18.3-27.6 33.1-19.2l440.1 251.3c15.1 8.6 15 30.4-0.1 38.9l-437 246.4c-16.2 9.1-36.1-2.6-36.1-21.1z"/><path class="st1" d="m518.8 268.9-119.2-68.1-346.8 349.5c7.3 7.1 18.8 9.5 28.9 3.9l437-246.4c15.1-8.6 15.2-30.3 0.1-38.9z"/><path class="st2" d="M52.3,21c-4.1,3.9-6.7,9.4-6.7,15.9v496.3c0,18.5,19.9,30.1,36,21l316.3-178.3L52.3,21z"/><path class="st3" d="m312.7 288.3-259 262.9c7.3 6.5 18.3 8.5 28 3l318.3-179.4-87.3-86.5z"/></g></svg>`,
   )}`;
 
+  // ── Summary totals ────────────────────────────────────────────────────────
   const totals = useMemo(() => {
-    const toNum = v => Number(v || 0);
-    return {
-      count: data.length,
-      totalSold: data.reduce((s, r) => s + toNum(r.totalSold), 0),
-      totalRevenue: data.reduce((s, r) => s + toNum(r.totalRevenue), 0),
-    };
-  }, [data]);
+    return customers.reduce(
+      (acc, c) => ({
+        customerCount: acc.customerCount + 1,
+        invoiceCount:
+          acc.invoiceCount + (c.totalInvoices || c.invoices?.length || 0),
+        totalSale:
+          acc.totalSale +
+          Number(
+            c.totalSaleAmount ??
+              c.invoices?.reduce((s, i) => s + Number(i.grandTotal || 0), 0) ??
+              0,
+          ),
+        totalPaid:
+          acc.totalPaid +
+          Number(
+            c.totalPaidAmount ??
+              c.invoices?.reduce((s, i) => s + Number(i.amountPaid || 0), 0) ??
+              0,
+          ),
+        totalDue:
+          acc.totalDue +
+          Number(
+            c.totalDueAmount ??
+              c.invoices?.reduce((s, i) => s + Number(i.amountDue || 0), 0) ??
+              0,
+          ),
+      }),
+      {
+        customerCount: 0,
+        invoiceCount: 0,
+        totalSale: 0,
+        totalPaid: 0,
+        totalDue: 0,
+      },
+    );
+  }, [customers]);
 
+  // ── Android permission ────────────────────────────────────────────────────
   const ensureAndroidDownloadPermission = async () => {
     if (Platform.OS !== 'android') return true;
     if (Platform.Version < 29) {
@@ -275,7 +328,7 @@ const ProductWiseSalesReport = () => {
         PermissionsAndroid.PERMISSIONS.WRITE_EXTERNAL_STORAGE,
         {
           title: 'Storage Permission',
-          message: 'Allow saving reports to Downloads folder',
+          message: 'Allow saving reports',
           buttonPositive: 'OK',
         },
       );
@@ -284,180 +337,164 @@ const ProductWiseSalesReport = () => {
     return true;
   };
 
+  // ── Helpers for per-customer derived values ───────────────────────────────
+  const getCustomerTotals = c => {
+    if (c.totalSaleAmount !== undefined) {
+      return {
+        totalSale: c.totalSaleAmount,
+        totalPaid: c.totalPaidAmount,
+        totalDue: c.totalDueAmount,
+        totalInvoices: c.totalInvoices,
+      };
+    }
+    const invoices = c.invoices || [];
+    return {
+      totalSale: invoices.reduce((s, i) => s + Number(i.grandTotal || 0), 0),
+      totalPaid: invoices.reduce((s, i) => s + Number(i.amountPaid || 0), 0),
+      totalDue: invoices.reduce((s, i) => s + Number(i.amountDue || 0), 0),
+      totalInvoices: invoices.length,
+    };
+  };
+
+  const getCustomerId = c => c._id ?? c.customerName ?? String(Math.random());
+
+  // ── PDF HTML builder ──────────────────────────────────────────────────────
   const buildHTML = () => {
-    const currency = n => `₹${Number(n || 0).toFixed(2)}`;
-    const safe = v => (v ? String(v) : '-');
-    const rows = data
-      .map(
-        p => `
-    <tr>
-      <td style="text-align:left;">${safe(p.name)}</td>
-      <td style="text-align:left;">${safe(p.hsn)}</td>
-      <td style="text-align:center; padding-right:6px;">${p.totalSold}</td>
-      <td style="text-align:center; padding-left:6px;">${safe(p.unit)}</td>
-      <td style="text-align:right;">${currency(p.totalRevenue)}</td>
-    </tr>`,
-      )
+    const safe = v =>
+      v === undefined || v === null || v === '' ? '-' : String(v);
+
+    const customerBlocks = customers
+      .map(customer => {
+        const ct = getCustomerTotals(customer);
+        const invoiceRows = (customer.invoices || [])
+          .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+          .map(inv => {
+            const due = Number(inv.amountDue || 0);
+            const paid = Number(inv.amountPaid || 0);
+            const paymentStatus =
+              due <= 0 ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
+            const statusColor =
+              paymentStatus === 'paid'
+                ? '#2e7d32'
+                : paymentStatus === 'partial'
+                ? '#e65100'
+                : '#c62828';
+            return `
+              <tr>
+                <td>${
+                  inv.createdAt
+                    ? new Date(inv.createdAt).toLocaleDateString()
+                    : '-'
+                }</td>
+                <td>${safe(inv.invoiceNumber)}</td>
+                <td align="right">${currency(inv.grandTotal)}</td>
+                <td align="right">${currency(inv.amountPaid)}</td>
+                <td align="right" style="color:${
+                  due > 0 ? '#c62828' : '#2e7d32'
+                }">${currency(inv.amountDue)}</td>
+                <td align="center" style="color:${statusColor}; font-weight:600; text-transform:capitalize;">${paymentStatus}</td>
+              </tr>`;
+          })
+          .join('');
+
+        return `
+          <div style="margin-bottom:24px; border:1px solid #e0e0e0; border-radius:8px; overflow:hidden;">
+            <div style="background:#f5f5f5; padding:10px 14px; border-bottom:1px solid #e0e0e0;">
+              <table style="width:100%; border-collapse:collapse;">
+                <tr>
+                  <td>
+                    <strong style="font-size:13px;">${
+                      safe(customer.customerName) === '-'
+                        ? 'Walk-in Customer'
+                        : safe(customer.customerName)
+                    }</strong>
+                    ${
+                      customer.customerMobile
+                        ? `<span style="font-size:11px; color:#555; margin-left:8px;">📞 ${customer.customerMobile}</span>`
+                        : ''
+                    }
+                  </td>
+                  <td align="right" style="font-size:11px; color:#555;">${
+                    ct.totalInvoices
+                  } invoices</td>
+                </tr>
+              </table>
+            </div>
+            <div style="padding:8px 14px; background:#fafafa; border-bottom:1px solid #e0e0e0; display:flex; gap:12px; flex-wrap:wrap;">
+              <span style="font-size:11px;"><b>Sale:</b> ${currency(
+                ct.totalSale,
+              )}</span>
+              <span style="font-size:11px; color:#2e7d32;"><b>Paid:</b> ${currency(
+                ct.totalPaid,
+              )}</span>
+              <span style="font-size:11px; color:${
+                ct.totalDue > 0 ? '#c62828' : '#2e7d32'
+              };"><b>Due:</b> ${currency(ct.totalDue)}</span>
+            </div>
+            <table style="width:100%; border-collapse:collapse;">
+              <thead>
+                <tr style="background:#fafafa;">
+                  <th align="left"   style="padding:7px 10px; font-size:11px; border-bottom:1px solid #eee;">Date</th>
+                  <th align="left"   style="padding:7px 10px; font-size:11px; border-bottom:1px solid #eee;">Invoice No</th>
+                  <th align="right"  style="padding:7px 10px; font-size:11px; border-bottom:1px solid #eee;">Grand Total</th>
+                  <th align="right"  style="padding:7px 10px; font-size:11px; border-bottom:1px solid #eee;">Paid</th>
+                  <th align="right"  style="padding:7px 10px; font-size:11px; border-bottom:1px solid #eee;">Due</th>
+                  <th align="center" style="padding:7px 10px; font-size:11px; border-bottom:1px solid #eee;">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${
+                  invoiceRows ||
+                  `<tr><td colspan="6" align="center" style="padding:8px; font-size:11px; color:#888;">No invoices</td></tr>`
+                }
+              </tbody>
+            </table>
+          </div>`;
+      })
       .join('');
 
-    const totalRow = `
-    <tr style="font-weight:700; border-top:2px solid #333;">
-      <td style="padding:6px; font-size:11px; border:1px solid #ddd; font-weight:700;">TOTAL</td>
-      <td style="padding:6px; font-size:11px; border:1px solid #ddd;"></td>
-      <td style="padding:6px; font-size:11px; border:1px solid #ddd; text-align:center; font-weight:700;">${
-        totals.totalSold
-      }</td>
-      <td style="padding:6px; font-size:11px; border:1px solid #ddd;"></td>
-      <td style="padding:6px; font-size:11px; border:1px solid #ddd; text-align:right; font-weight:700;">${currency(
-        totals.totalRevenue,
-      )}</td>
-    </tr>`;
-
     return `
-  <html>
-  <head>
-    <meta charset="utf-8" />
-    <style>
-       @page {
-        size: A4 landscape; margin: 20px 20px; 
-        @top-right {
-          content: "Page " counter(page) " of " counter(pages);
-          font-size: 10px;
-          color: #666;
-    }
-    }
+      <html>
+      <head>
+        <meta charset="utf-8" />
+        <style>
+          @page { size: A4 portrait; margin: 20px; }
+          body { font-family: -apple-system, Roboto, Segoe UI, Arial; margin:0; padding:0; color:#111; }
+          h1   { font-size:18px; margin:0 0 4px; }
+          .muted { color:#666; font-size:12px; margin-bottom:12px; }
+          .summary { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px; }
+          .chip { border-radius:14px; padding:5px 12px; background:#f2f2f2; font-size:11px; color:#333; border:1px solid #ddd; }
+          .footer { margin-top:16px; color:#666; font-size:10px; }
+          td, th { font-size:11px; padding:6px 10px; border-bottom:1px solid #eee; word-wrap:break-word; }
+        </style>
+      </head>
+      <body>
+        <table style="width:100%; border-collapse:collapse; margin-bottom:10px;">
+          <tr><td style="text-align:center;"><strong style="font-size:14px;">${storeName}</strong></td></tr>
+          <tr><td style="text-align:center; font-size:10px; color:#444;">
+            ${address} &nbsp;|&nbsp; <b>Ph:</b> ${contactNo}
+            ${
+              gstin && gstin !== 'N/A'
+                ? `&nbsp;|&nbsp; <b>GSTIN:</b> ${gstin}`
+                : ''
+            }
+          </td></tr>
+        </table>
 
-      body {
-        font-family: -apple-system, Roboto, Segoe UI, Arial;
-        padding: 0;
-        color: #111;
-      }
+        <h1>Sundry Debtors Report</h1>
+        <div class="muted">Period: ${formattedRange}</div>
 
-      h1 {
-        font-size: 20px;
-        margin: 0 0 2px;
-      }
+        <div class="summary">
+          <div class="chip">Customers: ${totals.customerCount}</div>
+          <div class="chip">Invoices: ${totals.invoiceCount}</div>
+          <div class="chip">Total Sale: ${currency(totals.totalSale)}</div>
+          <div class="chip">Total Paid: ${currency(totals.totalPaid)}</div>
+          <div class="chip" style="color:#c62828;">Total Due: ${currency(
+            totals.totalDue,
+          )}</div>
+        </div>
 
-      .muted {
-        color: #666;
-        margin-bottom: 16px;
-      }
-
-      .chips {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-bottom: 16px;
-      }
-
-      .chip {
-        border-radius: 16px;
-        padding: 6px 12px;
-        background: #f2f2f2;
-        font-size: 12px;
-        color: #333;
-        border: 1px solid #ddd;
-      }
-
-      table {
-        border-collapse: collapse;
-        width: 100%;
-        table-layout: fixed;
-        page-break-inside: auto;
-      }
-
-      tr {
-        page-break-inside: avoid;
-        page-break-after: auto;
-      }
-
-      th, td {
-        border-bottom: 1px solid #eee;
-        padding: 8px 6px;
-        font-size: 11px;
-        word-wrap: break-word;
-      }
-
-      th {
-        background: #fafafa;
-        font-weight: 700;
-      }
-
-      th:nth-child(1), td:nth-child(1) { text-align: left; }
-      th:nth-child(2), td:nth-child(2) { text-align: left; }
-      th:nth-child(3), td:nth-child(3) { text-align: center; padding-right: 6px; }
-      th:nth-child(4), td:nth-child(4) { text-align: center; padding-left: 6px; }
-      th:nth-child(5), td:nth-child(5) { text-align: right; }
-
-      .footer {
-        margin-top: 14px;
-        color: #666;
-        font-size: 10px;
-      }
-
-      .grand-total {
-        font-weight: bold;
-        margin-top: 16px;
-        border-top: 2px solid #333;
-        padding-top: 8px;
-        display: flex;
-        justify-content: flex-end;
-        font-size: 12px;
-      }
-
-      .grand-total span {
-        min-width: 120px;
-        text-align: right;
-      }
-    </style>
-  </head>
-  <body>
-       <table style="width:100%; border-collapse:collapse; margin-bottom:8px;">
-  <tr>
-    <td style="text-align:center; padding:2px 0;">
-      <strong style="font-size:14px;">${storeName}</strong>
-    </td>
-  </tr>
-  <tr>
-    <td style="text-align:center; padding:1px 0; font-size:10px; color:#444;">
-      ${address} &nbsp;|&nbsp; <b>Ph:</b> ${contactNo} ${
-      gstin ? `&nbsp;|&nbsp; <b>GSTIN:</b> ${gstin}` : ''
-    }
-    </td>
-  </tr>
-</table>
-    <h1>Product Wise Sales Report</h1>
-    <div class="muted">Period From: ${formattedRange}</div>
-
-    <div class="chips">
-      <div class="chip">Total Products: <b>${totals.count}</b></div>
-      <div class="chip">Total Sold: <b>${totals.totalSold}</b></div>
-      <div class="chip">Grand Total Revenue: <b>${currency(
-        totals.totalRevenue,
-      )}</b></div>
-    </div>
-
-     <table>
-        <thead>
-          <tr>
-            <th>Product</th>
-            <th>HSN</th>
-            <th>Qty</th>
-            <th>Unit</th>
-            <th>Total Value</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${
-            rows ||
-            `<tr><td colspan="5" style="text-align:center;">No records</td></tr>`
-          }
-          ${totalRow}
-        </tbody>
-      </table>
-
-    <!-- Grand Total at LAST PAGE only -->
-   
+        ${customerBlocks || '<p style="color:#888;">No records found.</p>'}
 
          <div style="
     margin-top: 18px;
@@ -501,278 +538,526 @@ const ProductWiseSalesReport = () => {
       </div>
 
     </div>
-  </body>
-  </html>
-  `;
+      </body>
+      </html>`;
   };
 
-  const applyThisYear = () => {
-    const today = new Date();
-    const currentMonth = today.getMonth() + 1;
-    const fyStart =
-      currentMonth >= 4
-        ? new Date(today.getFullYear(), 3, 1)
-        : new Date(today.getFullYear() - 1, 3, 1);
-    setStartDate(fyStart);
-    setEndDate(today);
-  };
-
-  const applyThisMonth = () => {
-    const today = new Date();
-    setStartDate(new Date(today.getFullYear(), today.getMonth(), 1));
-    setEndDate(today);
-  };
-
-  const applyPreviousMonth = () => {
-    const today = new Date();
-    setStartDate(new Date(today.getFullYear(), today.getMonth() - 1, 1));
-    setEndDate(new Date(today.getFullYear(), today.getMonth(), 0));
-  };
-
+  // ── Export PDF ────────────────────────────────────────────────────────────
   const exportPDF = async () => {
-    if (!data.length) return Alert.alert('No Data', 'Generate a report first.');
+    if (!customers.length) {
+      Alert.alert('No Data', 'Generate a report first.');
+      return;
+    }
     try {
       const storageOk = await ensureStoragePermission();
-      const downloadsOk = await ensureAndroidDownloadPermission();
-      if (!storageOk || !downloadsOk) return;
+      const dlOk = await ensureAndroidDownloadPermission();
+      if (!storageOk || !dlOk) return;
 
-      const html = buildHTML();
       const pdfRes = await RNHTMLtoPDF.convert({
-        html,
-        fileName: `product_wise_sales_${Date.now()}`,
+        html: buildHTML(),
+        fileName: `Sundry_Debtors_${Date.now()}`,
         base64: false,
+        orientation: 'portrait',
       });
 
-      const downloadsDir =
+      const dlDir =
         Platform.OS === 'android'
           ? RNFS.DownloadDirectoryPath
           : RNFS.DocumentDirectoryPath;
-
-      const finalPath = `${downloadsDir}/ProductWiseSales_${Date.now()}.pdf`;
-
+      let finalPath = `${dlDir}/Sundry_Debtors_${new Date()
+        .toISOString()
+        .slice(0, 10)}.pdf`;
+      if (await RNFS.exists(finalPath))
+        finalPath = `${dlDir}/Sundry_Debtors_${Date.now()}.pdf`;
       await RNFS.copyFile(pdfRes.filePath, finalPath);
 
-      // ✅ Try to open with FileViewer — handle if no app found
       try {
         await FileViewer.open(finalPath, { showOpenWithDialog: true });
-      } catch (openErr) {
-        console.warn('No PDF viewer available:', openErr?.message);
-        Alert.alert(
-          'PDF Report Saved',
-          'File has been saved to Downloads folder, but no app is available to open it.',
-        );
+      } catch {
+        Alert.alert('PDF Saved', 'File saved to Downloads.');
       }
 
       setLastSavedPath(finalPath);
       setDialogVisible(true);
     } catch (e) {
       console.error('PDF export error:', e?.message);
-      Alert.alert('Error', 'Could not export or open PDF.');
+      Alert.alert('Export Failed', 'Could not generate PDF.');
     }
   };
 
+  // ── Export Excel ──────────────────────────────────────────────────────────
   const exportExcel = async () => {
-    if (!data.length) return Alert.alert('No Data', 'Generate a report first.');
+    if (!customers.length) {
+      Alert.alert('No Data', 'No records to export.');
+      return;
+    }
+    const storageOk = await ensureStoragePermission();
+    const dlOk = await ensureAndroidDownloadPermission();
+    if (!storageOk || !dlOk) return;
+
     try {
-      const storageOk = await ensureStoragePermission();
-      const downloadsOk = await ensureAndroidDownloadPermission();
-      if (!storageOk || !downloadsOk) return;
-
-      const sheetData = data.map(p => ({
-        Product: p.name,
-        HSN: p.hsn,
-        Quantity: p.totalSold,
-        Unit: p.unit,
-        Revenue: p.totalRevenue,
-      }));
-
-      const ws = XLSX.utils.json_to_sheet(sheetData);
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Product Sales');
-      const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
 
-      const downloadsDir =
+      // Sheet 1: Summary
+      const summaryData = customers.map(c => {
+        const ct = getCustomerTotals(c);
+        return {
+          'Customer Name': c.customerName || 'Walk-in Customer',
+          Mobile: c.customerMobile || '-',
+          'Total Invoices': ct.totalInvoices,
+          'Total Sale': Number(ct.totalSale),
+          'Total Paid': Number(ct.totalPaid),
+          'Total Due': Number(ct.totalDue),
+        };
+      });
+      const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+      wsSummary['!cols'] = Object.keys(summaryData[0]).map(k => ({
+        wch: Math.max(14, k.length + 2),
+      }));
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+      // Sheet 2: All invoices flat
+      const invoiceRows = [];
+      customers.forEach(c => {
+        (c.invoices || [])
+          .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+          .forEach(inv => {
+            const due = Number(inv.amountDue || 0);
+            const paid = Number(inv.amountPaid || 0);
+            invoiceRows.push({
+              'Customer Name': c.customerName || 'Walk-in Customer',
+              'Customer Mobile': c.customerMobile || '-',
+              'Invoice No': inv.invoiceNumber || '-',
+              Date: inv.createdAt
+                ? new Date(inv.createdAt).toLocaleDateString()
+                : '-',
+              'Grand Total': Number(inv.grandTotal || 0),
+              'Amount Paid': paid,
+              'Amount Due': due,
+              'Payment Status':
+                due <= 0 ? 'paid' : paid > 0 ? 'partial' : 'unpaid',
+            });
+          });
+      });
+
+      if (invoiceRows.length) {
+        const wsInvoices = XLSX.utils.json_to_sheet(invoiceRows);
+        wsInvoices['!cols'] = Object.keys(invoiceRows[0]).map(k => ({
+          wch: Math.max(14, k.length + 2),
+        }));
+        XLSX.utils.book_append_sheet(wb, wsInvoices, 'All Invoices');
+      }
+
+      const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+      const dlDir =
         Platform.OS === 'android'
           ? RNFS.DownloadDirectoryPath
           : RNFS.DocumentDirectoryPath;
-      const finalPath = `${downloadsDir}/ProductWiseSales_${Date.now()}.xlsx`;
-
+      let finalPath = `${dlDir}/Sundry_Debtors_${new Date()
+        .toISOString()
+        .slice(0, 10)}.xlsx`;
+      if (await RNFS.exists(finalPath))
+        finalPath = `${dlDir}/Sundry_Debtors_${Date.now()}.xlsx`;
       await RNFS.writeFile(finalPath, wbout, 'base64');
 
-      // ✅ Try to open file — handle missing Excel viewer gracefully
       try {
         await FileViewer.open(finalPath, { showOpenWithDialog: true });
-      } catch (openErr) {
-        console.warn('No Excel viewer available:', openErr?.message);
-        Alert.alert(
-          'Excel Report Saved',
-          'File has been saved to Downloads folder, but no app is available to open Excel files.',
-        );
+      } catch {
+        Alert.alert('Excel Saved', 'File saved to Downloads.');
       }
 
       setLastSavedPath(finalPath);
       setDialogVisible(true);
     } catch (e) {
       console.error('Excel export error:', e?.message);
-      Alert.alert('Error', 'Could not export or open Excel.');
+      Alert.alert('Export Failed', 'Could not generate Excel file.');
     }
   };
 
-  const renderItem = ({ item }) => (
-    <Card
-      mode="outlined"
-      style={styles.card}
-      contentStyle={{
-        paddingHorizontal: 16,
-        paddingTop: 12,
-        paddingBottom: 12,
-      }}
-    >
-      {/* Header: Product name + HSN tag */}
-      <View style={styles.cardHeader}>
-        <View style={{ flex: 1 }}>
-          <Text variant="titleMedium" numberOfLines={1}>
-            {item.name}
-          </Text>
-          <Text variant="labelSmall" style={styles.muted}>
-            HSN: {item.hsn || '-'}
-          </Text>
-        </View>
-        <View
-          style={[
-            styles.tag,
-            { backgroundColor: theme.colors.primaryContainer },
-          ]}
-        >
-          <Text style={[styles.tagText, { color: theme.colors.primary }]}>
-            {item.unit || '-'}
-          </Text>
-        </View>
-      </View>
+  // ── Render customer card ──────────────────────────────────────────────────
+  const renderCustomerCard = useCallback(
+    ({ item: customer }) => {
+      const id = getCustomerId(customer);
+      const isExpanded = !!expandedCustomers[id];
+      const ct = getCustomerTotals(customer);
+      const sortedInvoices = [...(customer.invoices || [])].sort(
+        (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+      );
 
-      {/* Divider-like meta row */}
-      <View style={styles.cardMeta}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <Icon
-            source="tag-outline"
-            size={12}
-            color={theme.colors.onSurfaceVariant}
-          />
-          <Text variant="labelSmall" style={{ marginLeft: 4 }}>
-            Price: ₹{item.sellingPrice}
-          </Text>
-        </View>
-        <View
-          style={[
-            styles.tag,
-            { backgroundColor: theme.colors.secondaryContainer },
-          ]}
-        >
-          <Text style={[styles.tagText, { color: theme.colors.secondary }]}>
-            Qty Sold: {item.totalSold}
-          </Text>
-        </View>
-      </View>
+      const getPaymentStatus = inv => {
+        const due = Number(inv.amountDue || 0);
+        const paid = Number(inv.amountPaid || 0);
+        return due <= 0 ? 'paid' : paid > 0 ? 'partial' : 'unpaid';
+      };
 
-      {/* Details row */}
-      <View style={styles.cardDetails}>
-        <View style={styles.detailCol}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      const statusColor = status =>
+        status === 'paid'
+          ? '#2e7d32'
+          : status === 'partial'
+          ? '#e65100'
+          : '#c62828';
+
+      const statusBg = status =>
+        status === 'paid'
+          ? '#e8f5e9'
+          : status === 'partial'
+          ? '#fff3e0'
+          : '#ffebee';
+
+      return (
+        <Card style={styles.card} mode="outlined">
+          {/* ── Customer header ── */}
+          <TouchableOpacity
+            activeOpacity={0.75}
+            onPress={() => toggleCustomer(id)}
+            style={styles.vendorHeader}
+          >
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Icon source="account" size={16} color={theme.colors.primary} />
+                <Text
+                  variant="titleMedium"
+                  style={{ marginLeft: 6 }}
+                  numberOfLines={1}
+                >
+                  {customer.customerName || 'Walk-in Customer'}
+                </Text>
+              </View>
+              {customer.customerMobile ? (
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    marginTop: 2,
+                  }}
+                >
+                  <Icon
+                    source="phone"
+                    size={13}
+                    color={theme.colors.onSurfaceVariant}
+                  />
+                  <Text
+                    variant="labelSmall"
+                    style={{
+                      marginLeft: 4,
+                      color: theme.colors.onSurfaceVariant,
+                    }}
+                  >
+                    {customer.customerMobile}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
             <Icon
-              source="package-variant"
-              size={14}
+              source={isExpanded ? 'chevron-up' : 'chevron-down'}
+              size={20}
               color={theme.colors.onSurfaceVariant}
             />
-            <Text variant="labelSmall" style={{ marginLeft: 4 }}>
-              Unit
-            </Text>
-          </View>
-          <Text variant="labelLarge">{item.unit || '-'}</Text>
-        </View>
+          </TouchableOpacity>
 
-        <View style={styles.detailCol}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Icon
-              source="counter"
-              size={14}
-              color={theme.colors.onSurfaceVariant}
+          {/* ── Customer summary chips ── */}
+          <View
+            style={[
+              styles.vendorSummary,
+              { borderTopColor: theme.colors.outlineVariant },
+            ]}
+          >
+            <View style={styles.summaryChip}>
+              <Text
+                variant="labelSmall"
+                style={{ color: theme.colors.onSurfaceVariant }}
+              >
+                Invoices
+              </Text>
+              <Text variant="titleSmall">{ct.totalInvoices}</Text>
+            </View>
+            <View
+              style={[
+                styles.summaryDivider,
+                { backgroundColor: theme.colors.outlineVariant },
+              ]}
             />
-            <Text variant="labelSmall" style={{ marginLeft: 4 }}>
-              Qty Sold
-            </Text>
+            <View style={styles.summaryChip}>
+              <Text
+                variant="labelSmall"
+                style={{ color: theme.colors.onSurfaceVariant }}
+              >
+                Sale
+              </Text>
+              <Text variant="titleSmall">{currency(ct.totalSale)}</Text>
+            </View>
+            <View
+              style={[
+                styles.summaryDivider,
+                { backgroundColor: theme.colors.outlineVariant },
+              ]}
+            />
+            <View style={styles.summaryChip}>
+              <Text variant="labelSmall" style={{ color: '#2e7d32' }}>
+                Paid
+              </Text>
+              <Text variant="titleSmall" style={{ color: '#2e7d32' }}>
+                {currency(ct.totalPaid)}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.summaryDivider,
+                { backgroundColor: theme.colors.outlineVariant },
+              ]}
+            />
+            <View style={styles.summaryChip}>
+              <Text
+                variant="labelSmall"
+                style={{ color: ct.totalDue > 0 ? '#c62828' : '#2e7d32' }}
+              >
+                Due
+              </Text>
+              <Text
+                variant="titleSmall"
+                style={{ color: ct.totalDue > 0 ? '#c62828' : '#2e7d32' }}
+              >
+                {currency(ct.totalDue)}
+              </Text>
+            </View>
           </View>
-          <Text variant="labelLarge">{item.totalSold}</Text>
-        </View>
 
-        <View style={styles.detailCol}>
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Icon
-              source="currency-inr"
-              size={14}
-              color={theme.colors.onSurfaceVariant}
-            />
-            <Text variant="labelSmall">Total Value</Text>
-          </View>
-          <Text variant="labelLarge" style={{ fontWeight: '700' }}>
-            ₹{Number(item.totalRevenue || 0).toFixed(2)}
-          </Text>
-        </View>
-      </View>
-    </Card>
+          {/* ── Expandable invoice rows ── */}
+          {isExpanded && (
+            <View
+              style={[
+                styles.invoiceList,
+                { borderTopColor: theme.colors.outlineVariant },
+              ]}
+            >
+              {/* Column headers */}
+              <View
+                style={[
+                  styles.invoiceRow,
+                  styles.invoiceHeaderRow,
+                  { backgroundColor: theme.colors.surfaceVariant },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.invoiceCell,
+                    styles.invoiceCellDate,
+                    styles.invoiceHeaderText,
+                  ]}
+                >
+                  Date
+                </Text>
+                <Text
+                  style={[
+                    styles.invoiceCell,
+                    styles.invoiceCellInvoice,
+                    styles.invoiceHeaderText,
+                  ]}
+                >
+                  Invoice #
+                </Text>
+                <Text
+                  style={[
+                    styles.invoiceCell,
+                    styles.invoiceCellAmount,
+                    styles.invoiceHeaderText,
+                    { textAlign: 'right' },
+                  ]}
+                >
+                  Total
+                </Text>
+                <Text
+                  style={[
+                    styles.invoiceCell,
+                    styles.invoiceCellAmount,
+                    styles.invoiceHeaderText,
+                    { textAlign: 'right' },
+                  ]}
+                >
+                  Paid
+                </Text>
+                <Text
+                  style={[
+                    styles.invoiceCell,
+                    styles.invoiceCellAmount,
+                    styles.invoiceHeaderText,
+                    { textAlign: 'right' },
+                  ]}
+                >
+                  Due
+                </Text>
+                <Text
+                  style={[
+                    styles.invoiceCell,
+                    styles.invoiceCellStatus,
+                    styles.invoiceHeaderText,
+                    { textAlign: 'center' },
+                  ]}
+                >
+                  Status
+                </Text>
+              </View>
+
+              {sortedInvoices.length === 0 ? (
+                <Text style={styles.noInvoices}>No invoices</Text>
+              ) : (
+                sortedInvoices.map((inv, idx) => {
+                  const ps = getPaymentStatus(inv);
+                  return (
+                    <TouchableOpacity
+                      key={inv._id || idx}
+                      activeOpacity={0.7}
+                      onPress={() =>
+                        navigation.navigate('InvoiceDetail', {
+                          invoiceId: inv._id,
+                        })
+                      }
+                      style={[
+                        styles.invoiceRow,
+                        idx % 2 === 1 && {
+                          backgroundColor: theme.colors.surfaceVariant + '55',
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[styles.invoiceCell, styles.invoiceCellDate]}
+                        numberOfLines={1}
+                      >
+                        {inv.createdAt
+                          ? format(new Date(inv.createdAt), 'dd MMM yy')
+                          : '-'}
+                      </Text>
+                      <Text
+                        style={[styles.invoiceCell, styles.invoiceCellInvoice]}
+                        numberOfLines={1}
+                      >
+                        {inv.invoiceNumber || '-'}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.invoiceCell,
+                          styles.invoiceCellAmount,
+                          { textAlign: 'right' },
+                        ]}
+                      >
+                        {currency(inv.grandTotal)}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.invoiceCell,
+                          styles.invoiceCellAmount,
+                          { textAlign: 'right', color: '#2e7d32' },
+                        ]}
+                      >
+                        {currency(inv.amountPaid)}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.invoiceCell,
+                          styles.invoiceCellAmount,
+                          {
+                            textAlign: 'right',
+                            color:
+                              Number(inv.amountDue) > 0 ? '#c62828' : '#2e7d32',
+                          },
+                        ]}
+                      >
+                        {currency(inv.amountDue)}
+                      </Text>
+                      <View
+                        style={[
+                          styles.invoiceCell,
+                          styles.invoiceCellStatus,
+                          { alignItems: 'center' },
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            { backgroundColor: statusBg(ps) },
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.statusText,
+                              { color: statusColor(ps) },
+                            ]}
+                          >
+                            {ps === 'partial' ? 'Part' : ps}
+                          </Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })
+              )}
+            </View>
+          )}
+        </Card>
+      );
+    },
+    [expandedCustomers, theme.colors, toggleCustomer, navigation],
   );
 
+  // ── Main render ───────────────────────────────────────────────────────────
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor: theme.colors.background }]}
     >
       <Navbar
         showBackButton
-        title="Product Wise Sales"
+        title="Sundry Debtors Report"
         rightComponent={
           <>
             <IconButton
               icon="file-pdf-box"
               iconColor="red"
               onPress={exportPDF}
-              disabled={!data.length || loading}
+              disabled={!customers.length || loading}
+              accessibilityLabel="Export PDF"
             />
             <IconButton
               icon="file-excel"
               iconColor="green"
               onPress={exportExcel}
-              disabled={!data.length || loading}
+              disabled={!customers.length || loading}
+              accessibilityLabel="Export Excel"
             />
           </>
         }
       />
 
+      {/* ── Filters ── */}
       <View style={[styles.header, compact && { paddingHorizontal: 12 }]}>
-        <View style={styles.row}>
+        <View style={[styles.row, compact && { gap: 6 }]}>
           <Button
             mode="outlined"
-            icon="calendar-start"
             onPress={() => setPickerMode('start')}
             style={[styles.dateBtn, compact && { paddingHorizontal: 0 }]}
+            icon="calendar-start"
             contentStyle={{ flexDirection: 'row-reverse' }}
           >
             {startDate ? formatDate(startDate) : 'Start Date'}
           </Button>
           <Button
             mode="outlined"
-            icon="calendar-end"
             onPress={() => setPickerMode('end')}
             style={[styles.dateBtn, compact && { paddingHorizontal: 0 }]}
+            icon="calendar-end"
             contentStyle={{ flexDirection: 'row-reverse' }}
           >
             {endDate ? formatDate(endDate) : 'End Date'}
           </Button>
           <IconButton
             icon="calendar-remove"
+            mode="contained-tonal"
+            size={20}
             onPress={() => {
               setStartDate(null);
               setEndDate(null);
             }}
-            disabled={!startDate && !endDate}
+            style={styles.iconBtn}
+            disabled={loading || (!startDate && !endDate)}
           />
         </View>
 
@@ -806,72 +1091,141 @@ const ProductWiseSalesReport = () => {
           </Button>
         </View>
 
-        <View style={[styles.row, compact && { gap: 6 }]}>
+        <View style={styles.row}>
           <Button
             mode="contained"
             onPress={fetchReport}
-            disabled={!startDate || !endDate}
             style={{ flex: 1 }}
-            labelStyle={[
-              styles.submitButtonLabel,
-              {
-                color:
-                  !startDate || !endDate
-                    ? theme.colors.onBackground
-                    : theme.colors.onSurface,
-              },
-            ]}
             icon={loading ? 'progress-clock' : 'refresh'}
+            labelStyle={{ color: theme.colors.onPrimary }}
           >
             {loading ? 'Loading...' : 'Generate'}
           </Button>
-          {/* <Button
-                                     mode="contained-tonal"
-                                     onPress={exportPDF}
-                                     disabled={!invoices.length || loading}
-                                     style={styles.ml8}
-                                     icon="file-export-outline"
-                                 >
-                                     Export PDF
-                                 </Button>
-                                 <Button
-                                     mode="contained-tonal"
-                                     onPress={exportExcel}
-                                     disabled={!invoices.length || loading}
-                                     style={styles.ml8}
-                                     icon="file-excel"
-                                 >
-                                     Export Excel
-                                 </Button> */}
         </View>
       </View>
 
+      {/* ── Body ── */}
       {loading ? (
         <View style={styles.center}>
           <ActivityIndicator />
-          <Text>Loading...</Text>
+          <Text style={styles.mt8}>Loading...</Text>
         </View>
-      ) : data.length === 0 ? (
+      ) : customers.length === 0 ? (
         <View style={styles.center}>
-          <Text>No records found. Select date range and Generate.</Text>
+          <Text style={styles.muted}>
+            No records. Select a date range and Generate.
+          </Text>
         </View>
       ) : (
-        <FlatList
-          data={data}
-          keyExtractor={(item, i) => item._id + i}
-          renderItem={renderItem}
-          contentContainerStyle={styles.list}
-        />
+        <>
+          <View style={styles.summaryWrap}>
+            <Card mode="elevated" style={styles.summaryCard}>
+              <Card.Content style={styles.summaryContent}>
+                <View style={styles.summaryHeader}>
+                  <Text variant="labelSmall" style={styles.summaryLabel}>
+                    Period
+                  </Text>
+                  <Text
+                    variant="titleSmall"
+                    numberOfLines={1}
+                    style={styles.summaryValue}
+                  >
+                    {formattedRange}
+                  </Text>
+                </View>
+                <Divider
+                  style={[styles.hr, { backgroundColor: theme.colors.outline }]}
+                />
+                <View style={styles.summaryRow}>
+                  <View style={styles.summaryCol}>
+                    <Text variant="labelSmall" style={styles.summaryLabel}>
+                      Customers
+                    </Text>
+                    <Text variant="titleMedium" style={styles.summaryValue}>
+                      {totals.customerCount}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.vDivider,
+                      { backgroundColor: theme.colors.outline },
+                    ]}
+                  />
+                  <View style={styles.summaryCol}>
+                    <Text variant="labelSmall" style={styles.summaryLabel}>
+                      Sale
+                    </Text>
+                    <Text variant="titleMedium" style={styles.summaryValue}>
+                      ₹{totals.totalSale.toFixed(2)}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.vDivider,
+                      { backgroundColor: theme.colors.outline },
+                    ]}
+                  />
+                  <View style={styles.summaryCol}>
+                    <Text
+                      variant="labelSmall"
+                      style={[styles.summaryLabel, { color: '#2e7d32' }]}
+                    >
+                      Paid
+                    </Text>
+                    <Text
+                      variant="titleMedium"
+                      style={[styles.summaryValue, { color: '#2e7d32' }]}
+                    >
+                      ₹{totals.totalPaid.toFixed(2)}
+                    </Text>
+                  </View>
+                  <View
+                    style={[
+                      styles.vDivider,
+                      { backgroundColor: theme.colors.outline },
+                    ]}
+                  />
+                  <View style={styles.summaryCol}>
+                    <Text
+                      variant="labelSmall"
+                      style={[
+                        styles.summaryLabel,
+                        { color: totals.totalDue > 0 ? '#c62828' : '#2e7d32' },
+                      ]}
+                    >
+                      Due
+                    </Text>
+                    <Text
+                      variant="titleMedium"
+                      style={[
+                        styles.summaryValue,
+                        { color: totals.totalDue > 0 ? '#c62828' : '#2e7d32' },
+                      ]}
+                    >
+                      ₹{totals.totalDue.toFixed(2)}
+                    </Text>
+                  </View>
+                </View>
+              </Card.Content>
+            </Card>
+          </View>
+
+          <FlatList
+            data={customers}
+            keyExtractor={(item, idx) => getCustomerId(item) || String(idx)}
+            renderItem={renderCustomerCard}
+            contentContainerStyle={styles.list}
+          />
+        </>
       )}
 
       <DateTimePickerModal
         isVisible={!!pickerMode}
         mode="date"
-        accentColor={theme.colors.primary}
         maximumDate={new Date()}
         onConfirm={date => {
           if (pickerMode === 'start') setStartDate(date);
-          else setEndDate(date);
+          if (pickerMode === 'end') setEndDate(date);
           setPickerMode(null);
         }}
         onCancel={() => setPickerMode(null)}
@@ -884,8 +1238,8 @@ const ProductWiseSalesReport = () => {
         >
           <Dialog.Title>Saved</Dialog.Title>
           <Dialog.Content>
-            <Text>File saved successfully.</Text>
-            {lastSavedPath && <Text selectable>{lastSavedPath}</Text>}
+            <Text>File saved to Downloads.</Text>
+            {lastSavedPath ? <Text selectable>{lastSavedPath}</Text> : null}
           </Dialog.Content>
           <Dialog.Actions>
             <Button onPress={() => setDialogVisible(false)}>OK</Button>
@@ -898,39 +1252,71 @@ const ProductWiseSalesReport = () => {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { padding: 16, gap: 12 },
-  row: { flexDirection: 'row', gap: 8 },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  list: { padding: 12 },
-  card: { marginBottom: 8, borderRadius: 12 },
-  cardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 6,
-  },
-  cardMeta: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  header: { paddingHorizontal: 16, gap: 12 },
+  row: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  dateBtn: { flex: 1 },
+  iconBtn: { margin: 0 },
+  center: {
+    flex: 1,
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'center',
+    padding: 24,
   },
-  tag: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 4,
-    alignSelf: 'flex-start',
-  },
-  tagText: { fontWeight: '500', fontSize: 11 },
-  cardDetails: {
+  muted: { color: '#6b7280' },
+  mt8: { marginTop: 8 },
+  summaryWrap: { paddingHorizontal: 10, paddingVertical: 6 },
+  summaryCard: { borderRadius: 10 },
+  summaryContent: { paddingVertical: 6 },
+  summaryHeader: { marginBottom: 4 },
+  summaryLabel: { fontSize: 11 },
+  summaryValue: { fontWeight: '600' },
+  hr: { height: StyleSheet.hairlineWidth, marginVertical: 6 },
+  summaryRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
   },
-  detailCol: { flex: 1 },
-  muted: { color: '#6b7280' },
-  dateBtn: { flex: 1 },
-  rowBetween: { flexDirection: 'row', justifyContent: 'space-between' },
-  dateBtn: { flex: 1 },
+  summaryCol: { flex: 1, alignItems: 'center' },
+  vDivider: {
+    width: StyleSheet.hairlineWidth,
+    height: '100%',
+    marginHorizontal: 4,
+  },
+  list: { padding: 12 },
+  card: { marginBottom: 10, borderRadius: 12, overflow: 'hidden' },
+  vendorHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  vendorSummary: {
+    flexDirection: 'row',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+  },
+  summaryChip: { flex: 1, alignItems: 'center' },
+  summaryDivider: { width: StyleSheet.hairlineWidth, marginVertical: 2 },
+  invoiceList: { borderTopWidth: StyleSheet.hairlineWidth },
+  invoiceHeaderRow: { paddingVertical: 6 },
+  invoiceHeaderText: { fontWeight: '700', fontSize: 11, color: '#555' },
+  invoiceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#eee',
+  },
+  invoiceCell: { fontSize: 11 },
+  invoiceCellDate: { width: 60 },
+  invoiceCellInvoice: { flex: 1, paddingHorizontal: 4 },
+  invoiceCellAmount: { width: 58 },
+  invoiceCellStatus: { width: 46 },
+  noInvoices: { padding: 12, textAlign: 'center', color: '#888', fontSize: 12 },
+  statusBadge: { borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2 },
+  statusText: { fontSize: 10, fontWeight: '600', textTransform: 'capitalize' },
 });
 
-export default ProductWiseSalesReport;
+export default SundryDebtorsReport;

@@ -37,6 +37,38 @@ import {
 import AdjustStockBottomSheet from '../../components/BottomSheet/AdjustStocksBottmSheet';
 import SelectStockReasonBottomSheet from '../../components/BottomSheet/SelectStockReasonBottomSheet';
 
+// ─── Filter chip types ────────────────────────────────────────────────────────
+// Each chip is either a "sort" type or a "category" type.
+// Sort chips are fixed; category chips are derived from data.
+const SORT_MODES = {
+  DEFAULT: 'default',
+  RECENT: 'recent',
+  TOP_SELLING: 'top_selling',
+  RESELLING: 'reselling',
+};
+
+// Fixed sort chips that always appear first
+const SORT_CHIPS = [
+  {
+    kind: 'sort',
+    mode: SORT_MODES.RECENT,
+    label: 'Recent',
+    icon: 'clock-outline',
+  },
+  {
+    kind: 'sort',
+    mode: SORT_MODES.TOP_SELLING,
+    label: 'Top Selling',
+    icon: 'fire',
+  },
+  {
+    kind: 'sort',
+    mode: SORT_MODES.RESELLING,
+    label: 'Re-selling',
+    icon: 'refresh',
+  },
+];
+
 const Item = ({ navigation }) => {
   const theme = useTheme();
   const { isStockEnabled, hasPermission } = useAuth();
@@ -45,6 +77,7 @@ const Item = ({ navigation }) => {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+  const [sortMode, setSortMode] = useState(SORT_MODES.DEFAULT);
   const route = useRoute();
   const fromMenu = route.params?.fromMenu;
 
@@ -60,6 +93,7 @@ const Item = ({ navigation }) => {
 
   const { bottom } = useSafeAreaInsets();
 
+  // ─── Transform ──────────────────────────────────────────────────────────────
   const transformItem = useCallback(
     item => ({
       id: item._id,
@@ -95,33 +129,20 @@ const Item = ({ navigation }) => {
     [],
   );
 
+  // ─── Fetch ───────────────────────────────────────────────────────────────────
   const fetchItems = useCallback(
     async (page = 1, isLoadMore = false) => {
       try {
-        if (isLoadMore) {
-          setLoadingMore(true);
-        } else {
-          setLoading(true);
-        }
-
+        isLoadMore ? setLoadingMore(true) : setLoading(true);
         const response = await api.get(`/product?page=${page}&limit=20000`);
-
-        if (response && response.data) {
-          const { docs, hasNextPage, page: currentPage } = response.data;
-          const transformedItems = docs.map(transformItem);
-
-          transformedItems.sort(
-            (a, b) => (b.sellCount || 0) - (a.sellCount || 0),
+        if (response?.data) {
+          const { docs, hasNextPage: nextPage, page: pg } = response.data;
+          const transformed = docs.map(transformItem);
+          setItems(prev =>
+            isLoadMore ? [...prev, ...transformed] : transformed,
           );
-
-          if (isLoadMore) {
-            setItems(prevItems => [...prevItems, ...transformedItems]);
-          } else {
-            setItems(transformedItems);
-          }
-
-          setCurrentPage(currentPage);
-          setHasNextPage(hasNextPage);
+          setCurrentPage(pg);
+          setHasNextPage(nextPage);
         }
       } catch (error) {
         console.error('Error fetching items:', error);
@@ -151,51 +172,131 @@ const Item = ({ navigation }) => {
     }, [fetchItems]),
   );
 
-  const filteredItems = useMemo(() => {
-    let filtered = items.filter(item =>
-      item.name.toLowerCase().includes(searchQuery.toLowerCase()),
-    );
-    if (selectedCategory !== 'all') {
-      filtered = filtered.filter(
-        item => (item.category?.name || 'Uncategorised') === selectedCategory,
-      );
-    }
-    return filtered;
-  }, [items, searchQuery, selectedCategory]);
-
+  // ─── Top-selling product (from ALL items) ────────────────────────────────────
   const topSellingProduct = useMemo(() => {
     if (items.length === 0) return null;
     return items.reduce((top, current) => {
       const topSell = top.sellCount || 0;
       const currentSell = current.sellCount || 0;
       if (currentSell > topSell) return current;
-      else if (currentSell === topSell)
+      if (currentSell === topSell)
         return current.price > top.price ? current : top;
-      else return top;
+      return top;
     });
   }, [items]);
 
-  const orderedItems = useMemo(() => {
-    if (!topSellingProduct) return filteredItems;
-    if (searchQuery.trim() !== '' || selectedCategory !== 'all')
-      return filteredItems;
-    const rest = filteredItems.filter(item => item.id !== topSellingProduct.id);
-    return [topSellingProduct, ...rest];
-  }, [filteredItems, topSellingProduct, searchQuery, selectedCategory]);
-
-  const categories = useMemo(() => {
-    return [
-      'all',
+  // ─── Unified chip list: [All] + sort chips + category chips ─────────────────
+  // "All" resets both sort and category back to defaults.
+  const allChips = useMemo(() => {
+    const categoryNames = [
       ...new Set(items.map(item => item.category?.name || 'Uncategorised')),
+    ];
+
+    return [
+      // "All" — master reset chip
+      { kind: 'all', label: 'All' },
+      // Fixed sort chips
+      ...SORT_CHIPS,
+      // Dynamic category chips
+      ...categoryNames.map(name => ({ kind: 'category', label: name })),
     ];
   }, [items]);
 
-  const formatCurrency = amount => {
-    return new Intl.NumberFormat('en-IN', {
-      style: 'currency',
-      currency: 'INR',
-    }).format(amount);
-  };
+  // A chip is "active" if:
+  //   - kind === 'all'       → sortMode is DEFAULT AND selectedCategory is 'all'
+  //   - kind === 'sort'      → sortMode === chip.mode
+  //   - kind === 'category'  → selectedCategory === chip.label
+  const isChipActive = useCallback(
+    chip => {
+      if (chip.kind === 'all')
+        return sortMode === SORT_MODES.DEFAULT && selectedCategory === 'all';
+      if (chip.kind === 'sort') return sortMode === chip.mode;
+      if (chip.kind === 'category') return selectedCategory === chip.label;
+      return false;
+    },
+    [sortMode, selectedCategory],
+  );
+
+  const handleChipPress = useCallback(chip => {
+    if (chip.kind === 'all') {
+      setSortMode(SORT_MODES.DEFAULT);
+      setSelectedCategory('all');
+      return;
+    }
+    if (chip.kind === 'sort') {
+      // Toggle: pressing active sort chip deactivates it (back to DEFAULT)
+      setSortMode(prev =>
+        prev === chip.mode ? SORT_MODES.DEFAULT : chip.mode,
+      );
+      return;
+    }
+    if (chip.kind === 'category') {
+      // Toggle: pressing active category chip deactivates it (back to 'all')
+      setSelectedCategory(prev => (prev === chip.label ? 'all' : chip.label));
+    }
+  }, []);
+
+  // ─── Filter + sort pipeline ──────────────────────────────────────────────────
+  const searchFiltered = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter(item => item.name.toLowerCase().includes(q));
+  }, [items, searchQuery]);
+
+  const categoryFiltered = useMemo(() => {
+    if (selectedCategory === 'all') return searchFiltered;
+    return searchFiltered.filter(
+      item => (item.category?.name || 'Uncategorised') === selectedCategory,
+    );
+  }, [searchFiltered, selectedCategory]);
+
+  const orderedItems = useMemo(() => {
+    let result = [...categoryFiltered];
+
+    switch (sortMode) {
+      case SORT_MODES.RECENT:
+        result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        break;
+      case SORT_MODES.TOP_SELLING:
+        result.sort((a, b) => (b.sellCount || 0) - (a.sellCount || 0));
+        break;
+      case SORT_MODES.RESELLING:
+        result = result
+          .filter(item => (item.sellCount || 0) > 0)
+          .sort((a, b) => (b.sellCount || 0) - (a.sellCount || 0));
+        break;
+      case SORT_MODES.DEFAULT:
+      default:
+        result.sort((a, b) => (b.sellCount || 0) - (a.sellCount || 0));
+        if (
+          topSellingProduct &&
+          !searchQuery.trim() &&
+          selectedCategory === 'all'
+        ) {
+          const rest = result.filter(i => i.id !== topSellingProduct.id);
+          result = [topSellingProduct, ...rest];
+        }
+        break;
+    }
+
+    return result;
+  }, [
+    categoryFiltered,
+    sortMode,
+    topSellingProduct,
+    searchQuery,
+    selectedCategory,
+  ]);
+
+  // ─── Helpers ─────────────────────────────────────────────────────────────────
+  const formatCurrency = useCallback(
+    amount =>
+      new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+      }).format(amount),
+    [],
+  );
 
   const openStockSheet = useCallback((item, type) => {
     setSelectedProductForStock(item);
@@ -205,13 +306,12 @@ const Item = ({ navigation }) => {
 
   useEffect(() => {
     if (selectedProductForStock) {
-      const t = setTimeout(() => {
-        adjustSheetRef.current?.present();
-      }, 100);
+      const t = setTimeout(() => adjustSheetRef.current?.present(), 100);
       return () => clearTimeout(t);
     }
   }, [selectedProductForStock, actionType]);
 
+  // ─── Renderers ───────────────────────────────────────────────────────────────
   const renderFooter = () => {
     if (!loadingMore) return null;
     return (
@@ -226,41 +326,62 @@ const Item = ({ navigation }) => {
     );
   };
 
-  const renderItemCard = ({ item }) => {
-    const isTopSelling =
-      topSellingProduct &&
-      item.id === topSellingProduct.id &&
-      (item.sellCount || 0) > 0;
+  const renderItemCard = useCallback(
+    ({ item }) => {
+      const isTopSelling =
+        topSellingProduct &&
+        item.id === topSellingProduct.id &&
+        (item.sellCount || 0) > 0;
 
-    const displayPrice =
-      item.discountPrice > 0 ? item.price - item.discountPrice : item.price;
+      const displayPrice =
+        item.discountPrice > 0 ? item.price - item.discountPrice : item.price;
 
-    const showStockButton =
-      isStockEnabled && hasPermission(permissions.CAN_MANAGE_STOCKS);
+      const showStockButton =
+        isStockEnabled && hasPermission(permissions.CAN_MANAGE_STOCKS);
 
-    return (
-      <Surface
-        style={[
-          styles.itemCard,
-          {
-            backgroundColor: theme.colors.surface,
-            borderColor: isTopSelling
-              ? theme.colors.primary
-              : theme.colors.outlineVariant,
-          },
-        ]}
-        elevation={1}
-      >
-        <TouchableOpacity
-          activeOpacity={0.72}
-          style={styles.cardPressArea}
-          onPress={() => navigation.navigate('AddItem', { item })}
+      return (
+        <Surface
+          style={[
+            styles.itemCard,
+            {
+              backgroundColor: theme.colors.surface,
+              borderColor: isTopSelling
+                ? theme.colors.primary
+                : theme.colors.outlineVariant,
+            },
+          ]}
+          elevation={1}
         >
-          {/* ── Main row: left info + right column ── */}
-          <View style={styles.cardMainRow}>
-            {/* LEFT: name / category / meta */}
-            <View style={styles.itemInfo}>
-              <View style={styles.nameRow}>
+          {isTopSelling && (
+            <View
+              style={[
+                styles.topSellingTag,
+                { backgroundColor: theme.colors.primary },
+              ]}
+            >
+              <Icon source="trophy" size={10} color={theme.colors.onPrimary} />
+              <Text
+                style={[
+                  styles.topSellingTagText,
+                  { color: theme.colors.onPrimary },
+                ]}
+              >
+                Top selling Product
+              </Text>
+            </View>
+          )}
+
+          <TouchableOpacity
+            activeOpacity={0.72}
+            style={[
+              styles.cardPressArea,
+              isTopSelling && styles.cardPressAreaWithTag,
+            ]}
+            onPress={() => navigation.navigate('AddItem', { item })}
+          >
+            <View style={styles.cardMainRow}>
+              {/* LEFT */}
+              <View style={styles.itemInfo}>
                 <Text
                   variant="titleSmall"
                   style={styles.itemName}
@@ -268,171 +389,157 @@ const Item = ({ navigation }) => {
                 >
                   {item.name}
                 </Text>
-                {isTopSelling && (
-                  <Chip
-                    icon="trophy"
-                    compact
-                    mode="flat"
-                    style={[
-                      styles.topSellingChip,
-                      { backgroundColor: theme.colors.primaryContainer },
-                    ]}
-                    textStyle={[
-                      styles.topSellingChipText,
-                      { color: theme.colors.onPrimaryContainer },
-                    ]}
-                  >
-                    Top Selling Product
-                  </Chip>
-                )}
-              </View>
-
-              <Text
-                variant="bodySmall"
-                style={[
-                  styles.category,
-                  { color: theme.colors.onSurfaceVariant },
-                ]}
-                numberOfLines={1}
-              >
-                {`${item.category?.name || 'No Category'} • ${item.unit}`}
-              </Text>
-
-              <View style={styles.metaRow}>
-                {item.hsn ? (
-                  <Text
-                    variant="bodySmall"
-                    style={[
-                      styles.metaText,
-                      { color: theme.colors.onSurfaceVariant },
-                    ]}
-                    numberOfLines={1}
-                  >
-                    HSN {item.hsn}
-                  </Text>
-                ) : null}
-
-                {isStockEnabled && item.currentStock !== undefined && (
-                  <View
-                    style={[
-                      styles.stockBadge,
-                      {
-                        backgroundColor:
-                          item.currentStock <= 5
-                            ? '#ffebee'
-                            : item.currentStock <= 20
-                            ? '#fff3e0'
-                            : '#e8f5e9',
-                        borderWidth: 1,
-                        borderColor:
-                          item.currentStock <= 5
-                            ? '#f44336'
-                            : item.currentStock <= 20
-                            ? '#ff9800'
-                            : '#4caf50',
-                        alignSelf: 'flex-start',
-                      },
-                    ]}
-                  >
+                <Text
+                  variant="bodySmall"
+                  style={[
+                    styles.category,
+                    { color: theme.colors.onSurfaceVariant },
+                  ]}
+                  numberOfLines={1}
+                >
+                  {`${item.category?.name || 'No Category'} • ${item.unit}`}
+                </Text>
+                <View style={styles.metaRow}>
+                  {item.hsn ? (
                     <Text
-                      style={{
-                        fontSize: 10,
-                        fontWeight: '600',
-                        color:
-                          item.currentStock <= 5
-                            ? '#c62828'
-                            : item.currentStock <= 20
-                            ? '#e65100'
-                            : '#2e7d32',
-                      }}
+                      variant="bodySmall"
+                      style={[
+                        styles.metaText,
+                        { color: theme.colors.onSurfaceVariant },
+                      ]}
+                      numberOfLines={1}
                     >
-                      {item.currentStock} in stock
+                      HSN {item.hsn}
                     </Text>
-                  </View>
-                )}
+                  ) : null}
+                  {isStockEnabled && item.currentStock !== undefined && (
+                    <View
+                      style={[
+                        styles.stockBadge,
+                        {
+                          backgroundColor:
+                            item.currentStock <= 5
+                              ? '#ffebee'
+                              : item.currentStock <= 20
+                              ? '#fff3e0'
+                              : '#e8f5e9',
+                          borderWidth: 1,
+                          borderColor:
+                            item.currentStock <= 5
+                              ? '#f44336'
+                              : item.currentStock <= 20
+                              ? '#ff9800'
+                              : '#4caf50',
+                          alignSelf: 'flex-start',
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 10,
+                          fontWeight: '600',
+                          color:
+                            item.currentStock <= 5
+                              ? '#c62828'
+                              : item.currentStock <= 20
+                              ? '#e65100'
+                              : '#2e7d32',
+                        }}
+                      >
+                        {item.currentStock} in stock
+                      </Text>
+                    </View>
+                  )}
+                </View>
               </View>
-            </View>
 
-            {/* RIGHT: price / sold + stock button below */}
-            <View style={styles.rightColumn}>
-              {/* Price block */}
-              <View style={styles.priceBlock}>
-                {item.discountPrice > 0 ? (
-                  <>
+              {/* RIGHT */}
+              <View style={styles.rightColumn}>
+                <View style={styles.priceBlock}>
+                  {item.discountPrice > 0 ? (
+                    <>
+                      <Text
+                        style={[styles.price, { color: theme.colors.primary }]}
+                        numberOfLines={1}
+                      >
+                        {formatCurrency(displayPrice)}
+                      </Text>
+                      <Text
+                        style={[
+                          styles.originalPrice,
+                          { color: theme.colors.onSurfaceVariant },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {formatCurrency(item.price)}
+                      </Text>
+                    </>
+                  ) : (
                     <Text
                       style={[styles.price, { color: theme.colors.primary }]}
                       numberOfLines={1}
                     >
                       {formatCurrency(displayPrice)}
                     </Text>
+                  )}
+                  <View style={styles.soldRow}>
+                    <Icon
+                      source="cart-outline"
+                      size={12}
+                      color={theme.colors.onSurfaceVariant}
+                    />
                     <Text
                       style={[
-                        styles.originalPrice,
+                        styles.soldText,
                         { color: theme.colors.onSurfaceVariant },
                       ]}
-                      numberOfLines={1}
                     >
-                      {formatCurrency(item.price)}
+                      {item.sellCount} sold
                     </Text>
-                  </>
-                ) : (
-                  <Text
-                    style={[styles.price, { color: theme.colors.primary }]}
-                    numberOfLines={1}
-                  >
-                    {formatCurrency(displayPrice)}
-                  </Text>
-                )}
-
-                <View style={styles.soldRow}>
-                  <Icon
-                    source="cart-outline"
-                    size={12}
-                    color={theme.colors.onSurfaceVariant}
-                  />
-                  <Text
-                    style={[
-                      styles.soldText,
-                      { color: theme.colors.onSurfaceVariant },
-                    ]}
-                  >
-                    {item.sellCount} sold
-                  </Text>
+                  </View>
                 </View>
-              </View>
 
-              {/* Stock button pinned below price block */}
-              {showStockButton && (
-                <TouchableOpacity
-                  activeOpacity={0.85}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                  onPress={() => openStockSheet(item, 'add')}
-                  style={[
-                    styles.stockButton,
-                    { backgroundColor: theme.colors.primaryContainer },
-                  ]}
-                >
-                  <Icon
-                    source="database-plus"
-                    size={18}
-                    color={theme.colors.primary}
-                  />
-                  <Text
+                {showStockButton && (
+                  <TouchableOpacity
+                    activeOpacity={0.85}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    onPress={() => openStockSheet(item, 'add')}
                     style={[
-                      styles.stockButtonLabel,
-                      { color: theme.colors.primary },
+                      styles.stockButton,
+                      { backgroundColor: theme.colors.primaryContainer },
                     ]}
                   >
-                    Stock
-                  </Text>
-                </TouchableOpacity>
-              )}
+                    <Icon
+                      source="database-plus"
+                      size={18}
+                      color={theme.colors.primary}
+                    />
+                    <Text
+                      style={[
+                        styles.stockButtonLabel,
+                        { color: theme.colors.primary },
+                      ]}
+                    >
+                      Stock
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             </View>
-          </View>
-        </TouchableOpacity>
-      </Surface>
-    );
-  };
+          </TouchableOpacity>
+        </Surface>
+      );
+    },
+    [
+      topSellingProduct,
+      isStockEnabled,
+      hasPermission,
+      theme.colors,
+      formatCurrency,
+      navigation,
+      openStockSheet,
+    ],
+  );
 
   const renderEmptyState = () => (
     <View style={styles.emptyContainer}>
@@ -461,6 +568,7 @@ const Item = ({ navigation }) => {
       style={[styles.fixedHeader, { backgroundColor: theme.colors.background }]}
     >
       {!fromMenu && <CarouselSlider />}
+
       <Searchbar
         placeholder="Search items..."
         onChangeText={setSearchQuery}
@@ -468,30 +576,41 @@ const Item = ({ navigation }) => {
         style={styles.searchbar}
         inputStyle={styles.searchInput}
       />
-      {categories.length > 1 && (
-        <View style={styles.categoryContainer}>
-          <FlatList
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            data={categories}
-            keyExtractor={item => item}
-            renderItem={({ item }) => (
+
+      {/* ── Single unified filter row ── */}
+      <View style={styles.filterContainer}>
+        <FlatList
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          data={allChips}
+          keyExtractor={chip =>
+            chip.kind === 'category'
+              ? `cat-${chip.label}`
+              : `${chip.kind}-${chip.label}`
+          }
+          renderItem={({ item: chip }) => {
+            const active = isChipActive(chip);
+            const isSortChip = chip.kind === 'sort';
+            return (
               <Chip
-                selected={selectedCategory === item}
-                onPress={() => setSelectedCategory(item)}
-                style={styles.categoryChip}
-                mode={selectedCategory === item ? 'flat' : 'outlined'}
+                selected={active}
+                onPress={() => handleChipPress(chip)}
+                style={styles.filterChip}
+                mode={active ? 'flat' : 'outlined'}
                 compact
+                icon={isSortChip ? chip.icon : undefined}
               >
-                {item === 'all' ? 'All' : item}
+                {chip.label}
               </Chip>
-            )}
-          />
-        </View>
-      )}
+            );
+          }}
+          contentContainerStyle={styles.filterChipList}
+        />
+      </View>
     </View>
   );
 
+  // ─── Loading state ────────────────────────────────────────────────────────────
   if (loading && !refreshing) {
     return (
       <SafeAreaView
@@ -503,6 +622,7 @@ const Item = ({ navigation }) => {
     );
   }
 
+  // ─── Main render ──────────────────────────────────────────────────────────────
   return (
     <SafeAreaView
       edges={['top', 'left', 'right']}
@@ -520,7 +640,7 @@ const Item = ({ navigation }) => {
         ListFooterComponent={renderFooter}
         contentContainerStyle={[
           styles.listContainer,
-          filteredItems.length === 0 && styles.emptyListContainer,
+          orderedItems.length === 0 && styles.emptyListContainer,
           { paddingBottom: fromMenu ? 80 + bottom : 50 + bottom },
         ]}
         refreshControl={
@@ -576,9 +696,7 @@ const Item = ({ navigation }) => {
             onActionTypeChange={setActionType}
             onOpenReason={() => {
               adjustSheetRef.current?.close();
-              setTimeout(() => {
-                reasonSheetRef.current?.present();
-              }, 250);
+              setTimeout(() => reasonSheetRef.current?.present(), 250);
             }}
             onStockAdjusted={() => {
               setSelectedProductForStock(null);
@@ -592,9 +710,7 @@ const Item = ({ navigation }) => {
             onSelect={reasonItem => {
               setSelectedReason(reasonItem);
               reasonSheetRef.current?.close();
-              setTimeout(() => {
-                adjustSheetRef.current?.present();
-              }, 250);
+              setTimeout(() => adjustSheetRef.current?.present(), 250);
             }}
           />
         </>
@@ -604,9 +720,7 @@ const Item = ({ navigation }) => {
 };
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   fixedHeader: {
     paddingHorizontal: 16,
     paddingTop: 4,
@@ -616,32 +730,56 @@ const styles = StyleSheet.create({
     elevation: 0,
     borderRadius: 12,
   },
-  searchInput: {
-    fontSize: 14,
-  },
-  categoryContainer: {
+  searchInput: { fontSize: 14 },
+
+  // ── Unified filter row ──
+  filterContainer: {
     marginBottom: 12,
   },
-  categoryChip: {
+  filterChipList: {
+    paddingRight: 8,
+  },
+  filterChip: {
     marginRight: 8,
   },
+
   listContainer: {
     paddingHorizontal: 16,
     paddingBottom: 16,
   },
-  emptyListContainer: {
-    flexGrow: 1,
-  },
+  emptyListContainer: { flexGrow: 1 },
+
+  // ── Card ──
   itemCard: {
     marginBottom: 10,
     borderRadius: 14,
     borderWidth: 1,
     overflow: 'hidden',
+    position: 'relative',
   },
-  // ── No extra paddingRight here; right column handles its own space ──
+  topSellingTag: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderBottomRightRadius: 10,
+    zIndex: 1,
+  },
+  topSellingTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
   cardPressArea: {
     paddingVertical: 14,
     paddingHorizontal: 14,
+  },
+  cardPressAreaWithTag: {
+    paddingTop: 28,
   },
   cardMainRow: {
     flexDirection: 'row',
@@ -653,18 +791,12 @@ const styles = StyleSheet.create({
     marginRight: 12,
     minWidth: 0,
   },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    flexWrap: 'wrap',
-    marginBottom: 4,
-  },
   itemName: {
-    flex: 1,
     fontWeight: '700',
     fontSize: 15,
     lineHeight: 20,
     textTransform: 'capitalize',
+    marginBottom: 4,
   },
   category: {
     fontSize: 12,
@@ -681,17 +813,15 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginRight: 8,
   },
-
-  // ── RIGHT COLUMN: price block + stock button stacked vertically ──
   rightColumn: {
-    alignItems: 'flex-end', // everything right-aligned
+    alignItems: 'flex-end',
     justifyContent: 'flex-start',
     minWidth: 88,
     maxWidth: 120,
   },
   priceBlock: {
     alignItems: 'flex-end',
-    marginBottom: 10, // gap between price info and button
+    marginBottom: 10,
   },
   price: {
     fontSize: 16,
@@ -714,8 +844,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     marginLeft: 3,
   },
-
-  // ── Stock button: pill shape, right-aligned under price ──
   stockButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -728,26 +856,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginLeft: 4,
   },
-
-  topSellingChip: {
-    height: 30,
-    marginTop: 1,
-    marginLeft: 6,
-  },
-  topSellingChipText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
   emptyContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 40,
   },
-  animation: {
-    width: 200,
-    height: 200,
-  },
+  animation: { width: 200, height: 200 },
   emptyTitle: {
     marginTop: 16,
     marginBottom: 8,

@@ -1,11 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import {
-  View,
-  StyleSheet,
-  FlatList,
-  RefreshControl,
-  ScrollView,
-} from 'react-native';
+import { View, StyleSheet, FlatList, RefreshControl } from 'react-native';
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -36,87 +30,11 @@ import Navbar from '../../components/Navbar';
 import NoPermission from '../../components/NoPermission';
 import SelectStockReasonBottomSheet from '../../components/BottomSheet/SelectStockReasonBottomSheet';
 
-/*
-  API response shape  →  /product/stock-transaction/:id
-  {
-    data: {
-      data: [{
-        openingStock, purchaseQty, saleQty,
-        returnInQty,     ← Purchase Return
-        returnOutQty,    ← Sales Return
-        damageQty, expiredQty, adjustmentQty,
-        closingStock, avgRate, itemDescription, currentStockValue
-      }]
-    }
-  }
-*/
-
 const DATE_FILTERS = [
   { label: 'Today', value: 'today' },
   { label: 'Week', value: 'this_week' },
   { label: 'Month', value: 'this_month' },
 ];
-
-// ─── small stat tile ──────────────────────────────────────────────────────────
-const StatTile = ({ label, value, valueColor, icon, theme, highlight }) => (
-  <View
-    style={[
-      statStyles.tile,
-      highlight && {
-        backgroundColor: theme.colors.primaryContainer,
-        borderColor: theme.colors.primary,
-        borderWidth: 1,
-      },
-      !highlight && { backgroundColor: theme.colors.surfaceVariant },
-    ]}
-  >
-    {icon && (
-      <Icon
-        source={icon}
-        size={14}
-        color={valueColor || theme.colors.onSurfaceVariant}
-      />
-    )}
-    <Text
-      variant="labelSmall"
-      style={[statStyles.label, { color: theme.colors.onSurfaceVariant }]}
-      numberOfLines={1}
-    >
-      {label}
-    </Text>
-    <Text
-      variant="titleSmall"
-      style={[
-        statStyles.value,
-        valueColor ? { color: valueColor } : { color: theme.colors.onSurface },
-      ]}
-      numberOfLines={1}
-    >
-      {value}
-    </Text>
-  </View>
-);
-
-const statStyles = StyleSheet.create({
-  tile: {
-    flex: 1,
-    minWidth: '28%',
-    borderRadius: 10,
-    padding: 10,
-    alignItems: 'center',
-    margin: 4,
-  },
-  label: {
-    fontSize: 10,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    marginTop: 4,
-    textAlign: 'center',
-  },
-  value: { fontWeight: '700', fontSize: 13, marginTop: 2, textAlign: 'center' },
-});
-
-// ─── component ────────────────────────────────────────────────────────────────
 
 const StockTransactionScreen = () => {
   const theme = useTheme();
@@ -125,6 +43,7 @@ const StockTransactionScreen = () => {
   const route = useRoute();
   const { id, costPrice, name, currentStock } = route.params;
   const bottom = useSafeAreaInsets().bottom;
+
   const { hasPermission } = useAuth();
 
   if (!hasPermission(permissions.CAN_MANAGE_STOCKS)) {
@@ -133,6 +52,7 @@ const StockTransactionScreen = () => {
 
   const adjustSheetRef = useRef(null);
   const reasonSheetRef = useRef(null);
+
   const [selectedReason, setSelectedReason] = useState(null);
   const [actionType, setActionType] = useState('add');
 
@@ -147,15 +67,20 @@ const StockTransactionScreen = () => {
     }
   }, [isStockEnabled, navigation]);
 
-  // summary row from API (single object, not a list)
-  const [stockSummary, setStockSummary] = useState(null);
+  const [transactions, setTransactions] = useState([]);
   const [activeDateFilter, setActiveDateFilter] = useState('this_month');
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [currentStockState, setCurrentStockState] = useState(currentStock || 0);
 
-  const totalStockValue = currentStock * costPrice;
+  // Calculate total stock value
+  const totalStockValue = currentStockState * costPrice;
+
+  const bottomSheetRef = useRef(null);
 
   const getStartDateFromFilter = filter => {
+    const now = new Date();
+
     switch (filter) {
       case 'today':
         return startOfToday();
@@ -170,233 +95,276 @@ const StockTransactionScreen = () => {
     }
   };
 
-  const fetchTransactions = useCallback(async () => {
-    if (!hasPermission(permissions.CAN_MANAGE_STOCKS)) return;
-    try {
-      setLoading(true);
-      const startDate = getStartDateFromFilter(activeDateFilter);
-      const params = startDate
-        ? { startDate: startDate.toISOString().split('T')[0] }
-        : {};
-      const res = await api.get(`/product/stock-transaction/${id}`, { params });
-      if (res?.success) {
-        // API returns data.data as array; take first element as summary
-        const rows = res?.data?.data;
-        setStockSummary(
-          Array.isArray(rows) && rows.length > 0 ? rows[0] : null,
-        );
-      } else {
-        setStockSummary(null);
-      }
-    } catch (error) {
-      console.error('Fetch Error:', error?.message);
-      setStockSummary(null);
-    } finally {
-      setLoading(false);
-    }
-  }, [id, activeDateFilter, hasPermission]);
-
   useEffect(() => {
+    // guard: don't call fetch at all unless permission present
     if (!hasPermission(permissions.CAN_MANAGE_STOCKS)) {
-      setLoading(false);
+      console.log('Skipping initial fetch — no permission');
+      setLoading(false); // optional: stop loading indicator
       return;
     }
+
     fetchTransactions();
   }, [fetchTransactions, hasPermission]);
 
-  const onRefresh = async () => {
+  const fetchTransactions = useCallback(async () => {
     if (!hasPermission(permissions.CAN_MANAGE_STOCKS)) {
-      Toast.show({ type: 'error', text1: 'Permission denied' });
+      console.log('fetchTransactions skipped — no permission');
       return;
     }
+    try {
+      setLoading(true);
+      const params = {};
+      const startDate = getStartDateFromFilter(activeDateFilter);
+
+      if (startDate) {
+        params.startDate = startDate.toISOString().split('T')[0];
+      }
+
+      const res = await api.get(`/product/stock-transaction/${id}`, { params });
+      console.log('API Response:', res);
+      if (res?.success) {
+        setTransactions(res?.data?.docs || []);
+      } else {
+        setTransactions([]);
+      }
+    } catch (error) {
+      console.error('Fetch Error:', error?.message);
+      setTransactions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [id, activeDateFilter]);
+
+  const onRefresh = async () => {
+    if (!hasPermission(permissions.CAN_MANAGE_STOCKS)) {
+      Toast.show({
+        type: 'error',
+        text1: 'Permission denied',
+        text2: 'You do not have permission to refresh transactions.',
+      });
+      return;
+    }
+
     setRefreshing(true);
     await fetchTransactions();
     setRefreshing(false);
   };
 
-  // ── Overview card ───────────────────────────────────────────────────────────
-  const renderOverviewCard = () => (
-    <Card
-      style={[
-        styles.compactOverviewCard,
-        { backgroundColor: theme.colors.surface },
-      ]}
-      mode="contained"
-    >
-      <Card.Content style={styles.compactContent}>
-        <View style={styles.compactRow}>
-          <View style={styles.compactProductSection}>
-            <Icon
-              source="package-variant"
-              size={18}
-              color={theme.colors.primary}
-            />
-            <Text
-              variant="titleMedium"
-              style={styles.compactProductName}
-              numberOfLines={1}
-            >
-              {name}
-            </Text>
-          </View>
-          <View style={styles.compactCalculation}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <Text variant="titleMedium" style={styles.currentStock}>
-                {currentStock}
-              </Text>
-              <Text style={styles.operator}>×</Text>
-              <Text variant="titleMedium" style={styles.compactUnitCost}>
-                ₹{costPrice.toLocaleString('en-IN')}
-              </Text>
-              <Text style={styles.operator}>=</Text>
-              <Text variant="headlineSmall" style={styles.compactStockValue}>
-                ₹{totalStockValue.toLocaleString('en-IN')}
-              </Text>
-            </View>
-            <Text style={styles.calculationFormula}>
-              Stock × Unit Cost = Stock Value
-            </Text>
-          </View>
-        </View>
-      </Card.Content>
-    </Card>
-  );
+  useEffect(() => {
+    fetchTransactions();
+  }, [fetchTransactions]);
 
-  // ── Summary grid ────────────────────────────────────────────────────────────
-  const renderSummaryGrid = () => {
-    if (!stockSummary) return null;
-    const s = stockSummary;
+  const getTransactionTypeConfig = (type, direction) => {
+    const configs = {
+      PURCHASE: {
+        icon: 'arrow-down-bold',
+        color: '#10b981',
+        label: 'Purchase',
+      },
+      SALE: {
+        icon: 'arrow-up-bold',
+        color: '#ef4444',
+        label: 'Sale',
+      },
+      ADJUSTMENT: {
+        icon: 'adjust',
+        color: '#8b5cf6',
+        label: 'Adjustment',
+      },
+    };
 
-    /*
-      Field mapping:
-        returnInQty   → Purchase Return  (stock comes IN from vendor return)
-        returnOutQty  → Sales Return     (stock goes OUT back to customer — actually
-                                          sales return means stock comes back IN;
-                                          use the label the user requested)
-        adjustmentQty → Adjustment
-    */
-    const rows = [
-      // Row 1 — opening / closing / value
-      [
-        {
-          label: 'Opening Stock',
-          value: s.openingStock ?? 0,
-          icon: 'package-variant-closed',
-          highlight: false,
-        },
-        {
-          label: 'Closing Stock',
-          value: s.closingStock ?? 0,
-          icon: 'package-variant',
-          highlight: true,
-          color: theme.colors.primary,
-        },
-        {
-          label: 'Stock Value',
-          value: `₹${(s.currentStockValue ?? 0).toLocaleString('en-IN')}`,
-          icon: 'currency-inr',
-          color: '#059669',
-        },
-      ],
-      // Row 2 — inbound flows
-      [
-        {
-          label: 'Purchase',
-          value: s.purchaseQty ?? 0,
-          icon: 'arrow-down-bold',
-          color: '#10b981',
-        },
-        {
-          label: 'Purchase Return',
-          value: s.returnInQty ?? 0,
-          icon: 'arrow-u-left-top',
-          color: '#10b981',
-        },
-        {
-          label: 'Sales Return',
-          value: s.returnOutQty ?? 0,
-          icon: 'arrow-u-right-top',
-          color: '#f59e0b',
-        },
-      ],
-      // Row 3 — outbound / misc
-      [
-        {
-          label: 'Sales',
-          value: s.saleQty ?? 0,
-          icon: 'arrow-up-bold',
-          color: '#ef4444',
-        },
-        {
-          label: 'Damage',
-          value: s.damageQty ?? 0,
-          icon: 'alert-circle-outline',
-          color: '#ef4444',
-        },
-        {
-          label: 'Expired',
-          value: s.expiredQty ?? 0,
-          icon: 'clock-alert-outline',
-          color: '#ef4444',
-        },
-      ],
-      // Row 4 — adjustment + avg rate + description
-      [
-        {
-          label: 'Adjustment',
-          value: s.adjustmentQty ?? 0,
-          icon: 'tune',
-          color: '#8b5cf6',
-        },
-        {
-          label: 'Avg Rate',
-          value: `₹${(s.avgRate ?? 0).toLocaleString('en-IN')}`,
-          icon: 'calculator-variant-outline',
-          color: '#6366f1',
-        },
-        {
-          label: 'Description',
-          value: s.itemDescription ?? '—',
-          icon: 'information-outline',
-        },
-      ],
-    ];
+    const baseConfig = configs[type] || {
+      icon: 'help-circle',
+      color: theme.colors.outline,
+      label: type,
+    };
 
+    if (type === 'ADJUSTMENT') {
+      return {
+        ...baseConfig,
+        color: direction === 'wwwwww' ? '#ef4444' : '#10b981',
+        label: direction === 'OUT' ? 'Stock Out' : 'Stock In',
+      };
+    }
+
+    return baseConfig;
+  };
+
+  // Format amount function
+  const formatAmount = amount => {
+    return `₹${Number(amount).toLocaleString('en-IN')}`;
+  };
+
+  // Compact Overview Card
+  const renderOverviewCard = () => {
     return (
-      <Card mode="outlined" style={styles.summaryCard}>
-        <Card.Content style={styles.summaryCardContent}>
-          <Text
-            variant="labelMedium"
-            style={[
-              styles.sectionLabel,
-              { color: theme.colors.onSurfaceVariant },
-            ]}
-          >
-            STOCK SUMMARY
-          </Text>
-          {rows.map((row, ri) => (
-            <View key={ri} style={styles.tileRow}>
-              {row.map((tile, ti) => (
-                <StatTile
-                  key={ti}
-                  label={tile.label}
-                  value={String(tile.value)}
-                  valueColor={tile.color}
-                  icon={tile.icon}
-                  theme={theme}
-                  highlight={tile.highlight}
-                />
-              ))}
+      <Card
+        style={[
+          styles.compactOverviewCard,
+          { backgroundColor: theme.colors.surface },
+        ]}
+        mode="contained"
+      >
+        <Card.Content style={styles.compactContent}>
+          <View style={styles.compactRow}>
+            {/* Product Info */}
+            <View style={styles.compactProductSection}>
+              <Icon
+                source="package-variant"
+                size={18}
+                color={theme.colors.primary}
+              />
+              <Text
+                variant="titleMedium"
+                style={styles.compactProductName}
+                numberOfLines={1}
+              >
+                {name}
+              </Text>
             </View>
-          ))}
+
+            {/* Calculation Formula */}
+            <View style={styles.compactCalculation}>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Text variant="titleMedium" style={styles.currentStock}>
+                  {currentStock}
+                </Text>
+                <Text style={styles.operator}>×</Text>
+                <Text variant="titleMedium" style={styles.compactUnitCost}>
+                  ₹{costPrice.toLocaleString('en-IN')}
+                </Text>
+                <Text style={styles.operator}>=</Text>
+                <Text variant="headlineSmall" style={styles.compactStockValue}>
+                  {formatAmount(totalStockValue)}
+                </Text>
+              </View>
+              <Text style={styles.calculationFormula}>
+                Stock × Unit Cost = Stock Value
+              </Text>
+            </View>
+          </View>
         </Card.Content>
       </Card>
     );
   };
 
-  // ── Empty state ─────────────────────────────────────────────────────────────
+  const renderItem = ({ item }) => {
+    const typeConfig = getTransactionTypeConfig(
+      item.transactionType,
+      item.direction,
+    );
+
+    const isInbound = item.direction === 'IN';
+
+    return (
+      <Card style={styles.card} mode="elevated">
+        <Card.Content style={styles.cardContent}>
+          {/* Compact Header */}
+          <View style={styles.header}>
+            <View style={styles.typeSection}>
+              <View
+                style={[
+                  styles.iconContainer,
+                  { backgroundColor: `${typeConfig.color}15` },
+                ]}
+              >
+                <Icon
+                  source={typeConfig.icon}
+                  size={16}
+                  color={typeConfig.color}
+                />
+              </View>
+              <View>
+                <Text
+                  variant="labelLarge"
+                  style={{ fontWeight: '600', fontSize: 14 }}
+                >
+                  {typeConfig.label}
+                </Text>
+                <View style={styles.dateRow}>
+                  <Icon
+                    source="calendar"
+                    size={12}
+                    color={theme.colors.onSurfaceVariant}
+                  />
+                  <Text variant="labelSmall" style={styles.dateText}>
+                    {format(new Date(item.updatedAt), 'dd MMM yy hh:mm a')}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.amountSection}>
+              <Text
+                variant="titleMedium"
+                style={[
+                  styles.quantityText,
+                  { color: isInbound ? '#10b981' : '#ef4444' },
+                ]}
+              >
+                {isInbound ? '+' : '-'}
+                {item.quantity}
+              </Text>
+              <Text variant="labelMedium" style={styles.totalAmount}>
+                ₹{item.totalAmount}
+              </Text>
+            </View>
+          </View>
+
+          {/* Compact Details */}
+          <View style={styles.details}>
+            <View style={styles.detailRow}>
+              <View style={styles.detailItem}>
+                <Icon
+                  source="currency-inr"
+                  size={14}
+                  color={theme.colors.onSurfaceVariant}
+                />
+                <Text variant="labelSmall" style={styles.detailLabel}>
+                  Rate: ₹{item.rate}
+                </Text>
+              </View>
+
+              {/* <View
+                style={[
+                  styles.statusBadge,
+                  {
+                    backgroundColor: isInbound ? '#dcfce7' : '#fef2f2',
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.statusText,
+                    { color: isInbound ? '#166534' : '#991b1b' },
+                  ]}
+                >
+                  {item.direction}
+                </Text>
+              </View> */}
+            </View>
+
+            {/* Remarks - only show if exists */}
+            {item.remarks ? (
+              <View style={styles.remarks}>
+                <Text
+                  variant="labelSmall"
+                  style={styles.remarksLabel}
+                  numberOfLines={2}
+                >
+                  {item.remarks}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        </Card.Content>
+      </Card>
+    );
+  };
+
   const renderEmptyState = () => {
     if (loading) return null;
+
     return (
       <View style={styles.emptyContainer}>
         <Icon
@@ -405,13 +373,17 @@ const StockTransactionScreen = () => {
           color={theme.colors.outline}
         />
         <Text variant="titleMedium" style={styles.emptyTitle}>
-          No Data
+          No Transactions
         </Text>
         <Text
           variant="bodyMedium"
           style={[styles.emptySubtitle, { color: theme.colors.outline }]}
         >
-          No stock summary found for this period
+          {activeDateFilter !== 'all'
+            ? `No transactions found for ${
+                DATE_FILTERS.find(f => f.value === activeDateFilter)?.label
+              }`
+            : 'No stock transactions found'}
         </Text>
       </View>
     );
@@ -423,9 +395,10 @@ const StockTransactionScreen = () => {
     >
       <Navbar title="Stock Transactions" />
 
+      {/* Compact Overview Card */}
       {renderOverviewCard()}
 
-      {/* Date Filters */}
+      {/* Compact Date Filters */}
       <View style={styles.filtersContainer}>
         <FlatList
           data={DATE_FILTERS}
@@ -447,7 +420,7 @@ const StockTransactionScreen = () => {
         />
       </View>
 
-      {/* Body */}
+      {/* Transactions List */}
       {loading ? (
         <View style={styles.centered}>
           <ActivityIndicator
@@ -456,22 +429,24 @@ const StockTransactionScreen = () => {
             color={theme.colors.primary}
           />
           <Text variant="bodyMedium" style={{ marginTop: 10 }}>
-            Loading...
+            Loading transactions...
           </Text>
         </View>
       ) : (
-        <ScrollView
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingBottom: bottom + 100 },
-          ]}
+        <FlatList
+          data={transactions}
+          keyExtractor={item => item._id}
+          renderItem={renderItem}
           refreshControl={
             <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
           }
+          contentContainerStyle={
+            transactions.length === 0 ? styles.emptyListContainer : styles.list
+          }
           showsVerticalScrollIndicator={false}
-        >
-          {stockSummary ? renderSummaryGrid() : renderEmptyState()}
-        </ScrollView>
+          ListEmptyComponent={renderEmptyState}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+        />
       )}
 
       {/* FAB */}
@@ -498,7 +473,12 @@ const StockTransactionScreen = () => {
             reasonSheetRef.current?.present();
           }, 250);
         }}
-        onStockAdjusted={fetchTransactions}
+        onStockAdjusted={(res, body) => {
+          if (body?.quantity !== undefined) {
+            setCurrentStockState(prevStock => prevStock + body.quantity);
+          }
+          fetchTransactions();
+        }}
       />
       <SelectStockReasonBottomSheet
         ref={reasonSheetRef}
@@ -517,16 +497,24 @@ const StockTransactionScreen = () => {
 };
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-
-  // Overview card
+  container: {
+    flex: 1,
+  },
+  // Compact Overview Card Styles
   compactOverviewCard: {
     marginHorizontal: 16,
     marginVertical: 12,
     borderRadius: 12,
     elevation: 1,
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    // backgroundColor: 'rgba(255, 255, 255, 0.95)',
   },
-  compactContent: { paddingVertical: 10, paddingHorizontal: 14 },
+  compactContent: {
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
   compactRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -544,40 +532,171 @@ const styles = StyleSheet.create({
     fontSize: 14,
     flex: 1,
   },
-  compactCalculation: { alignItems: 'center', marginLeft: 8, minWidth: 80 },
-  currentStock: { fontWeight: '700', fontSize: 14, color: '#FFCE1B' },
-  compactUnitCost: { fontWeight: '600', fontSize: 12, color: '#9ca3af' },
-  compactStockValue: { fontWeight: '700', fontSize: 14, color: '#059669' },
+  compactMetrics: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  compactMetricItem: {
+    alignItems: 'center',
+    marginLeft: 8,
+    minWidth: 70,
+  },
+  compactCalculation: {
+    alignItems: 'center',
+    marginLeft: 8,
+    minWidth: 80,
+  },
+  currentStock: {
+    fontWeight: '700',
+    fontSize: 14,
+    color: '#FFCE1B',
+  },
+  compactUnitCost: {
+    fontWeight: '600',
+    fontSize: 12,
+    color: '#9ca3af',
+  },
+  compactStockValue: {
+    fontWeight: '700',
+    fontSize: 14,
+    color: '#059669',
+  },
+  compactLabel: {
+    fontSize: 9,
+    color: '#6b7280',
+    marginTop: 1,
+  },
   calculationFormula: {
     fontSize: 9,
     color: '#6b7280',
     textAlign: 'center',
     marginTop: 2,
+    lineHeight: 11,
   },
-  operator: { fontSize: 10, color: '#9ca3af', marginHorizontal: 4 },
-
-  // Filters
+  operator: {
+    fontSize: 10,
+    color: '#9ca3af',
+    marginHorizontal: 4,
+  },
+  // Existing Styles - NO CHANGES
   filtersContainer: {
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(0,0,0,0.08)',
   },
-  filters: { paddingHorizontal: 16, paddingVertical: 12 },
-  filterChip: { marginRight: 8, height: 32 },
-  filterChipText: { fontSize: 13, fontWeight: '500' },
-
-  // Summary card
-  scrollContent: { padding: 12 },
-  summaryCard: { borderRadius: 14, marginBottom: 12 },
-  summaryCardContent: { paddingHorizontal: 12, paddingVertical: 14 },
-  sectionLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.8,
+  filters: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  filterChip: {
+    marginRight: 8,
+    height: 32,
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  list: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    paddingBottom: 80,
+  },
+  emptyListContainer: {
+    flexGrow: 1,
+    paddingHorizontal: 16,
+  },
+  card: {
+    marginVertical: 2,
+    borderRadius: 12,
+    elevation: 1,
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 1 },
+  },
+  cardContent: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: 8,
   },
-  tileRow: { flexDirection: 'row', marginBottom: 4 },
-
-  // States
+  typeSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  iconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 2,
+  },
+  dateText: {
+    marginLeft: 4,
+    fontSize: 11,
+    color: '#6b7280',
+  },
+  amountSection: {
+    alignItems: 'flex-end',
+  },
+  quantityText: {
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  totalAmount: {
+    fontWeight: '600',
+    color: '#1f2937',
+    marginTop: 2,
+    fontSize: 14,
+  },
+  details: {
+    marginBottom: 4,
+  },
+  detailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  detailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  detailLabel: {
+    marginLeft: 6,
+    color: '#6b7280',
+    fontSize: 12,
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  statusText: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  remarks: {
+    marginTop: 4,
+  },
+  remarksLabel: {
+    color: '#6b7280',
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  separator: {
+    height: 8,
+  },
   centered: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -596,9 +715,11 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 8,
   },
-  emptySubtitle: { textAlign: 'center', lineHeight: 20, fontSize: 14 },
-
-  // FAB
+  emptySubtitle: {
+    textAlign: 'center',
+    lineHeight: 20,
+    fontSize: 14,
+  },
   fab: {
     position: 'absolute',
     margin: 16,

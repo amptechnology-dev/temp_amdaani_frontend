@@ -594,7 +594,7 @@ const Transactions = ({ isNavbar = true }) => {
             />
             <Text variant="labelSmall" style={styles.date}>
               {format(
-                new Date(purchase ? t.date : t.invoiceDate),
+                new Date(purchase ? t.updatedAt : t.updatedAt),
                 'dd MMM yyyy, hh:mm a',
               )}
             </Text>

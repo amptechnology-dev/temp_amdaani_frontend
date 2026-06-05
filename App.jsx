@@ -77,6 +77,8 @@ import StockReport from './src/screens/report/StockReport';
 import UserActivity from './src/screens/menu/UserActivity';
 import ActivePlanDetails from './src/screens/menu/ActivePlanDetails';
 import PurchaseReport from './src/screens/report/PurchaseReport';
+import SundryCreditorsReport from './src/screens/report/SundryCreditorsReport';
+import SundryDebtorsReport from './src/screens/report/SundryDebtorsReport';
 
 const Stack = createStackNavigator();
 
@@ -211,6 +213,15 @@ function RootNavigator() {
         <Stack.Screen name="Purchase" component={Purchase} />
         <Stack.Screen name="StockReport" component={StockReport} />
         <Stack.Screen name="PurchaseReport" component={PurchaseReport} />
+
+        <Stack.Screen
+          name="SundryCreditorsReport"
+          component={SundryCreditorsReport}
+        />
+        <Stack.Screen
+          name="SundryDebtorsReport"
+          component={SundryDebtorsReport}
+        />
       </Stack.Navigator>
       <Toast config={toastConfig} />
     </>

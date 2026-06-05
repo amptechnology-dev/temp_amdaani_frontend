@@ -7,7 +7,7 @@ import BaseBottomSheet from './BaseBottomSheet';
 const ADD_REASONS = [
   { id: 'NEW_PURCHASE', name: 'New Purchase' },
   { id: 'STOCK_CORRECTION', name: 'Stock Correction (Increase)' },
-  { id: 'SALE_RETURN', name: 'Return from Customer' },
+  { id: 'SALE_RETURN', name: 'Sale Return' },
   { id: 'FREE_STOCK', name: 'Free Stock / Bonus' },
 ];
 
@@ -16,7 +16,7 @@ const REMOVE_REASONS = [
   { id: 'EXPIRED', name: 'Expired Stock' },
   { id: 'STOCK_CORRECTION', name: 'Stock Correction (Decrease)' },
   { id: 'INTERNAL_USE', name: 'Internal Usage' },
-  { id: 'PURCHASE_RETURN', name: 'Return to Vendor' },
+  { id: 'PURCHASE_RETURN', name: 'Purchase Return' },
 ];
 
 const SelectStockReasonBottomSheet = forwardRef(

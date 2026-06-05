@@ -110,6 +110,8 @@ const AdjustStockBottomSheet = React.forwardRef(
     const handleSubmit = async (values, { resetForm, setSubmitting }) => {
       try {
         const formattedDate = format(values.adjustmentDate, 'yyyy-MM-dd');
+
+        console.log('Submitting with values:', values);
         const finalQuantity =
           values.actionType === 'reduce'
             ? -Math.abs(values.quantity)
@@ -134,7 +136,7 @@ const AdjustStockBottomSheet = React.forwardRef(
             text1: 'Success',
             text2: res.message || 'Stock adjusted successfully!',
           });
-          await onStockAdjusted?.(res);
+          await onStockAdjusted?.(res, body);
           resetForm();
           handleClose();
         } else {

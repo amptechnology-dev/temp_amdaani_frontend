@@ -1,5 +1,3 @@
-// AddItem.jsx - Add + Update unified
-
 import React, {
   useState,
   useCallback,
@@ -113,7 +111,6 @@ const AddItem = () => {
   const isEditMode = Boolean(itemToEdit);
   const { authState, isStockEnabled, hasPermission } = useAuth();
   const storedata = authState?.user?.store;
-  // console.log('Store details', storedata);
 
   const theme = useTheme();
   const formikRef = useRef(null);
@@ -162,11 +159,11 @@ const AddItem = () => {
   const [categoryToEdit, setCategoryToEdit] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [categoryRefreshKey, setCategoryRefreshKey] = useState(0);
-  // const [isLoading, setIsLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(Date.now());
   const [selectedHsnCode, setSelectedHsnCode] = useState(null);
   const [hsnCodeRefreshKey, setHsnCodeRefreshKey] = useState(0);
   const [alertVisible, setAlertVisible] = useState(false);
+  const [isFetchingProduct, setIsFetchingProduct] = useState(false);
 
   const { units } = unitsData;
 
@@ -174,7 +171,6 @@ const AddItem = () => {
     unitValue => {
       if (!unitValue) return null;
       if (typeof unitValue === 'object' && unitValue.name) {
-        // already structured
         return (
           units.find(
             u => u.name?.toLowerCase() === unitValue.name?.toLowerCase(),
@@ -195,17 +191,12 @@ const AddItem = () => {
   const mapCategoryFromItem = useCallback(
     categoryValue => {
       if (!categoryValue) return null;
-
-      // already object with _id + name
       if (typeof categoryValue === 'object' && categoryValue._id) {
         return categoryValue;
       }
-
-      // fallback id lookup
       if (typeof categoryValue === 'string') {
         return categories.find(c => c._id === categoryValue) || null;
       }
-
       return null;
     },
     [categories],
@@ -219,7 +210,6 @@ const AddItem = () => {
           taxRate: null,
         };
       }
-      // Consider this as "with tax"
       return {
         taxOption: {
           id: 'with_tax',
@@ -260,13 +250,10 @@ const AddItem = () => {
           }
         : null;
 
-    // ── Selling discount prefill ───────────────────────────────────────────────
     const savedDiscountType = itemToEdit?.discountType ?? 'amount';
     const savedDiscountPercentage = Number(itemToEdit?.discountPercentage ?? 0);
     const savedDiscountPrice = Number(itemToEdit?.discountPrice ?? 0);
 
-    // If type is 'percentage', show the percentage number in the input (e.g. "10")
-    // If type is 'amount', show the flat ₹ discount (e.g. "50")
     const discountPriceDisplay =
       savedDiscountType === 'percentage'
         ? savedDiscountPercentage > 0
@@ -276,7 +263,6 @@ const AddItem = () => {
         ? String(savedDiscountPrice)
         : '';
 
-    // selectedDiscountType object must match the saved discountType string
     const selectedDiscountType =
       savedDiscountType === 'percentage'
         ? {
@@ -285,9 +271,8 @@ const AddItem = () => {
             icon: 'percent',
             symbol: '%',
           }
-        : defaultDiscountType; // id: 'amount'
+        : defaultDiscountType;
 
-    // ── Purchase discount prefill ─────────────────────────────────────────────
     const savedPurchaseDiscountType =
       itemToEdit?.purchaseDiscountType ?? 'amount';
     const savedPurchaseDiscountPercentage = Number(
@@ -295,7 +280,6 @@ const AddItem = () => {
     );
 
     return {
-      // FIX: use sellingPrice (API field) with fallback to price
       itemName: itemToEdit?.name || '',
       itemCode: itemToEdit?.sku || '',
       hsnCode: itemToEdit?.hsn || '',
@@ -309,12 +293,8 @@ const AddItem = () => {
       selectedCategory: categoryMapped,
       selectedTaxOption: taxOption,
       selectedTaxRate: taxRate,
-
-      // discount input shows percentage number OR flat amount depending on type
       discountPrice: discountPriceDisplay,
-      selectedDiscountType, // ← object in sync with discountType string below
-
-      // 4 raw fields sent to API
+      selectedDiscountType,
       discountType: savedDiscountType,
       discountPercentage: savedDiscountPercentage,
       purchaseDiscountType: savedPurchaseDiscountType,
@@ -328,34 +308,14 @@ const AddItem = () => {
     defaultDiscountType,
   ]);
 
-  // const generateItemCode = setFieldValue => {
-  //   setIsGeneratingCode(true);
-  //   setTimeout(() => {
-  //     const randomCode = Math.floor(
-  //       10000000 + Math.random() * 90000000,
-  //     ).toString();
-  //     setFieldValue('itemCode', randomCode);
-  //     setIsGeneratingCode(false);
-  //     Toast.show({
-  //       type: 'success',
-  //       text1: 'Code Generated',
-  //       text2: 'Item code generated successfully',
-  //     });
-  //   }, 800);
-  // };
-
-  // Called by selector when Add New is pressed
   const handleAddNewHsnCode = useCallback(() => {
-    // console.log('Opening Add HSN');
     hsnBottomSheet.close();
     addHsnSheet.expand();
   }, []);
 
   const handleCreateHsnCode = useCallback(newHsn => {
-    // close add form
     addHsnSheet.close();
 
-    // ✅ auto select new HSN in Formik
     if (formikRef.current) {
       const { setFieldValue } = formikRef.current;
       setSelectedHsnCode(newHsn);
@@ -367,21 +327,15 @@ const AddItem = () => {
           label: `${newHsn.gstRate}% GST`,
         });
         setFieldValue('selectedTaxOption', {
-          id: 'without_tax', // ← was 'with_tax'
-          label: 'Exclude Tax', // ← was 'With Tax'
+          id: 'without_tax',
+          label: 'Exclude Tax',
           description: 'Price excludes taxes (tax will be added on top)',
           icon: 'minus-circle-outline',
         });
       }
     }
 
-    //  refresh selector list
     setHsnCodeRefreshKey(Date.now());
-
-    //  reopen selector with new data visible
-    // setTimeout(() => {
-    //   hsnBottomSheet.expand();
-    // }, 400);
   }, []);
 
   const handleSelect = ({ field, value, helpers, closeFn, extra }) => {
@@ -395,7 +349,6 @@ const AddItem = () => {
     closeFn?.();
   };
 
-  // Create Category Handler
   const handleCreateCategory = (newCategory, setFieldValue) => {
     setCategories(prev => [...prev, newCategory]);
     setSelectedCategory(newCategory);
@@ -419,7 +372,6 @@ const AddItem = () => {
     Toast.show({ type: 'success', text1: 'Category updated successfully!' });
   };
 
-  // Submit Form (Create or Update)
   const handleSubmitForm = async (
     values,
     { resetForm, setSubmitting, setErrors },
@@ -432,28 +384,24 @@ const AddItem = () => {
       const purchasePrice = Number(values.purchasePrice) || 0;
       const inputDiscount = Number(values.discountPrice) || 0;
 
-      // FIX: always derive discountTypeId from selectedDiscountType object
-      // because that's what the UI controls — discountType string is derived from it
       const discountTypeId = values.selectedDiscountType?.id ?? 'amount';
 
-      // ── Selling discount calculations ──────────────────────────────────────
       let discountValue = 0;
       let discountPercentage = 0;
 
       if (discountTypeId === 'percentage') {
-        discountPercentage = inputDiscount; // user typed "10" → 10%
+        discountPercentage = inputDiscount;
         discountValue = parseFloat(
           ((salesPrice * inputDiscount) / 100).toFixed(2),
-        ); // computed flat ₹
+        );
       } else {
-        discountValue = inputDiscount; // user typed flat ₹
+        discountValue = inputDiscount;
         discountPercentage =
           salesPrice > 0
             ? parseFloat(((inputDiscount / salesPrice) * 100).toFixed(4))
             : 0;
       }
 
-      // ── Purchase discount ──────────────────────────────────────────────────
       const purchaseDiscountType = values.purchaseDiscountType ?? 'amount';
       const purchaseDiscountPercentage =
         Number(values.purchaseDiscountPercentage) || 0;
@@ -507,8 +455,6 @@ const AddItem = () => {
             selectedCategory: values.selectedCategory,
             selectedTaxOption: values.selectedTaxOption,
             selectedTaxRate: values.selectedTaxRate,
-            // FIX: after save, input should still show what user typed
-            // (percentage number if type=percentage, flat if type=amount)
             discountPrice: inputDiscount > 0 ? String(inputDiscount) : '',
             selectedDiscountType: values.selectedDiscountType,
             discountType: discountTypeId,
@@ -576,6 +522,7 @@ const AddItem = () => {
       setIsTransitioning(false);
     }
   };
+
   // Display helpers
   const getUnitText = unit => (unit ? `${unit.name} (${unit.symbol})` : '');
   const getCategoryText = cat => (cat ? cat.name : '');
@@ -583,10 +530,40 @@ const AddItem = () => {
     rate ? `${rate.rate}% ${rate.label.includes('IGST') ? 'IGST' : 'GST'}` : '';
 
   const productId = itemToEdit?.id || itemToEdit?._id;
+
+  // Opening stock state — starts empty; useEffect below populates it in edit mode
   const [openingStockValues, setOpeningStockValues] = useState({
     openingStock: '',
     value: '',
   });
+
+  // ─── Fetch fresh product data in edit mode to prefill opening stock ──────────
+  useEffect(() => {
+    if (!isEditMode || !productId) return;
+
+    const fetchProduct = async () => {
+      try {
+        setIsFetchingProduct(true);
+        const response = await api.get(`/product/id/${productId}`);
+        const data = response?.data?.data || response?.data;
+
+        const fyStock = data?.financialYearStock;
+        if (fyStock) {
+          setOpeningStockValues({
+            openingStock: fyStock.stock > 0 ? String(fyStock.stock) : '',
+            value: fyStock.value > 0 ? String(fyStock.value) : '',
+          });
+        }
+      } catch (err) {
+        console.warn('Failed to fetch product for opening stock prefill:', err);
+      } finally {
+        setIsFetchingProduct(false);
+      }
+    };
+
+    fetchProduct();
+  }, [isEditMode, productId]);
+  // ─────────────────────────────────────────────────────────────────────────────
 
   const openStockAdjustmentScreen = useCallback(() => {
     navigation.navigate('StockTransactionScreen', {
@@ -665,7 +642,7 @@ const AddItem = () => {
                 setSelectedHsnCode(null);
                 setFieldValue('hsnCode', '');
                 setFieldValue('selectedTaxRate', null);
-                setFieldValue('selectedTaxOption', defaultTaxOption); // Exclude Tax
+                setFieldValue('selectedTaxOption', defaultTaxOption);
                 hsnBottomSheet.close();
                 return;
               }
@@ -678,7 +655,6 @@ const AddItem = () => {
                   rate: Number(hsnCode.gstRate),
                   label: `${hsnCode.gstRate}% GST`,
                 });
-                // ← FIX: set Exclude Tax (not Include Tax) — tax rate is set separately
                 setFieldValue('selectedTaxOption', {
                   id: 'without_tax',
                   label: 'Exclude Tax',
@@ -696,13 +672,6 @@ const AddItem = () => {
 
             return (
               <>
-                {/* <KeyboardAvoidingView style={{ flex: 1 }} behavior={'padding'}>
-                  <ScrollView
-                    contentContainerStyle={styles.scrollContent}
-                    showsVerticalScrollIndicator={false}
-                    keyboardShouldPersistTaps="handled"
-                    automaticallyAdjustKeyboardInsets
-                  > */}
                 <KeyboardAwareScrollView
                   style={{ flex: 1 }}
                   contentContainerStyle={styles.scrollContent}
@@ -852,76 +821,7 @@ const AddItem = () => {
                       </Text>
                     )}
 
-                    {/* Item Code Input with Assign Code Button */}
-                    {/* <View style={styles.itemCodeInputContainer}>
-                      <TextInput
-                        label="SKU"
-                        mode="outlined"
-                        value={values.itemCode}
-                        onChangeText={handleChange('itemCode')}
-                        style={styles.input}
-                        theme={{ roundness: 12 }}
-                        contentStyle={
-                          values.itemCode
-                            ? styles.inputContent
-                            : styles.itemCodeInputContent
-                        }
-                        placeholder="Enter or assign SKU"
-                        keyboardType="default"
-                        maxLength={20}
-                      /> */}
-
-                    {/* {!values.itemCode && (
-                          <TouchableOpacity
-                            style={[
-                              styles.assignCodeButton,
-                              {
-                                backgroundColor: isGeneratingCode
-                                  ? theme.colors.surfaceVariant
-                                  : theme.colors.primary,
-                                borderColor: theme.colors.primary,
-                              },
-                            ]}
-                            onPress={() => generateItemCode(setFieldValue)}
-                            disabled={isGeneratingCode}
-                            activeOpacity={0.7}
-                          >
-                            {isGeneratingCode ? (
-                              <ActivityIndicator
-                                size={16}
-                                color={theme.colors.onPrimary}
-                              />
-                            ) : (
-                              <Text
-                                style={[
-                                  styles.assignCodeButtonText,
-                                  {
-                                    color: isGeneratingCode
-                                      ? theme.colors.onSurfaceVariant
-                                      : theme.colors.onPrimary,
-                                  },
-                                ]}
-                              >
-                                Assign Code
-                              </Text>
-                            )}
-                          </TouchableOpacity>
-                        )} */}
-                    {/* </View> */}
-
                     {/* HSN/SAC Code Input */}
-                    {/* <TextInput
-                          label="HSN/SAC Code"
-                          mode="outlined"
-                          value={values.hsnCode}
-                          onChangeText={handleChange('hsnCode')}
-                          style={styles.input}
-                          theme={{ roundness: 12 }}
-                          contentStyle={styles.inputContent}
-                          placeholder="Enter HSN/SAC code"
-                          keyboardType="numeric"
-                          maxLength={10}
-                        /> */}
                     {storedata?.gstNumber && (
                       <View style={styles.inputContainer}>
                         <TextInput
@@ -929,7 +829,6 @@ const AddItem = () => {
                           value={values.hsnCode}
                           onChangeText={handleChange('hsnCode')}
                           mode="outlined"
-                          //editable={false}
                           style={[
                             styles.input,
                             isTransitioning && styles.inputDisabled,
@@ -943,9 +842,6 @@ const AddItem = () => {
                           style={StyleSheet.absoluteFill}
                           onPress={() => {
                             hsnBottomSheet.expand();
-                            // setTimeout(() => {
-                            //   hsnBottomSheet.close();
-                            // }, 1000);
                           }}
                           activeOpacity={0.7}
                           disabled={isTransitioning}
@@ -954,6 +850,7 @@ const AddItem = () => {
                         />
                       </View>
                     )}
+
                     {/* Sales Price Section */}
                     <View style={styles.salesPriceSection}>
                       <View style={styles.headerSection}>
@@ -1209,7 +1106,6 @@ const AddItem = () => {
                           style={{
                             color: theme.colors.error,
                             fontSize: 12,
-                            // marginTop: -4,
                             marginBottom: 8,
                           }}
                         >
@@ -1265,86 +1161,95 @@ const AddItem = () => {
                     )}
                   </View>
 
-                  {!isEditMode && (
-                    <View style={styles.openingStockSection}>
-                      {!showOpeningStockInline ? (
-                        <TouchableOpacity
-                          onPress={openAddOpeningStockInline}
+                  {/* Opening Stock Section */}
+                  <View style={styles.openingStockSection}>
+                    {isFetchingProduct ? (
+                      // Show a small spinner while fetching financial year stock
+                      <ActivityIndicator
+                        size="small"
+                        style={{ marginVertical: 8, alignSelf: 'flex-start' }}
+                        color={theme.colors.primary}
+                      />
+                    ) : !showOpeningStockInline ? (
+                      <TouchableOpacity
+                        onPress={openAddOpeningStockInline}
+                        style={{
+                          alignSelf: 'flex-start',
+                          backgroundColor: theme.colors.background,
+                          borderColor: theme.colors.primary + 20,
+                          borderWidth: 1,
+                          borderRadius: 12,
+                          padding: 4,
+                          marginVertical: 4,
+                          paddingHorizontal: 16,
+                        }}
+                      >
+                        <Text
                           style={{
-                            alignSelf: 'flex-start',
-                            backgroundColor: theme.colors.background,
-                            borderColor: theme.colors.primary + 20,
-                            borderWidth: 1,
-                            borderRadius: 12,
-                            padding: 4,
-                            marginVertical: 4,
-                            paddingHorizontal: 16,
+                            fontSize: 12,
+                            color: theme.colors.primary,
                           }}
                         >
-                          <Text
-                            style={{
-                              fontSize: 12,
-                              color: theme.colors.primary,
-                            }}
+                          {openingStockValues.openingStock
+                            ? 'Edit Opening Stock'
+                            : 'Add Opening Stock'}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={{ width: '100%' }}>
+                        <TextInput
+                          label="Opening Stock"
+                          mode="outlined"
+                          value={String(openingStockValues.openingStock)}
+                          onChangeText={text =>
+                            setOpeningStockValues(prev => ({
+                              ...prev,
+                              openingStock: text,
+                            }))
+                          }
+                          style={styles.input}
+                          placeholder="Enter opening stock quantity"
+                          keyboardType="numeric"
+                          theme={{ roundness: 12 }}
+                        />
+
+                        <TextInput
+                          label="Opening Stock Value (in Total)"
+                          mode="outlined"
+                          value={String(openingStockValues.value)}
+                          onChangeText={text =>
+                            setOpeningStockValues(prev => ({
+                              ...prev,
+                              value: text,
+                            }))
+                          }
+                          style={styles.input}
+                          placeholder="Enter total opening stock value"
+                          keyboardType="numeric"
+                          theme={{ roundness: 12 }}
+                        />
+
+                        <View style={{ flexDirection: 'row', marginTop: 8 }}>
+                          <Button
+                            mode="outlined"
+                            onPress={() => setShowOpeningStockInline(false)}
+                            style={{ flex: 1 }}
                           >
-                            Add Opening Stock
-                          </Text>
-                        </TouchableOpacity>
-                      ) : (
-                        <View style={{ width: '100%' }}>
-                          <TextInput
-                            label="Opening Stock"
-                            mode="outlined"
-                            value={String(openingStockValues.openingStock)}
-                            onChangeText={text =>
-                              setOpeningStockValues(prev => ({
-                                ...prev,
-                                openingStock: text,
-                              }))
-                            }
-                            style={styles.input}
-                            placeholder="Enter opening stock quantity"
-                            keyboardType="numeric"
-                            theme={{ roundness: 12 }}
-                          />
-
-                          <TextInput
-                            label="Opening Stock Value (in Total)"
-                            mode="outlined"
-                            value={String(openingStockValues.value)}
-                            onChangeText={text =>
-                              setOpeningStockValues(prev => ({
-                                ...prev,
-                                value: text,
-                              }))
-                            }
-                            style={styles.input}
-                            placeholder="Enter total opening stock value"
-                            keyboardType="numeric"
-                            theme={{ roundness: 12 }}
-                          />
-
-                          <View style={{ flexDirection: 'row', marginTop: 8 }}>
-                            <Button
-                              mode="outlined"
-                              onPress={() => setShowOpeningStockInline(false)}
-                              style={{ flex: 1 }}
-                            >
-                              Close
-                            </Button>
-                          </View>
+                            Close
+                          </Button>
                         </View>
-                      )}
+                      </View>
+                    )}
 
-                      {openingStockValues.openingStock &&
-                        openingStockValues.value && (
-                          <Text style={styles.openingStockSummary}>
-                            Opening Stock: {openingStockValues.openingStock},
-                            Value: ₹{openingStockValues.value}
-                          </Text>
-                        )}
-                    </View>
-                  )}
+                    {!showOpeningStockInline &&
+                      openingStockValues.openingStock &&
+                      openingStockValues.value && (
+                        <Text style={styles.openingStockSummary}>
+                          Opening Stock: {openingStockValues.openingStock},
+                          Value: ₹{openingStockValues.value}
+                        </Text>
+                      )}
+                  </View>
                 </KeyboardAwareScrollView>
 
                 <View
@@ -1355,10 +1260,9 @@ const AddItem = () => {
                   }}
                 >
                   {/* Cancel Button */}
-                  {/* Cancel Button */}
                   <Button
                     mode="outlined"
-                    onPress={() => setAlertVisible(true)} // just show alert
+                    onPress={() => setAlertVisible(true)}
                     disabled={isTransitioning}
                     style={[
                       styles.submitButton,
@@ -1379,8 +1283,7 @@ const AddItem = () => {
                     Cancel
                   </Button>
 
-                  {/* Add Item Button - unchanged design */}
-
+                  {/* Add / Update Item Button */}
                   <Button
                     mode="contained"
                     onPress={handleSubmit}
@@ -1434,7 +1337,6 @@ const AddItem = () => {
                 />
                 <CategorySelectorBottomSheet
                   ref={categorySheet.bottomSheetRef}
-                  //categories={categories}
                   selectedCategory={values.selectedCategory}
                   onCategorySelect={cat =>
                     handleSelect({
@@ -1452,10 +1354,10 @@ const AddItem = () => {
                     categorySheet.close();
                     setTimeout(() => {
                       if (category) {
-                        setCategoryToEdit(category); // Set category to edit
+                        setCategoryToEdit(category);
                         addCategorySheet.expand(category);
                       } else {
-                        setCategoryToEdit(null); // Clear on create
+                        setCategoryToEdit(null);
                         addCategorySheet.expand();
                       }
                     }, 300);
@@ -1465,7 +1367,7 @@ const AddItem = () => {
                 <AddCategoryBottomSheet
                   ref={addCategorySheet.bottomSheetRef}
                   onCreateCategory={async res => {
-                    const newCategory = res.data; // ✅ API se jo category object aaya
+                    const newCategory = res.data;
                     handleCreateCategory(newCategory, setFieldValue);
                     setCategoryRefreshKey(prev => prev + 1);
 
@@ -1480,7 +1382,7 @@ const AddItem = () => {
                       closeFn: addCategorySheet.close,
                     });
 
-                    categorySheet.expand(); // wapas open karo
+                    categorySheet.expand();
                   }}
                   onUpdateCategory={handleUpdateCategory}
                   category={categoryToEdit}
@@ -1495,7 +1397,6 @@ const AddItem = () => {
                 <AddHsnCodeBottomSheet
                   ref={addHsnSheet.bottomSheetRef}
                   onCreateHsnCode={handleCreateHsnCode}
-                  // Optionally support update/actions as well
                 />
                 <TaxRateSelectorBottomSheet
                   ref={taxRateSheet.bottomSheetRef}
@@ -1531,7 +1432,6 @@ const AddItem = () => {
                         val,
                       ) => {
                         if (val.id === 'without_tax') {
-                          //setFieldValue('selectedTaxRate', null);
                           setFieldTouched('selectedTaxRate', false);
                           setFieldError('selectedTaxRate', undefined);
                         }
@@ -1543,7 +1443,6 @@ const AddItem = () => {
                   ref={discountTypeSheet.bottomSheetRef}
                   selectedDiscountType={values.selectedDiscountType}
                   onDiscountTypeSelect={type => {
-                    // Convert existing discount input value when switching types
                     const currentInput = Number(values.discountPrice) || 0;
                     const salesPrice = Number(values.salesPrice) || 0;
                     let convertedInput = currentInput;
@@ -1552,7 +1451,6 @@ const AddItem = () => {
                       type.id === 'percentage' &&
                       values.selectedDiscountType?.id === 'amount'
                     ) {
-                      // switching amount → percentage: convert ₹ to %
                       convertedInput =
                         salesPrice > 0
                           ? parseFloat(
@@ -1563,14 +1461,13 @@ const AddItem = () => {
                       type.id === 'amount' &&
                       values.selectedDiscountType?.id === 'percentage'
                     ) {
-                      // switching percentage → amount: convert % to ₹
                       convertedInput = parseFloat(
                         ((salesPrice * currentInput) / 100).toFixed(2),
                       );
                     }
 
                     setFieldValue('selectedDiscountType', type);
-                    setFieldValue('discountType', type.id); // ← keep string in sync
+                    setFieldValue('discountType', type.id);
                     setFieldValue(
                       'discountPrice',
                       convertedInput > 0 ? String(convertedInput) : '',
@@ -1615,22 +1512,6 @@ const AddItem = () => {
                     }, 250);
                   }}
                 />
-                <TaxRateSelectorBottomSheet
-                  ref={taxRateSheet.bottomSheetRef}
-                  selectedTaxRate={values.selectedTaxRate}
-                  onTaxRateSelect={rate =>
-                    handleSelect({
-                      field: 'selectedTaxRate',
-                      value: rate,
-                      helpers: {
-                        setFieldValue,
-                        setFieldTouched,
-                        setFieldError,
-                      },
-                      closeFn: taxRateSheet.close,
-                    })
-                  }
-                />
               </>
             );
           }}
@@ -1660,14 +1541,11 @@ const AddItem = () => {
             },
           ]}
         />
-
-        {/* // </KeyboardAvoidingView> */}
       </SafeAreaView>
     </View>
   );
 };
 
-// Your exact styles - unchanged
 const styles = StyleSheet.create({
   container: {
     flex: 1,

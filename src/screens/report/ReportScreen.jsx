@@ -69,7 +69,23 @@ const ReportScreen = () => {
       icon: 'package-variant',
       route: 'PurchaseReport',
     },
+
+    {
+      id: '10',
+      title: 'Creditors Report',
+      description: 'Sundry creditors analysis and outstanding tracking',
+      icon: 'package-variant',
+      route: 'SundryCreditorsReport',
+    },
+    {
+      id: '11',
+      title: 'Debtors Report',
+      description: 'Sundry debtors analysis and outstanding tracking',
+      icon: 'package-variant',
+      route: 'SundryDebtorsReport',
+    },
   ];
+
 
   const renderReportCard = ({ item }) => (
     <Card
