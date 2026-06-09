@@ -83,19 +83,22 @@ export const generateInvoiceHTML = ({
         <td class="unit">${item.unit || 'PCS'}</td>
         <td class="rate">₹${baseRate.toFixed(2)}</td>
       <td class="discount">
-        ${totalDiscount > 0
-          ? `₹${totalDiscount.toFixed(2)}${discountPercent ? ` (${discountPercent}%)` : ''
-          }`
-          : '₹0.00 (0.00%)'
+        ${
+          totalDiscount > 0
+            ? `₹${totalDiscount.toFixed(2)}${
+                discountPercent ? ` (${discountPercent}%)` : ''
+              }`
+            : '₹0.00 (0.00%)'
         }
       </td>
-      ${isGstInvoice
+      ${
+        isGstInvoice
           ? `
         <td>₹${taxableValue.toFixed(2)}</td>
           <td class="gst-amount">₹${gstAmount.toFixed(2)} (${gstRate}%)</td>
         `
           : ''
-        }
+      }
         <td class="total-amount">₹${totalAmount.toFixed(2)}</td>
       </tr>
     `;
@@ -118,7 +121,7 @@ export const generateInvoiceHTML = ({
     const sgst = isIgst ? 0 : breakdown.sgstAmount || 0;
     const igst = isIgst
       ? breakdown.igstAmount ||
-      (breakdown.cgstAmount || 0) + (breakdown.sgstAmount || 0)
+        (breakdown.cgstAmount || 0) + (breakdown.sgstAmount || 0)
       : 0;
 
     gstBreakdownHTML += `
@@ -162,7 +165,7 @@ export const generateInvoiceHTML = ({
       .toWords(
         Math.round(
           invoiceCalculations.grandTotal -
-          (invoiceCalculations?.discountTotal || 0),
+            (invoiceCalculations?.discountTotal || 0),
         ).toFixed(2),
       )
       .replace(/\b\w/g, c => c.toUpperCase()) + ' Rupees Only';
@@ -668,104 +671,127 @@ export const generateInvoiceHTML = ({
         <thead>
           <tr>
             <td>
-              ${isFreePlan
-      ? `
+              ${
+                isFreePlan
+                  ? `
               <div class="brand-strip">
                 <div class="brand-left">
-                  ${appBrand?.logoUrl
-        ? `<img class="brand-app-logo" src="${appBrand.logoUrl
-        }" alt="${appBrand?.name || 'Brand'
-        }" onerror="this.style.display='none'">`
-        : ''
-      }
+                  ${
+                    appBrand?.logoUrl
+                      ? `<img class="brand-app-logo" src="${
+                          appBrand.logoUrl
+                        }" alt="${
+                          appBrand?.name || 'Brand'
+                        }" onerror="this.style.display='none'">`
+                      : ''
+                  }
                   <span>Powered by ${appBrand?.name || 'AMDAANI'}</span>
                 </div>
                 <div></div>
               </div>`
-      : ''
-    }
-${preview
-      ? ''
-      : `
+                  : ''
+              }
+${
+  preview
+    ? ''
+    : `
               <header class="header-grid">
                 <div class="header-left">
-                  ${storedata?.logoUrl
-        ? `<div class="logo-wrap">
+                  ${
+                    storedata?.logoUrl
+                      ? `<div class="logo-wrap">
                     <img class="company-logo" src="${storedata.logoUrl}" alt="Logo" onerror="this.style.display='none'">
                   </div>`
-        : ''
-      }
+                      : ''
+                  }
                   <div class="company-block">
-                    <div class="company-name">${storedata?.name || 'YOUR COMPANY NAME'
-      }</div>
-                    ${storedata?.tagline
-        ? `<div class="company-tagline">${storedata.tagline}</div>`
-        : ''
-      }
+                    <div class="company-name">${
+                      storedata?.name || 'YOUR COMPANY NAME'
+                    }</div>
+                    ${
+                      storedata?.tagline
+                        ? `<div class="company-tagline">${storedata.tagline}</div>`
+                        : ''
+                    }
                     <div class="company-details">
                       ${storedata?.address?.street || ''}<br>
-                      ${storedata?.address?.city || ''} - ${storedata?.address?.postalCode || ''
+                      ${storedata?.address?.city || ''} - ${
+        storedata?.address?.postalCode || ''
       }<br>
                       ${storedata?.address?.state || ''}<br>
-                      ${isGstInvoice
-        ? `<strong>GSTIN:</strong> ${storedata?.gstNumber || 'N/A'
-        }`
-        : ''
-      }
+                      ${
+                        isGstInvoice
+                          ? `<strong>GSTIN:</strong> ${
+                              storedata?.gstNumber || 'N/A'
+                            }`
+                          : ''
+                      }
                     </div>
                   </div>
                 </div>
                 <div class="meta-block">
-                  <div class="invoice-badge">${isGstInvoice ? 'Tax Invoice' : 'Invoice'
-      }</div>
+                  <div class="invoice-badge">${
+                    isGstInvoice ? 'Tax Invoice' : 'Invoice'
+                  }</div>
                 </div>
               </header>`
-    } 
+} 
 
               <div class="invoice-info">
-                ${hasCustomerDetails
-      ? `
+                ${
+                  hasCustomerDetails
+                    ? `
                 <div class="invoice-info-right">
                   <div class="customer-title">Bill To:</div>
                   <div>Mobile: ${formValues.contactNumber || ''}</div>
-                  ${formValues.customerName || formValues.partyName
-        ? `<div>Name: ${formValues.customerName || formValues.partyName
-        }</div>`
-        : ''
-      }
-                  ${formValues.customerAddress || formValues.address
-        ? `<div>Address: ${formValues.customerAddress || formValues.address
-        }</div>`
-        : ''
-      }
-                  ${formValues.customerState || formValues.state
-        ? `<div>State: ${formValues.customerState || formValues.state
-        }${formValues.customerPostalCode ||
-        (formValues.postalCode &&
-          `, Pin: ${formValues?.customerPostalCode ||
-          formValues?.postalCode
-          }`)
-        }</div>`
-        : ''
-      }
-                  ${formValues.customerGstNumber || formValues.gstNumber
-        ? `<div>GSTIN: ${formValues.customerGstNumber || formValues.gstNumber
-        }</div>`
-        : ''
-      }
+                  ${
+                    formValues.customerName || formValues.partyName
+                      ? `<div>Name: ${
+                          formValues.customerName || formValues.partyName
+                        }</div>`
+                      : ''
+                  }
+                  ${
+                    formValues.customerAddress || formValues.address
+                      ? `<div>Address: ${
+                          formValues.customerAddress || formValues.address
+                        }</div>`
+                      : ''
+                  }
+                  ${
+                    formValues.customerState || formValues.state
+                      ? `<div>State: ${
+                          formValues.customerState || formValues.state
+                        }${
+                          formValues.customerPostalCode ||
+                          (formValues.postalCode &&
+                            `, Pin: ${
+                              formValues?.customerPostalCode ||
+                              formValues?.postalCode
+                            }`)
+                        }</div>`
+                      : ''
+                  }
+                  ${
+                    formValues.customerGstNumber || formValues.gstNumber
+                      ? `<div>GSTIN: ${
+                          formValues.customerGstNumber || formValues.gstNumber
+                        }</div>`
+                      : ''
+                  }
                 </div>`
-      : ''
-    }
+                    : ''
+                }
                 <div class="invoice-info-left">
                   <div class="info-row"><span class="info-label">Invoice No:</span><span>${invoiceNumber}</span></div>
                   <div class="info-row"><span class="info-label">Invoice Date:</span><span>${format(
-      invoiceDate,
-      'dd-MMM-yyyy',
-    )}</span></div>
+                    invoiceDate,
+                    'dd-MMM-yyyy',
+                  )}</span></div>
                   <div class="info-row"><span class="info-label">Invoice Time:</span><span>${format(
-      invoiceDate,
-      'hh:mm a',
-    )}</span></div>
+                    invoiceDate,
+                    'hh:mm a',
+                  )}</span></div>
                 </div>
               </div>
             </td>
@@ -776,14 +802,15 @@ ${preview
           <tr>
             <td>
             <div class="items-table-wrap">
-  ${invoiceData?.status?.toLowerCase() === 'cancelled'
+  ${
+    invoiceData?.status?.toLowerCase() === 'cancelled'
       ? `
     <div class="items-table-watermark">
       <div class="text">CANCELLED</div>
     </div>
   `
       : ''
-    }
+  }
               <!-- ✅ Main content -->
               <table class="items-table">
                 <thead>
@@ -795,10 +822,11 @@ ${preview
                     <th>Price/ Unit(₹)</th>
                     <th>Discount(₹)</th>
                     
-                    ${isGstInvoice
-      ? `<th>Taxable Value(₹)</th><th>GST(₹)</th>`
-      : ''
-    }
+                    ${
+                      isGstInvoice
+                        ? `<th>Taxable Value(₹)</th><th>GST(₹)</th>`
+                        : ''
+                    }
                     <th>Amount</th>
                   </tr>
                 </thead>
@@ -812,23 +840,26 @@ ${preview
     <td class="rate"></td>
     <td class="discount">₹${totalDiscount.toFixed(2)}</td>
     
-    ${isGstInvoice
-      ? `<td>₹${totalTaxable.toFixed(
-        2,
-      )}</td><td class="gst-amount">₹${totalGST.toFixed(2)}</td>`
-      : ''
+    ${
+      isGstInvoice
+        ? `<td>₹${totalTaxable.toFixed(
+            2,
+          )}</td><td class="gst-amount">₹${totalGST.toFixed(2)}</td>`
+        : ''
     }
     <td class="total-amount">₹${totalAmount.toFixed(2)}</td>
   </tr>
 
       <tr class="totals-row no-break">
-      <td colspan="${isGstInvoice ? 7 : 5
-    }" rowspan="${totalsRowCount}" class="amount-words-cell" style="text-align:left; vertical-align:top; border-right:1px solid #000; padding:10px;">
+      <td colspan="${
+        isGstInvoice ? 7 : 5
+      }" rowspan="${totalsRowCount}" class="amount-words-cell" style="text-align:left; vertical-align:top; border-right:1px solid #000; padding:10px;">
         <div class="amount-words-title" style="font-weight:bold; color:#2c5aa0;">Amount in Words:</div>
         <div class="words-text" style="font-size:11px;">${amountInWords}</div>
 
-        ${invoiceData?.transactions && invoiceData.transactions.length > 0
-      ? `
+        ${
+          invoiceData?.transactions && invoiceData.transactions.length > 0
+            ? `
   <div style="margin-top:15px;">
     <div style="font-weight:bold; color:#2c5aa0; padding: 4px 0; font-size: 12px; text-align: center; background: #f0f4ff;">Payment Summary</div>
     <table style="width:100%; border-collapse:collapse; font-size:10px;">
@@ -841,84 +872,92 @@ ${preview
       </thead>
       <tbody>
         ${invoiceData.transactions
-        .map(
-          transaction => `
+          .map(
+            transaction => `
           <tr>
             <td style="border:1px solid #ddd; padding:6px; text-align:left;">${format(
-            new Date(transaction.createdAt),
-            'dd-MMM-yyyy hh:mm a',
-          )}</td>
+              new Date(transaction.createdAt),
+              'dd-MMM-yyyy hh:mm a',
+            )}</td>
             <td style="border:1px solid #ddd; padding:6px; text-align:right;">₹${transaction.amount.toFixed(
-            2,
-          )}</td>
+              2,
+            )}</td>
             <td style="border:1px solid #ddd; padding:6px; text-align:center;">${transaction.paymentMethod.toUpperCase()}</td>
           </tr>
         `,
-        )
-        .join('')}
+          )
+          .join('')}
       </tbody>
     </table>
   </div>
 `
-      : ''
-    }
+            : ''
+        }
 
       </td>
 
       <td class="label">Subtotal</td>
-      <td class="amount">₹${createdInvoice
-      ? invoiceData?.subTotal.toFixed(2)
-      : invoiceCalculations.subtotal.toFixed(2)
-    }</td>
+      <td class="amount">₹${
+        createdInvoice
+          ? invoiceData?.subTotal.toFixed(2)
+          : invoiceCalculations.subtotal.toFixed(2)
+      }</td>
       </tr>
       
 
-    ${(invoiceCalculations?.discountTotal ?? 0) > 0
-      ? `
+    ${
+      (invoiceCalculations?.discountTotal ?? 0) > 0
+        ? `
 <tr class="totals-row no-break">
   <td class="label">Extra Discount</td>
-  <td class="amount" style="color:#e53935;">−₹${createdInvoice
-        ? Number(invoiceData?.discountTotal).toFixed(2)
-        : Number(invoiceCalculations.discountTotal).toFixed(2)
-      }</td>
+  <td class="amount" style="color:#e53935;">−₹${
+    createdInvoice
+      ? Number(invoiceData?.discountTotal).toFixed(2)
+      : Number(invoiceCalculations.discountTotal).toFixed(2)
+  }</td>
 </tr>`
-      : ''
+        : ''
     }
 
 <!-- ✅ Round Off Row -->
-${roundOffValue != 0
-      ? `
+${
+  roundOffValue != 0
+    ? `
 <tr class="totals-row no-break">
   <td class="label">Round Off</td>
-  <td class="amount" style="color:${roundOffValue < 0 ? '#e53935' : '#43a047'
-      };">
-    ${createdInvoice
+  <td class="amount" style="color:${
+    roundOffValue < 0 ? '#e53935' : '#43a047'
+  };">
+    ${
+      createdInvoice
         ? `${Number(invoiceData?.roundOff) >= 0 ? '+' : ''}${Number(
-          invoiceData?.roundOff,
-        ).toFixed(2)}`
+            invoiceData?.roundOff,
+          ).toFixed(2)}`
         : `${roundOffValue < 0 ? '−' : '+'}₹${Math.abs(roundOffValue).toFixed(
-          2,
-        )}`
-      }
+            2,
+          )}`
+    }
   </td>
 </tr>`
-      : ''
-    }
+    : ''
+}
 
 
 <tr class="grand-total-row no-break">
   <td class="label">Net Total</td>
-  <td class="amount">₹${createdInvoice
+  <td class="amount">₹${
+    createdInvoice
       ? Math.round(invoiceData?.grandTotal).toFixed(2)
       : Math.round(
-        invoiceCalculations.grandTotal -
-        (invoiceCalculations?.discountTotal || 0),
-      ).toFixed(2)
-    }</td>
+          invoiceCalculations.grandTotal -
+            (invoiceCalculations?.discountTotal || 0),
+        ).toFixed(2)
+  }</td>
 </tr>
 
-${payment.status !== 'paid' || payment.due > 0
-      ? `<tr class="payment-row no-break">
+${
+  payment.status !== 'paid' || payment.due > 0
+    ? `<tr class="payment-row no-break">
   <td class="label">Paid Amount</td>
   <td class="amount">₹${payment.paid.toFixed(2)}</td>
 </tr>
@@ -929,17 +968,18 @@ ${payment.status !== 'paid' || payment.due > 0
     ₹${payment.due.toFixed(2)}
   </td>
 </tr>`
-      : ''
-    }
+    : ''
+}
 
                 </tbody>
               </table>
               <!-- ✅ Payment Status Badge -->
 <div class="payment-status-container">
   <span class="payment-status ${payment.status?.toLowerCase()}">
-    ${payment.status === 'paid'
-      ? 'Amount is Fully Paid'
-      : payment.status === 'partial'
+    ${
+      payment.status === 'paid'
+        ? 'Amount is Fully Paid'
+        : payment.status === 'partial'
         ? 'Amount is Partially Paid'
         : 'Amount is Unpaid'
     }
@@ -947,10 +987,12 @@ ${payment.status !== 'paid' || payment.due > 0
 </div>
 
 <!-- Payment Details -->
-${invoiceData?.paymentMethod || invoiceData?.paymentNote
-      ? `
+${
+  invoiceData?.paymentMethod || invoiceData?.paymentNote
+    ? `
   <div style="text-align: right; margin-top: 4px; margin-right: 8px; font-size: 9px; line-height: 1.6;">
-    ${invoiceData.paymentMethod
+    ${
+      invoiceData.paymentMethod
         ? `
       <div style="margin-bottom: 4px;">
         <span style="color: #666;">Payment Method:</span>
@@ -958,8 +1000,9 @@ ${invoiceData?.paymentMethod || invoiceData?.paymentNote
       </div>
     `
         : ''
-      }
-    ${invoiceData.paymentNote
+    }
+    ${
+      invoiceData.paymentNote
         ? `
       <div>
         <span style="color: #666;">Note:</span>
@@ -967,18 +1010,19 @@ ${invoiceData?.paymentMethod || invoiceData?.paymentNote
       </div>
     `
         : ''
-      }
+    }
   </div>
 `
-      : ''
-    }
+    : ''
+}
             </div>
-                           ${!preview &&
-      Object.keys(invoiceCalculations.gstBreakdown).some(
-        r => parseFloat(r) > 0,
-      ) &&
-      isGstInvoice
-      ? `
+                           ${
+                             !preview &&
+                             Object.keys(invoiceCalculations.gstBreakdown).some(
+                               r => parseFloat(r) > 0,
+                             ) &&
+                             isGstInvoice
+                               ? `
               <div class="gst-breakdown">
               <div class="gst-breakdown-title">Tax Summary</div>
                 <table class="gst-table">
@@ -989,50 +1033,58 @@ ${invoiceData?.paymentMethod || invoiceData?.paymentNote
 
                 </table>
               </div>`
-      : ''
-    }
+                               : ''
+                           }
             </td>
           </tr>
         </tbody>
 
         <!-- ✅ Footer repeats automatically -->
-        ${preview
-      ? ''
-      : `
+        ${
+          preview
+            ? ''
+            : `
         <tfoot>
           <tr>
             <td>
               <div class="footer-section">
-                ${hasBankDetails
-        ? `
+                ${
+                  hasBankDetails
+                    ? `
                 <div class="terms-section">
                   <div class="section-title">Bank Details:</div>
-                  ${storedata.bankDetails.bankName
-          ? `Bank: ${storedata.bankDetails.bankName}<br>`
-          : ''
-        }
-                  ${storedata.bankDetails.accountNo
-          ? `A/C No: ${storedata.bankDetails.accountNo}<br>`
-          : ''
-        }
-                  ${storedata.bankDetails.ifsc
-          ? `IFSC: ${storedata.bankDetails.ifsc}<br>`
-          : ''
-        }
-                  ${storedata.bankDetails.upiId
-          ? `UPI: ${storedata.bankDetails.upiId}`
-          : ''
-        }
+                  ${
+                    storedata.bankDetails.bankName
+                      ? `Bank: ${storedata.bankDetails.bankName}<br>`
+                      : ''
+                  }
+                  ${
+                    storedata.bankDetails.accountNo
+                      ? `A/C No: ${storedata.bankDetails.accountNo}<br>`
+                      : ''
+                  }
+                  ${
+                    storedata.bankDetails.ifsc
+                      ? `IFSC: ${storedata.bankDetails.ifsc}<br>`
+                      : ''
+                  }
+                  ${
+                    storedata.bankDetails.upiId
+                      ? `UPI: ${storedata.bankDetails.upiId}`
+                      : ''
+                  }
                 </div>`
-        : ''
-      }
+                    : ''
+                }
                 <div class="signature-section">
-                  <div class="section-title">For ${storedata?.name || 'YOUR COMPANY NAME'
-      }</div>
-                  ${storedata?.signatureUrl
-        ? `<img src="${storedata.signatureUrl}" class="signature-image"><br>`
-        : ''
-      }
+                  <div class="section-title">For ${
+                    storedata?.name || 'YOUR COMPANY NAME'
+                  }</div>
+                  ${
+                    storedata?.signatureUrl
+                      ? `<img src="${storedata.signatureUrl}" class="signature-image"><br>`
+                      : ''
+                  }
                   <div class="signature-line">Authorized Signatory</div>
                 </div>
               </div>
@@ -1040,25 +1092,28 @@ ${invoiceData?.paymentMethod || invoiceData?.paymentNote
           </tr>
         </tfoot>
         `
-    }
+        }
       </table>
     </div>
-    ${invoiceData?.remarks
-      ? `
+    ${
+      invoiceData?.remarks
+        ? `
     <pre style="font-size: 8px; color: #666; margin-top: 8px;">Remarks : ${invoiceData.remarks}</pre>
   `
-      : ''
+        : ''
     }
-    ${preview
-      ? ''
-      : `${storedata?.settings?.invoiceTerms
-        ? `
+    ${
+      preview
+        ? ''
+        : `${
+            storedata?.settings?.invoiceTerms
+              ? `
     <div style="font-size: 8px; color: #666; margin-top: 8px; padding-left: 10px; padding-right: 10px; text-align: left;">
       <div style="padding-left: 10px; font-size: 8px;">${storedata.settings.invoiceTerms}</div>
     </div>
   `
-        : ''
-      }`
+              : ''
+          }`
     }
     </body>
   </html>`;

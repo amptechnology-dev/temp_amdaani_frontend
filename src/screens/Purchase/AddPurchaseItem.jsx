@@ -1,4 +1,4 @@
-// AddItem.jsx - Add + Update unified
+// AddPurchaseItem.jsx - Add + Update unified
 
 import React, {
   useState,
@@ -53,7 +53,7 @@ import { useAuth, permissions } from '../../context/AuthContext';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import CustomAlert from '../../components/CustomAlert';
 
-// Validation Schema
+// ─── Validation Schema ────────────────────────────────────────────────────────
 const validationSchema = Yup.object().shape({
   itemName: Yup.string()
     .trim()
@@ -65,8 +65,6 @@ const validationSchema = Yup.object().shape({
     .required('Purchase price is required')
     .positive('Purchase price must be positive')
     .typeError('Purchase price must be a valid number'),
-
-  // ✅ Sales price is now optional
   salesPrice: Yup.number()
     .nullable()
     .positive('Sales price must be positive')
@@ -81,16 +79,6 @@ const validationSchema = Yup.object().shape({
         schema.required('Tax rate is required when tax is applicable'),
       otherwise: schema => schema.nullable(),
     }),
-  discountPrice: Yup.number()
-    .nullable()
-    .min(0, 'Discount price cannot be negative')
-    .typeError('Discount must be a valid number'),
-  selectedDiscountType: Yup.object().nullable(),
-  purchaseDiscount: Yup.number()
-    .nullable()
-    .min(0, 'Discount cannot be negative')
-    .typeError('Discount must be a valid number'),
-  selectedPurchaseDiscountType: Yup.object().nullable(),
   selectedPurchaseTaxRate: Yup.object()
     .nullable()
     .when('selectedPurchaseTaxOption', {
@@ -99,9 +87,25 @@ const validationSchema = Yup.object().shape({
         schema.required('Tax rate is required when tax is applicable'),
       otherwise: schema => schema.nullable(),
     }),
+  // ✅ FIX: match DB schema fields — same as AddItem
+  discountPrice: Yup.number()
+    .nullable()
+    .min(0, 'Discount price cannot be negative')
+    .typeError('Discount must be a valid number'),
+  selectedDiscountType: Yup.object().nullable(),
+  discountType: Yup.string().oneOf(['percentage', 'amount']),
+  discountPercentage: Yup.number()
+    .typeError('Discount percentage must be a number')
+    .min(0, 'Discount percentage cannot be negative')
+    .max(100, 'Discount percentage cannot be more than 100'),
+  purchaseDiscountType: Yup.string().oneOf(['percentage', 'amount']),
+  purchaseDiscountPercentage: Yup.number()
+    .typeError('Purchase discount percentage must be a number')
+    .min(0, 'Purchase discount percentage cannot be negative')
+    .max(100, 'Purchase discount percentage cannot be more than 100'),
   mrp: Yup.number()
-    .typeError('GST rate must be a number')
-    .min(0, 'GST rate cannot be negative'),
+    .typeError('MRP must be a number')
+    .min(0, 'MRP cannot be negative'),
   selectedTaxOption: Yup.object().nullable(),
   selectedPurchaseTaxOption: Yup.object().nullable(),
 });
@@ -110,17 +114,15 @@ const AddPurchaseItem = () => {
   const navigation = useNavigation();
   const route = useRoute();
   const itemToEdit = route.params?.item || null;
-  // console.log('item log:', itemToEdit);
 
   const isEditMode = Boolean(itemToEdit);
   const { authState, isStockEnabled, hasPermission } = useAuth();
   const storedata = authState?.user?.store;
-  // console.log('Store details', storedata);
 
   const theme = useTheme();
   const formikRef = useRef(null);
 
-  // Bottom Sheet Hooks
+  // ─── Bottom Sheet Hooks ───────────────────────────────────────────────────
   const unitSheet = useBottomSheet();
   const categorySheet = useBottomSheet();
   const hsnBottomSheet = useBottomSheet();
@@ -157,56 +159,60 @@ const AddPurchaseItem = () => {
     () => ({
       id: 'amount',
       label: 'Amount',
-      description: 'Discount as fixed amount off the sales price',
+      description: 'Discount as fixed amount off the price',
       icon: 'currency-inr',
       symbol: '₹',
     }),
     [],
   );
 
+  const percentageDiscountType = useMemo(
+    () => ({
+      id: 'percentage',
+      label: 'Percentage',
+      icon: 'percent',
+      symbol: '%',
+    }),
+    [],
+  );
+
+  // ─── State ────────────────────────────────────────────────────────────────
   const [categories, setCategories] = useState(categoriesData.categories);
-  const [isGeneratingCode, setIsGeneratingCode] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const [cancelPressedOnce, setCancelPressedOnce] = useState(false);
   const [categoryToEdit, setCategoryToEdit] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [categoryRefreshKey, setCategoryRefreshKey] = useState(0);
-  // const [isLoading, setIsLoading] = useState(true);
-  const [refreshKey, setRefreshKey] = useState(Date.now());
   const [selectedHsnCode, setSelectedHsnCode] = useState(null);
   const [hsnCodeRefreshKey, setHsnCodeRefreshKey] = useState(0);
   const [alertVisible, setAlertVisible] = useState(false);
 
+  const { units } = unitsData;
+
+  // ─── Hardware back press ──────────────────────────────────────────────────
   useFocusEffect(
     React.useCallback(() => {
       const onBackPress = () => {
         const isDirty = formikRef.current?.dirty;
-
         if (isDirty) {
           setAlertVisible(true);
           return true;
         }
-
         navigation.goBack();
         return true;
       };
-
       const sub = BackHandler.addEventListener(
         'hardwareBackPress',
         onBackPress,
       );
-
       return () => sub.remove();
-    }, [navigation, theme.colors.error]),
+    }, [navigation]),
   );
 
-  const { units } = unitsData;
-
+  // ─── Helpers ──────────────────────────────────────────────────────────────
   const mapUnitFromItem = useCallback(
     unitValue => {
       if (!unitValue) return null;
       if (typeof unitValue === 'object' && unitValue.name) {
-        // already structured
         return (
           units.find(
             u => u.name?.toLowerCase() === unitValue.name?.toLowerCase(),
@@ -227,58 +233,30 @@ const AddPurchaseItem = () => {
   const mapCategoryFromItem = useCallback(
     categoryValue => {
       if (!categoryValue) return null;
-
-      // already object with _id + name
       if (typeof categoryValue === 'object' && categoryValue._id) {
         return categoryValue;
       }
-
-      // fallback id lookup
       if (typeof categoryValue === 'string') {
         return categories.find(c => c._id === categoryValue) || null;
       }
-
       return null;
     },
     [categories],
   );
 
-  const mapTaxFromItem = useCallback(
-    gstRate => {
-      if (!gstRate || Number(gstRate) <= 0) {
-        return {
-          taxOption: defaultTaxOption,
-          taxRate: null,
-        };
-      }
-      // Consider this as "with tax"
-      return {
-        taxOption: {
-          id: 'with_tax',
-          label: 'Include Tax',
-          description: 'Price includes/applies tax',
-          icon: 'check-decagram',
-        },
-        taxRate: {
-          rate: Number(gstRate),
-          label: `${gstRate}% GST`,
-        },
-      };
-    },
-    [defaultTaxOption],
-  );
-
-  // Initial Form Values (Add vs Edit)
+  // ─── Initial Form Values ──────────────────────────────────────────────────
+  // ✅ FIX: mirrors AddItem exactly — reads all discount fields from DB schema
   const initialValues = useMemo(() => {
     const unitMapped = mapUnitFromItem(itemToEdit?.unit);
     const categoryMapped = itemToEdit?.category
       ? mapCategoryFromItem(itemToEdit.category)
       : null;
 
-    // Tax option (with/without) comes directly from isTaxInclusive
-    const taxOption = itemToEdit?.isTaxInclusive ? withTaxOption : defaultTaxOption;
+    // Selling side tax
+    const taxOption = itemToEdit?.isTaxInclusive
+      ? withTaxOption
+      : defaultTaxOption;
 
-    // Tax rate comes directly from gstRate
     const taxRate =
       itemToEdit?.gstRate && Number(itemToEdit.gstRate) > 0
         ? {
@@ -287,37 +265,97 @@ const AddPurchaseItem = () => {
           }
         : null;
 
+    // Purchase side tax
+    const purchaseTaxOption = itemToEdit?.isPurchaseTaxInclusive
+      ? withTaxOption
+      : defaultTaxOption;
+
+    const purchaseTaxRate =
+      itemToEdit?.purchaseGstRate && Number(itemToEdit.purchaseGstRate) > 0
+        ? {
+            rate: Number(itemToEdit.purchaseGstRate),
+            label: `${itemToEdit.purchaseGstRate}% GST`,
+          }
+        : null;
+
+    // ✅ FIX: Selling discount — read discountType + discountPercentage + discountPrice
+    //         Same logic as AddItem
+    const savedDiscountType = itemToEdit?.discountType ?? 'amount';
+    const savedDiscountPercentage = Number(itemToEdit?.discountPercentage ?? 0);
+    const savedDiscountPrice = Number(itemToEdit?.discountPrice ?? 0);
+
+    const discountPriceDisplay =
+      savedDiscountType === 'percentage'
+        ? savedDiscountPercentage > 0
+          ? String(savedDiscountPercentage)
+          : Number(itemToEdit?.discountPercent ?? 0) > 0
+          ? String(Number(itemToEdit.discountPercent))
+          : ''
+        : savedDiscountPrice > 0
+        ? String(savedDiscountPrice)
+        : '';
+
+    const selectedDiscountType =
+      savedDiscountType === 'percentage'
+        ? percentageDiscountType
+        : defaultDiscountType;
+
+    // ✅ FIX: Purchase discount — read purchaseDiscountType + purchaseDiscountPercentage
+    //         Same logic as AddItem
+    const savedPurchaseDiscountType =
+      itemToEdit?.purchaseDiscountType ?? 'amount';
+    const savedPurchaseDiscountPercentage = Number(
+      itemToEdit?.purchaseDiscountPercentage ?? 0,
+    );
+    const savedPurchaseDiscountFlat = Number(itemToEdit?.purchaseDiscount ?? 0);
+
+    const purchaseDiscountDisplay =
+      savedPurchaseDiscountType === 'percentage'
+        ? savedPurchaseDiscountPercentage > 0
+          ? String(savedPurchaseDiscountPercentage)
+          : ''
+        : savedPurchaseDiscountFlat > 0
+        ? String(savedPurchaseDiscountFlat)
+        : '';
+
+    const selectedPurchaseDiscountType =
+      savedPurchaseDiscountType === 'percentage'
+        ? percentageDiscountType
+        : defaultDiscountType;
+
     return {
       itemName: itemToEdit?.name || '',
       itemCode: itemToEdit?.sku || '',
       hsnCode: itemToEdit?.hsn || '',
-      salesPrice: itemToEdit?.price ? String(itemToEdit.price) : '',
+      mrp: itemToEdit?.mrp ? String(itemToEdit.mrp) : '',
+      salesPrice: itemToEdit?.sellingPrice
+        ? String(itemToEdit.sellingPrice)
+        : itemToEdit?.price
+        ? String(itemToEdit.price)
+        : '',
       purchasePrice: itemToEdit?.costPrice ? String(itemToEdit.costPrice) : '',
       selectedUnit: unitMapped,
       selectedCategory: categoryMapped,
-      selectedTaxOption: taxOption, // ✅ directly from isTaxInclusive
+
+      // Selling side tax
+      selectedTaxOption: taxOption,
       selectedTaxRate: taxRate,
-      mrp: itemToEdit?.mrp || '',
-      discountPrice:
-        itemToEdit?.discountPrice != null && itemToEdit.discountPrice !== ''
-          ? String(itemToEdit.discountPrice)
-          : '',
-      selectedDiscountType: defaultDiscountType,
-      purchaseDiscount:
-        itemToEdit?.purchaseDiscount != null
-          ? String(itemToEdit.purchaseDiscount)
-          : '',
-      selectedPurchaseDiscountType: defaultDiscountType,
-      selectedPurchaseTaxOption: itemToEdit?.isPurchaseTaxInclusive
-        ? withTaxOption
-        : defaultTaxOption,
-      selectedPurchaseTaxRate:
-        itemToEdit?.purchaseGstRate && Number(itemToEdit.purchaseGstRate) > 0
-          ? {
-              rate: Number(itemToEdit.purchaseGstRate),
-              label: `${itemToEdit.purchaseGstRate}% GST`,
-            }
-          : null,
+
+      // Purchase side tax
+      selectedPurchaseTaxOption: purchaseTaxOption,
+      selectedPurchaseTaxRate: purchaseTaxRate,
+
+      // ✅ FIX: Selling discount fields — all DB fields populated
+      discountPrice: discountPriceDisplay,
+      selectedDiscountType,
+      discountType: savedDiscountType,
+      discountPercentage: savedDiscountPercentage,
+
+      // ✅ FIX: Purchase discount fields — all DB fields populated
+      purchaseDiscount: purchaseDiscountDisplay,
+      selectedPurchaseDiscountType,
+      purchaseDiscountType: savedPurchaseDiscountType,
+      purchaseDiscountPercentage: savedPurchaseDiscountPercentage,
     };
   }, [
     itemToEdit,
@@ -326,67 +364,42 @@ const AddPurchaseItem = () => {
     defaultTaxOption,
     withTaxOption,
     defaultDiscountType,
+    percentageDiscountType,
   ]);
 
-  // const generateItemCode = setFieldValue => {
-  //   setIsGeneratingCode(true);
-  //   setTimeout(() => {
-  //     const randomCode = Math.floor(
-  //       10000000 + Math.random() * 90000000,
-  //     ).toString();
-  //     setFieldValue('itemCode', randomCode);
-  //     setIsGeneratingCode(false);
-  //     Toast.show({
-  //       type: 'success',
-  //       text1: 'Code Generated',
-  //       text2: 'Item code generated successfully',
-  //     });
-  //   }, 800);
-  // };
-
-  // Called by selector when Add New is pressed
+  // ─── HSN handlers ─────────────────────────────────────────────────────────
   const handleAddNewHsnCode = useCallback(() => {
-    // console.log('Opening Add HSN');
     hsnBottomSheet.close();
     addHsnSheet.expand();
   }, []);
 
-  const handleCreateHsnCode = useCallback(newHsn => {
-    // close add form
-    addHsnSheet.close();
-
-    // ✅ auto select new HSN in Formik
-    if (formikRef.current) {
-      const { setFieldValue } = formikRef.current;
-      setSelectedHsnCode(newHsn);
-      setFieldValue('hsnCode', newHsn.code);
-
-      if (newHsn.gstRate && Number(newHsn.gstRate) > 0) {
-        const taxRateObject = {
-          rate: Number(newHsn.gstRate),
-          label: `${newHsn.gstRate}% GST`,
-        };
-
-        setFieldValue('selectedTaxRate', taxRateObject);
-        setFieldValue('selectedTaxOption', defaultTaxOption);
-        setFieldValue('selectedPurchaseTaxRate', taxRateObject);
-        setFieldValue('selectedPurchaseTaxOption', defaultTaxOption);
-      } else {
-        setFieldValue('selectedTaxRate', null);
-        setFieldValue('selectedTaxOption', defaultTaxOption);
-        setFieldValue('selectedPurchaseTaxRate', null);
-        setFieldValue('selectedPurchaseTaxOption', defaultTaxOption);
+  const handleCreateHsnCode = useCallback(
+    newHsn => {
+      addHsnSheet.close();
+      if (formikRef.current) {
+        const { setFieldValue } = formikRef.current;
+        setSelectedHsnCode(newHsn);
+        setFieldValue('hsnCode', newHsn.code);
+        if (newHsn.gstRate && Number(newHsn.gstRate) > 0) {
+          const taxRateObject = {
+            rate: Number(newHsn.gstRate),
+            label: `${newHsn.gstRate}% GST`,
+          };
+          setFieldValue('selectedTaxRate', taxRateObject);
+          setFieldValue('selectedTaxOption', defaultTaxOption);
+          setFieldValue('selectedPurchaseTaxRate', taxRateObject);
+          setFieldValue('selectedPurchaseTaxOption', defaultTaxOption);
+        } else {
+          setFieldValue('selectedTaxRate', null);
+          setFieldValue('selectedTaxOption', defaultTaxOption);
+          setFieldValue('selectedPurchaseTaxRate', null);
+          setFieldValue('selectedPurchaseTaxOption', defaultTaxOption);
+        }
       }
-    }
-
-    //  refresh selector list
-    setHsnCodeRefreshKey(Date.now());
-
-    //  reopen selector with new data visible
-    // setTimeout(() => {
-    //   hsnBottomSheet.expand();
-    // }, 400);
-  }, [defaultTaxOption]);
+      setHsnCodeRefreshKey(Date.now());
+    },
+    [defaultTaxOption],
+  );
 
   const handleSelect = ({ field, value, helpers, closeFn, extra }) => {
     const { setFieldValue, setFieldTouched, setFieldError } = helpers;
@@ -399,7 +412,6 @@ const AddPurchaseItem = () => {
     closeFn?.();
   };
 
-  // Create Category Handler
   const handleCreateCategory = (newCategory, setFieldValue) => {
     setCategories(prev => [...prev, newCategory]);
     setSelectedCategory(newCategory);
@@ -423,28 +435,60 @@ const AddPurchaseItem = () => {
     Toast.show({ type: 'success', text1: 'Category updated successfully!' });
   };
 
-  // Submit Form (Create or Update)
+  // ─── Submit ───────────────────────────────────────────────────────────────
+  // ✅ FIX: mirrors AddItem's discount calculation exactly
   const handleSubmitForm = async (values, { resetForm, setSubmitting }) => {
     try {
       setIsTransitioning(true);
-      let discountValue = 0;
+
       const salesPrice = Number(values.salesPrice) || 0;
+      const purchasePrice = Number(values.purchasePrice) || 0;
+
+      // ── Selling discount ──────────────────────────────────────────────────
       const inputDiscount = Number(values.discountPrice) || 0;
-      if (values.selectedDiscountType?.id === 'percentage') {
-        discountValue = (salesPrice * inputDiscount) / 100;
+      const discountTypeId = values.selectedDiscountType?.id ?? 'amount';
+
+      let discountValue = 0;
+      let discountPercentage = 0;
+
+      if (discountTypeId === 'percentage') {
+        discountPercentage = inputDiscount;
+        discountValue = parseFloat(
+          ((salesPrice * inputDiscount) / 100).toFixed(2),
+        );
       } else {
         discountValue = inputDiscount;
+        discountPercentage =
+          salesPrice > 0
+            ? parseFloat(((inputDiscount / salesPrice) * 100).toFixed(4))
+            : 0;
       }
 
-      // ✅ Purchase discount calculation (was MISSING — this is why payload crashed)
-      let purchaseDiscountValue = 0;
-      const purchasePrice = Number(values.purchasePrice) || 0;
+      // ── Purchase discount ─────────────────────────────────────────────────
       const inputPurchaseDiscount = Number(values.purchaseDiscount) || 0;
-      if (values.selectedPurchaseDiscountType?.id === 'percentage') {
-        purchaseDiscountValue = (purchasePrice * inputPurchaseDiscount) / 100;
+      const purchaseDiscountTypeId =
+        values.selectedPurchaseDiscountType?.id ?? 'amount';
+
+      let purchaseDiscountValue = 0;
+      let purchaseDiscountPercentage = 0;
+
+      if (purchaseDiscountTypeId === 'percentage') {
+        purchaseDiscountPercentage = inputPurchaseDiscount;
+        purchaseDiscountValue = parseFloat(
+          ((purchasePrice * inputPurchaseDiscount) / 100).toFixed(2),
+        );
       } else {
         purchaseDiscountValue = inputPurchaseDiscount;
+        purchaseDiscountPercentage =
+          purchasePrice > 0
+            ? parseFloat(
+                ((inputPurchaseDiscount / purchasePrice) * 100).toFixed(4),
+              )
+            : 0;
       }
+
+      // ── Payload ───────────────────────────────────────────────────────────
+      // ✅ FIX: all DB schema discount fields sent — matches AddItem exactly
       const payload = {
         name: values.itemName,
         unit: values.selectedUnit?.name || values.selectedUnit || '',
@@ -453,21 +497,31 @@ const AddPurchaseItem = () => {
         sku: values.itemCode,
         hsn: values.hsnCode,
         mrp: Number(values.mrp) || 0,
-        sellingPrice: values.salesPrice ? Number(values.salesPrice) : 0, // ✅ optional, defaults to 0
+        sellingPrice: values.salesPrice ? Number(values.salesPrice) : 0,
         costPrice: Number(values.purchasePrice),
+
+        // Selling side GST
         gstRate: Number(values.selectedTaxRate?.rate) || 0,
         isTaxInclusive: values.selectedTaxOption?.id === 'with_tax',
+
+        // ✅ Selling discount — all 3 DB fields
         discountPrice: discountValue,
-        purchaseDiscount: Number(purchaseDiscountValue),
+        discountType: discountTypeId,
+        discountPercentage: discountPercentage,
+
+        // Purchase side GST
         purchaseGstRate: Number(values.selectedPurchaseTaxRate?.rate) || 0,
         isPurchaseTaxInclusive:
           values.selectedPurchaseTaxOption?.id === 'with_tax',
-        //selectedPurchaseDiscountType: values.selectedPurchaseDiscountType,
+
+        // ✅ Purchase discount — all 3 DB fields
+        purchaseDiscount: purchaseDiscountValue,
+        purchaseDiscountType: purchaseDiscountTypeId,
+        purchaseDiscountPercentage: purchaseDiscountPercentage,
       };
 
       console.log('payload ===>', payload);
 
-      // console.log('payload', payload);
       if (isEditMode) {
         const id = itemToEdit.id || itemToEdit._id;
         await api.put(`/product/id/${id}`, payload);
@@ -478,7 +532,7 @@ const AddPurchaseItem = () => {
           text2: 'Item updated successfully!',
         });
 
-        // Reset form with latest payload instead of old values
+        // ✅ FIX: resetForm includes all discount fields so isDirty resets correctly
         resetForm({
           values: {
             itemName: payload.name,
@@ -486,19 +540,32 @@ const AddPurchaseItem = () => {
             hsnCode: payload.hsn,
             mrp: String(payload.mrp),
             salesPrice: String(payload.sellingPrice),
+            purchasePrice: String(payload.costPrice),
             selectedUnit: values.selectedUnit,
             selectedCategory: values.selectedCategory,
+
             selectedTaxOption: values.selectedTaxOption,
             selectedTaxRate: values.selectedTaxRate,
-            discountPrice: String(payload.discountPrice),
-            // selectedDiscountType: values.selectedDiscountType,
+
             selectedPurchaseTaxOption: values.selectedPurchaseTaxOption,
             selectedPurchaseTaxRate: values.selectedPurchaseTaxRate,
+
+            // ✅ Selling discount reset
+            discountPrice: inputDiscount > 0 ? String(inputDiscount) : '',
+            selectedDiscountType: values.selectedDiscountType,
+            discountType: discountTypeId,
+            discountPercentage: discountPercentage,
+
+            // ✅ Purchase discount reset
+            purchaseDiscount:
+              inputPurchaseDiscount > 0 ? String(inputPurchaseDiscount) : '',
+            selectedPurchaseDiscountType: values.selectedPurchaseDiscountType,
+            purchaseDiscountType: purchaseDiscountTypeId,
+            purchaseDiscountPercentage: purchaseDiscountPercentage,
           },
         });
       } else {
         const response = await api.post('/product', payload);
-        // // console.log("product adding",response)
         const newItem = response.data;
 
         Toast.show({
@@ -511,31 +578,33 @@ const AddPurchaseItem = () => {
           route.params?.onItemCreated &&
           typeof route.params.onItemCreated === 'function'
         ) {
+          console.log('New item created:', newItem);
           route.params.onItemCreated(newItem);
           navigation.pop();
         }
 
-        resetForm(); // Add mode can stay as full reset
+        resetForm();
       }
     } catch (error) {
-      // console.log('Error:', error);
-      console.log('payload error', err);
+      console.log('Submit error:', error);
       Toast.show({
         type: 'error',
         text1: 'Failed',
-        text2: error.message || 'An error occurred while saving the item.',
+        text2: error?.message || 'An error occurred while saving the item.',
       });
     } finally {
       setSubmitting(false);
       setIsTransitioning(false);
     }
   };
-  // Display helpers
+
+  // ─── Display helpers ──────────────────────────────────────────────────────
   const getUnitText = unit => (unit ? `${unit.name} (${unit.symbol})` : '');
   const getCategoryText = cat => (cat ? cat.name : '');
   const getTaxRateText = rate =>
     rate ? `${rate.rate}% ${rate.label.includes('IGST') ? 'IGST' : 'GST'}` : '';
 
+  // ─── Render ───────────────────────────────────────────────────────────────
   return (
     <View style={styles.container}>
       <SafeAreaView
@@ -590,9 +659,6 @@ const AddPurchaseItem = () => {
             isValid,
           }) => {
             const handleHsnCodeSelect = hsnCode => {
-              // console.log('HSN Code selected:', hsnCode);
-
-              // Fix: Check if hsnCode is null (deselect case)
               if (!hsnCode) {
                 setSelectedHsnCode(null);
                 setFieldValue('hsnCode', '');
@@ -604,23 +670,19 @@ const AddPurchaseItem = () => {
                 return;
               }
 
-              // Normal selection case
               setSelectedHsnCode(hsnCode);
               setFieldValue('hsnCode', hsnCode.code);
 
-              // Fix: Create the proper tax rate object structure
               if (hsnCode.gstRate && Number(hsnCode.gstRate) > 0) {
                 const taxRateObject = {
                   rate: Number(hsnCode.gstRate),
                   label: `${hsnCode.gstRate}% GST`,
                 };
-
                 setFieldValue('selectedTaxRate', taxRateObject);
                 setFieldValue('selectedTaxOption', defaultTaxOption);
                 setFieldValue('selectedPurchaseTaxRate', taxRateObject);
                 setFieldValue('selectedPurchaseTaxOption', defaultTaxOption);
               } else {
-                // If no GST rate, set to exclude tax
                 setFieldValue('selectedTaxRate', null);
                 setFieldValue('selectedTaxOption', defaultTaxOption);
                 setFieldValue('selectedPurchaseTaxRate', null);
@@ -631,27 +693,20 @@ const AddPurchaseItem = () => {
 
             return (
               <>
-                {/* <KeyboardAvoidingView style={{ flex: 1 }} behavior={'padding'}>
-                  <ScrollView
-                    contentContainerStyle={styles.scrollContent}
-                    showsVerticalScrollIndicator={false}
-                    keyboardShouldPersistTaps="handled"
-                    automaticallyAdjustKeyboardInsets
-                  > */}
                 <KeyboardAwareScrollView
                   style={{ flex: 1 }}
                   contentContainerStyle={styles.scrollContent}
                   enableOnAndroid={true}
                   keyboardShouldPersistTaps="always"
                   keyboardDismissMode="on-drag"
-                  extraScrollHeight={120} // ✅ extra space above keyboard
-                  extraHeight={120} // ✅ for Android specifically
-                  keyboardOpeningTime={0} // ✅ no delay = smoother scroll
-                  enableAutomaticScroll={true} // ✅ ensure auto scroll is on
+                  extraScrollHeight={120}
+                  extraHeight={120}
+                  keyboardOpeningTime={0}
+                  enableAutomaticScroll={true}
                   scrollToOverflowEnabled={true}
                 >
                   <View style={styles.content}>
-                    {/* Header Section */}
+                    {/* ── Product Details Header ── */}
                     <View style={styles.headerSection}>
                       <Icon
                         source="package-variant"
@@ -667,7 +722,6 @@ const AddPurchaseItem = () => {
                         Product Details
                       </Text>
                     </View>
-
                     <Divider
                       style={[
                         styles.divider,
@@ -675,7 +729,7 @@ const AddPurchaseItem = () => {
                       ]}
                     />
 
-                    {/* Item Name Input */}
+                    {/* Item Name */}
                     <TextInput
                       label="Item Name *"
                       mode="outlined"
@@ -691,19 +745,10 @@ const AddPurchaseItem = () => {
                       error={touched.itemName && !!errors.itemName}
                     />
                     {touched.itemName && errors.itemName && (
-                      <Text
-                        style={{
-                          color: theme.colors.error,
-                          fontSize: 12,
-                          marginTop: -4,
-                          marginBottom: 8,
-                        }}
-                      >
-                        {errors.itemName}
-                      </Text>
+                      <Text style={styles.fieldError}>{errors.itemName}</Text>
                     )}
 
-                    {/* Unit Selection */}
+                    {/* Unit */}
                     <View style={styles.inputContainer}>
                       <TextInput
                         label="Unit of Measurement *"
@@ -728,24 +773,15 @@ const AddPurchaseItem = () => {
                         }}
                         activeOpacity={0.7}
                         disabled={isTransitioning}
-                        accessibilityLabel="Select unit of measurement"
-                        accessibilityHint="Opens a list of available units"
                       />
                     </View>
                     {touched.selectedUnit && errors.selectedUnit && (
-                      <Text
-                        style={{
-                          color: theme.colors.error,
-                          fontSize: 12,
-                          marginTop: -4,
-                          marginBottom: 8,
-                        }}
-                      >
+                      <Text style={styles.fieldError}>
                         {errors.selectedUnit}
                       </Text>
                     )}
 
-                    {/* Category Selection */}
+                    {/* Category */}
                     <View style={styles.inputContainer}>
                       <TextInput
                         label="Item Category"
@@ -772,93 +808,15 @@ const AddPurchaseItem = () => {
                         }}
                         activeOpacity={0.7}
                         disabled={isTransitioning}
-                        accessibilityLabel="Select item category"
-                        accessibilityHint="Opens a list of available categories"
                       />
                     </View>
                     {touched.selectedCategory && errors.selectedCategory && (
-                      <Text
-                        style={{
-                          color: theme.colors.error,
-                          fontSize: 12,
-                          marginTop: -4,
-                          marginBottom: 8,
-                        }}
-                      >
+                      <Text style={styles.fieldError}>
                         {errors.selectedCategory}
                       </Text>
                     )}
 
-                    {/* Item Code Input with Assign Code Button */}
-                    {/* <View style={styles.itemCodeInputContainer}>
-                      <TextInput
-                        label="SKU"
-                        mode="outlined"
-                        value={values.itemCode}
-                        onChangeText={handleChange('itemCode')}
-                        style={styles.input}
-                        theme={{ roundness: 12 }}
-                        contentStyle={
-                          values.itemCode
-                            ? styles.inputContent
-                            : styles.itemCodeInputContent
-                        }
-                        placeholder="Enter or assign SKU"
-                        keyboardType="default"
-                        maxLength={20}
-                      /> */}
-
-                    {/* {!values.itemCode && (
-                          <TouchableOpacity
-                            style={[
-                              styles.assignCodeButton,
-                              {
-                                backgroundColor: isGeneratingCode
-                                  ? theme.colors.surfaceVariant
-                                  : theme.colors.primary,
-                                borderColor: theme.colors.primary,
-                              },
-                            ]}
-                            onPress={() => generateItemCode(setFieldValue)}
-                            disabled={isGeneratingCode}
-                            activeOpacity={0.7}
-                          >
-                            {isGeneratingCode ? (
-                              <ActivityIndicator
-                                size={16}
-                                color={theme.colors.onPrimary}
-                              />
-                            ) : (
-                              <Text
-                                style={[
-                                  styles.assignCodeButtonText,
-                                  {
-                                    color: isGeneratingCode
-                                      ? theme.colors.onSurfaceVariant
-                                      : theme.colors.onPrimary,
-                                  },
-                                ]}
-                              >
-                                Assign Code
-                              </Text>
-                            )}
-                          </TouchableOpacity>
-                        )} */}
-                    {/* </View> */}
-
-                    {/* HSN/SAC Code Input */}
-                    {/* <TextInput
-                          label="HSN/SAC Code"
-                          mode="outlined"
-                          value={values.hsnCode}
-                          onChangeText={handleChange('hsnCode')}
-                          style={styles.input}
-                          theme={{ roundness: 12 }}
-                          contentStyle={styles.inputContent}
-                          placeholder="Enter HSN/SAC code"
-                          keyboardType="numeric"
-                          maxLength={10}
-                        /> */}
+                    {/* HSN Code */}
                     {storedata?.gstNumber && (
                       <View style={styles.inputContainer}>
                         <TextInput
@@ -866,7 +824,6 @@ const AddPurchaseItem = () => {
                           value={values.hsnCode}
                           onChangeText={handleChange('hsnCode')}
                           mode="outlined"
-                          //editable={false}
                           style={[
                             styles.input,
                             isTransitioning && styles.inputDisabled,
@@ -881,34 +838,30 @@ const AddPurchaseItem = () => {
                           onPress={() => {
                             Keyboard.dismiss();
                             hsnBottomSheet.expand();
-                            // setTimeout(() => {
-                            //   hsnBottomSheet.close();
-                            // }, 1000);
                           }}
                           activeOpacity={0.7}
                           disabled={isTransitioning}
-                          accessibilityLabel="Select HSN Code"
-                          accessibilityHint="Opens a list of available HSN Codes"
                         />
                       </View>
                     )}
 
+                    {/* MRP */}
                     <TextInput
                       label="MRP"
                       mode="outlined"
                       value={values.mrp}
                       onChangeText={handleChange('mrp')}
                       onBlur={() => setFieldTouched('mrp', true)}
-                      style={[styles.input]}
+                      style={styles.input}
                       theme={{ roundness: 12 }}
                       contentStyle={styles.salesPriceInputContent}
-                      placeholder="Enter MRP Rate"
+                      placeholder="Enter MRP"
                       keyboardType="numeric"
                       maxLength={15}
                       error={touched.mrp && !!errors.mrp}
                     />
 
-                    {/* Purchase Price Input */}
+                    {/* ── Purchase Rate Section ── */}
                     <View style={styles.PurchasePriceSection}>
                       <View style={styles.headerSection}>
                         <Icon
@@ -925,7 +878,14 @@ const AddPurchaseItem = () => {
                           Purchase Rate
                         </Text>
                       </View>
+                      <Divider
+                        style={[
+                          styles.divider,
+                          { backgroundColor: theme.colors.outline },
+                        ]}
+                      />
 
+                      {/* Purchase Price + Tax inclusive toggle */}
                       <View style={styles.salesPriceInputContainer}>
                         <TextInput
                           label="Purchase Rate *"
@@ -933,10 +893,10 @@ const AddPurchaseItem = () => {
                           value={values.purchasePrice}
                           onChangeText={handleChange('purchasePrice')}
                           onBlur={() => setFieldTouched('purchasePrice', true)}
-                          style={[styles.input]}
+                          style={styles.input}
                           theme={{ roundness: 12 }}
                           contentStyle={styles.salesPriceInputContent}
-                          placeholder="Enter purchase Rate"
+                          placeholder="Enter purchase rate"
                           keyboardType="numeric"
                           maxLength={15}
                           error={
@@ -994,7 +954,7 @@ const AddPurchaseItem = () => {
                               numberOfLines={1}
                             >
                               {values.selectedPurchaseTaxOption?.label ||
-                                'Exclude Tax'}{' '}
+                                'Exclude Tax'}
                             </Text>
                             <Icon
                               source="chevron-down"
@@ -1010,31 +970,33 @@ const AddPurchaseItem = () => {
                         )}
                       </View>
                       {touched.purchasePrice && errors.purchasePrice && (
-                        <Text
-                          style={{
-                            color: theme.colors.error,
-                            fontSize: 12,
-                            marginTop: -4,
-                            marginBottom: 8,
-                          }}
-                        >
+                        <Text style={styles.fieldError}>
                           {errors.purchasePrice}
                         </Text>
                       )}
 
+                      {/* ✅ FIX: Purchase Discount — mirrors AddItem discount section exactly */}
                       <View style={styles.discountPriceInputContainer}>
                         <TextInput
                           label="Purchase Discount"
                           mode="outlined"
-                          value={values.purchaseDiscount} // ✅ separate field
-                          onChangeText={handleChange('purchaseDiscount')}
+                          value={values.purchaseDiscount}
+                          onChangeText={text => {
+                            handleChange('purchaseDiscount')(text);
+                            // ✅ Keep purchaseDiscountType in sync
+                            setFieldValue(
+                              'purchaseDiscountType',
+                              values.selectedPurchaseDiscountType?.id ??
+                                'amount',
+                            );
+                          }}
                           onBlur={() =>
                             setFieldTouched('purchaseDiscount', true)
                           }
                           style={styles.input}
                           theme={{ roundness: 12 }}
                           contentStyle={styles.discountPriceInputContent}
-                          placeholder="Enter discount"
+                          placeholder="Enter purchase discount"
                           keyboardType="numeric"
                           maxLength={10}
                           error={
@@ -1042,7 +1004,6 @@ const AddPurchaseItem = () => {
                             !!errors.purchaseDiscount
                           }
                         />
-
                         <TouchableOpacity
                           style={[
                             styles.discountTypeButton,
@@ -1060,7 +1021,7 @@ const AddPurchaseItem = () => {
                             },
                           ]}
                           onPress={() => {
-                            purchaseDiscountTypeSheet.present(); // ✅ separate sheet
+                            purchaseDiscountTypeSheet.present();
                             Keyboard.dismiss();
                           }}
                           disabled={isTransitioning}
@@ -1069,7 +1030,7 @@ const AddPurchaseItem = () => {
                           <Icon
                             source={
                               values.selectedPurchaseDiscountType?.icon ||
-                              'percent'
+                              'currency-inr'
                             }
                             size={14}
                             color={
@@ -1107,9 +1068,14 @@ const AddPurchaseItem = () => {
                           />
                         </TouchableOpacity>
                       </View>
+                      {touched.purchaseDiscount && errors.purchaseDiscount && (
+                        <Text style={styles.fieldError}>
+                          {errors.purchaseDiscount}
+                        </Text>
+                      )}
 
-                      {/* Purchase Price after discount preview */}
-                      {values.purchasePrice && values.purchaseDiscount && (
+                      {/* Purchase price after discount preview */}
+                      {values.purchasePrice && values.purchaseDiscount ? (
                         <View style={{ marginBottom: 10 }}>
                           <Text
                             style={{
@@ -1124,7 +1090,6 @@ const AddPurchaseItem = () => {
                               const discount =
                                 Number(values.purchaseDiscount) || 0;
                               let finalPrice = purchase;
-
                               if (
                                 values.selectedPurchaseDiscountType?.id ===
                                 'percentage'
@@ -1134,7 +1099,6 @@ const AddPurchaseItem = () => {
                               } else {
                                 finalPrice = purchase - discount;
                               }
-
                               if (finalPrice < 0) finalPrice = 0;
                               return `Purchase Price (After Discount): ₹${finalPrice.toFixed(
                                 2,
@@ -1142,20 +1106,9 @@ const AddPurchaseItem = () => {
                             })()}
                           </Text>
                         </View>
-                      )}
+                      ) : null}
 
-                      {touched.purchaseDiscount && errors.purchaseDiscount && (
-                        <Text
-                          style={{
-                            color: theme.colors.error,
-                            fontSize: 12,
-                            marginBottom: 8,
-                          }}
-                        >
-                          {errors.purchaseDiscount}
-                        </Text>
-                      )}
-
+                      {/* Purchase Tax Rate */}
                       {storedata?.gstNumber && (
                         <>
                           <View style={styles.inputContainer}>
@@ -1181,21 +1134,14 @@ const AddPurchaseItem = () => {
                             />
                             <TouchableOpacity
                               style={StyleSheet.absoluteFill}
-                              onPress={() => purchaseTaxRateSheet.present()} // ✅ separate sheet
+                              onPress={() => purchaseTaxRateSheet.present()}
                               activeOpacity={0.7}
                               disabled={isTransitioning}
                             />
                           </View>
                           {touched.selectedPurchaseTaxRate &&
                             errors.selectedPurchaseTaxRate && (
-                              <Text
-                                style={{
-                                  color: theme.colors.error,
-                                  fontSize: 12,
-                                  marginTop: -4,
-                                  marginBottom: 8,
-                                }}
-                              >
+                              <Text style={styles.fieldError}>
                                 {errors.selectedPurchaseTaxRate}
                               </Text>
                             )}
@@ -1203,7 +1149,7 @@ const AddPurchaseItem = () => {
                       )}
                     </View>
 
-                    {/* Sales Price Section */}
+                    {/* ── Selling Price Section ── */}
                     <View style={styles.salesPriceSection}>
                       <View style={styles.headerSection}>
                         <Icon
@@ -1217,10 +1163,9 @@ const AddPurchaseItem = () => {
                             { color: theme.colors.onSurface },
                           ]}
                         >
-                          Seling Price
+                          Selling Price
                         </Text>
                       </View>
-
                       <Divider
                         style={[
                           styles.divider,
@@ -1228,7 +1173,7 @@ const AddPurchaseItem = () => {
                         ]}
                       />
 
-                      {/* Sales Price Input with inline Tax Option Button */}
+                      {/* Sales Price + Tax inclusive toggle */}
                       <View style={styles.salesPriceInputContainer}>
                         <TextInput
                           label="Sales Price"
@@ -1305,37 +1250,36 @@ const AddPurchaseItem = () => {
                         )}
                       </View>
                       {touched.salesPrice && errors.salesPrice && (
-                        <Text
-                          style={{
-                            color: theme.colors.error,
-                            fontSize: 12,
-                            marginTop: -4,
-                            marginBottom: 8,
-                          }}
-                        >
+                        <Text style={styles.fieldError}>
                           {errors.salesPrice}
                         </Text>
                       )}
-                      {/* Discount Price Input with inline Discount Type Button */}
+
+                      {/* ✅ FIX: Selling Discount — mirrors AddItem discount section exactly */}
                       <View style={styles.discountPriceInputContainer}>
                         <TextInput
-                          label="Discount"
+                          label="Discount on Sales"
                           mode="outlined"
                           value={values.discountPrice}
-                          onChangeText={handleChange('discountPrice')}
+                          onChangeText={text => {
+                            handleChange('discountPrice')(text);
+                            // ✅ Keep discountType in sync
+                            setFieldValue(
+                              'discountType',
+                              values.selectedDiscountType?.id ?? 'amount',
+                            );
+                          }}
                           onBlur={() => setFieldTouched('discountPrice', true)}
                           style={styles.input}
                           theme={{ roundness: 12 }}
                           contentStyle={styles.discountPriceInputContent}
-                          placeholder="Enter discount"
+                          placeholder="Enter discount on sales"
                           keyboardType="numeric"
                           maxLength={10}
                           error={
                             touched.discountPrice && !!errors.discountPrice
                           }
                         />
-
-                        {/* Inline Discount Type Button */}
                         <TouchableOpacity
                           style={[
                             styles.discountTypeButton,
@@ -1359,7 +1303,8 @@ const AddPurchaseItem = () => {
                         >
                           <Icon
                             source={
-                              values.selectedDiscountType?.icon || 'percent'
+                              values.selectedDiscountType?.icon ||
+                              'currency-inr'
                             }
                             size={14}
                             color={
@@ -1380,7 +1325,7 @@ const AddPurchaseItem = () => {
                             ]}
                             numberOfLines={1}
                           >
-                            {values.selectedDiscountType?.label || 'Percentage'}
+                            {values.selectedDiscountType?.label || 'Amount'}
                           </Text>
                           <Icon
                             source="chevron-down"
@@ -1393,7 +1338,14 @@ const AddPurchaseItem = () => {
                           />
                         </TouchableOpacity>
                       </View>
-                      {values.salesPrice && values.discountPrice && (
+                      {touched.discountPrice && errors.discountPrice && (
+                        <Text style={styles.fieldError}>
+                          {errors.discountPrice}
+                        </Text>
+                      )}
+
+                      {/* Sales price after discount preview */}
+                      {values.salesPrice && values.discountPrice ? (
                         <View style={{ marginBottom: 10 }}>
                           <Text
                             style={{
@@ -1407,7 +1359,6 @@ const AddPurchaseItem = () => {
                               const discount =
                                 Number(values.discountPrice) || 0;
                               let finalPrice = sale;
-
                               if (
                                 values.selectedDiscountType?.id === 'percentage'
                               ) {
@@ -1415,103 +1366,57 @@ const AddPurchaseItem = () => {
                               } else {
                                 finalPrice = sale - discount;
                               }
-
                               if (finalPrice < 0) finalPrice = 0;
-
                               return `Sales Price (After Discount): ₹${finalPrice.toFixed(
                                 2,
                               )}`;
                             })()}
                           </Text>
                         </View>
-                      )}
-                      {touched.discountPrice && errors.discountPrice && (
-                        <Text
-                          style={{
-                            color: theme.colors.error,
-                            fontSize: 12,
-                            // marginTop: -4,
-                            marginBottom: 8,
-                          }}
-                        >
-                          {errors.discountPrice}
-                        </Text>
+                      ) : null}
+
+                      {/* Selling Tax Rate */}
+                      {storedata?.gstNumber && (
+                        <>
+                          <View style={styles.inputContainer}>
+                            <TextInput
+                              label="Tax Rate"
+                              value={getTaxRateText(values.selectedTaxRate)}
+                              mode="outlined"
+                              editable={false}
+                              style={[
+                                styles.input,
+                                isTransitioning && styles.inputDisabled,
+                              ]}
+                              theme={{ roundness: 12 }}
+                              contentStyle={styles.inputContent}
+                              right={<TextInput.Icon icon="chevron-down" />}
+                              placeholder="Select tax rate"
+                              error={
+                                touched.selectedTaxRate &&
+                                !!errors.selectedTaxRate
+                              }
+                            />
+                            <TouchableOpacity
+                              style={StyleSheet.absoluteFill}
+                              onPress={() => taxRateSheet.present()}
+                              activeOpacity={0.7}
+                              disabled={isTransitioning}
+                            />
+                          </View>
+                          {touched.selectedTaxRate &&
+                            errors.selectedTaxRate && (
+                              <Text style={styles.fieldError}>
+                                {errors.selectedTaxRate}
+                              </Text>
+                            )}
+                        </>
                       )}
                     </View>
-
-                    {/* Tax Rate Section - Conditionally Rendered */}
-                    {storedata?.gstNumber && (
-                      <>
-                        {/* <View style={styles.headerSection}>
-                          <Icon
-                            source="percent"
-                            size={24}
-                            color={theme.colors.primary}
-                          />
-                          <Text
-                            style={[
-                              styles.headerTitle,
-                              { color: theme.colors.onSurface },
-                            ]}
-                          >
-                            Tax Rate
-                          </Text>
-                        </View>
-
-                        <Divider
-                          style={[
-                            styles.divider,
-                            { backgroundColor: theme.colors.outline },
-                          ]}
-                        /> */}
-
-                        <View style={styles.inputContainer}>
-                          <TextInput
-                            label="Tax Rate"
-                            value={getTaxRateText(values.selectedTaxRate)}
-                            mode="outlined"
-                            editable={false}
-                            style={[
-                              styles.input,
-                              isTransitioning && styles.inputDisabled,
-                            ]}
-                            theme={{ roundness: 12 }}
-                            contentStyle={styles.inputContent}
-                            right={<TextInput.Icon icon="chevron-down" />}
-                            placeholder="Select tax rate"
-                            error={
-                              touched.selectedTaxRate &&
-                              !!errors.selectedTaxRate
-                            }
-                          />
-                          <TouchableOpacity
-                            style={StyleSheet.absoluteFill}
-                            onPress={() => taxRateSheet.present()}
-                            activeOpacity={0.7}
-                            disabled={isTransitioning}
-                            accessibilityLabel="Select tax rate"
-                            accessibilityHint="Opens a list of available GST tax rates"
-                          />
-                        </View>
-                        {touched.selectedTaxRate && errors.selectedTaxRate && (
-                          <Text
-                            style={{
-                              color: theme.colors.error,
-                              fontSize: 12,
-                              marginTop: -4,
-                              marginBottom: 8,
-                            }}
-                          >
-                            {errors.selectedTaxRate}
-                          </Text>
-                        )}
-                      </>
-                    )}
                   </View>
-                  {/* </ScrollView>
-                </KeyboardAvoidingView> */}
                 </KeyboardAwareScrollView>
 
+                {/* ── Action Buttons ── */}
                 <View
                   style={{
                     flexDirection: 'row',
@@ -1519,11 +1424,9 @@ const AddPurchaseItem = () => {
                     alignItems: 'center',
                   }}
                 >
-                  {/* Cancel Button */}
-                  {/* Cancel Button */}
                   <Button
                     mode="outlined"
-                    onPress={() => setAlertVisible(true)} // just show alert
+                    onPress={() => setAlertVisible(true)}
                     disabled={isTransitioning}
                     style={[
                       styles.submitButton,
@@ -1543,8 +1446,6 @@ const AddPurchaseItem = () => {
                   >
                     Cancel
                   </Button>
-
-                  {/* Add Item Button - unchanged design */}
 
                   <Button
                     mode="contained"
@@ -1579,7 +1480,7 @@ const AddPurchaseItem = () => {
                   </Button>
                 </View>
 
-                {/* Bottom Sheets */}
+                {/* ── Bottom Sheets ── */}
                 <UnitSelectorBottomSheet
                   ref={unitSheet.bottomSheetRef}
                   units={units}
@@ -1599,7 +1500,6 @@ const AddPurchaseItem = () => {
                 />
                 <CategorySelectorBottomSheet
                   ref={categorySheet.bottomSheetRef}
-                  //categories={categories}
                   selectedCategory={values.selectedCategory}
                   onCategorySelect={cat =>
                     handleSelect({
@@ -1617,10 +1517,10 @@ const AddPurchaseItem = () => {
                     categorySheet.close();
                     setTimeout(() => {
                       if (category) {
-                        setCategoryToEdit(category); // Set category to edit
+                        setCategoryToEdit(category);
                         addCategorySheet.expand(category);
                       } else {
-                        setCategoryToEdit(null); // Clear on create
+                        setCategoryToEdit(null);
                         addCategorySheet.expand();
                       }
                     }, 300);
@@ -1630,10 +1530,9 @@ const AddPurchaseItem = () => {
                 <AddCategoryBottomSheet
                   ref={addCategorySheet.bottomSheetRef}
                   onCreateCategory={async res => {
-                    const newCategory = res.data; // ✅ API se jo category object aaya
+                    const newCategory = res.data;
                     handleCreateCategory(newCategory, setFieldValue);
                     setCategoryRefreshKey(prev => prev + 1);
-
                     handleSelect({
                       field: 'selectedCategory',
                       value: newCategory,
@@ -1644,8 +1543,7 @@ const AddPurchaseItem = () => {
                       },
                       closeFn: addCategorySheet.close,
                     });
-
-                    categorySheet.expand(); // wapas open karo
+                    categorySheet.expand();
                   }}
                   onUpdateCategory={handleUpdateCategory}
                   category={categoryToEdit}
@@ -1660,8 +1558,9 @@ const AddPurchaseItem = () => {
                 <AddHsnCodeBottomSheet
                   ref={addHsnSheet.bottomSheetRef}
                   onCreateHsnCode={handleCreateHsnCode}
-                  // Optionally support update/actions as well
                 />
+
+                {/* Selling Tax Rate Sheet */}
                 <TaxRateSelectorBottomSheet
                   ref={taxRateSheet.bottomSheetRef}
                   selectedTaxRate={values.selectedTaxRate}
@@ -1678,6 +1577,8 @@ const AddPurchaseItem = () => {
                     })
                   }
                 />
+
+                {/* Selling Tax Option Sheet */}
                 <TaxSelectorBottomSheet
                   ref={taxOptionSheet.bottomSheetRef}
                   selectedTaxOption={values.selectedTaxOption}
@@ -1695,18 +1596,17 @@ const AddPurchaseItem = () => {
                         { setFieldValue, setFieldTouched, setFieldError },
                         val,
                       ) => {
-                        if (val.id === 'without_tax') {
-                          if (!selectedHsnCode) {
-                            setFieldValue('selectedTaxRate', null);
-                            setFieldTouched('selectedTaxRate', false);
-                            setFieldError('selectedTaxRate', undefined);
-                          }
+                        if (val.id === 'without_tax' && !selectedHsnCode) {
+                          setFieldValue('selectedTaxRate', null);
+                          setFieldTouched('selectedTaxRate', false);
+                          setFieldError('selectedTaxRate', undefined);
                         }
                       },
                     })
                   }
                 />
 
+                {/* Purchase Tax Option Sheet */}
                 <TaxSelectorBottomSheet
                   ref={purchaseTaxOptionSheet.bottomSheetRef}
                   selectedTaxOption={values.selectedPurchaseTaxOption}
@@ -1724,25 +1624,19 @@ const AddPurchaseItem = () => {
                         { setFieldValue, setFieldTouched, setFieldError },
                         val,
                       ) => {
-                        if (val.id === 'without_tax') {
-                          if (!selectedHsnCode) {
-                            setFieldValue('selectedPurchaseTaxRate', null);
-                            setFieldTouched('selectedPurchaseTaxRate', false);
-                            setFieldError('selectedPurchaseTaxRate', undefined);
-
-                            setFieldValue('selectedTaxRate', null);
-                            setFieldValue(
-                              'selectedTaxOption',
-                              defaultTaxOption,
-                            );
-                          }
+                        if (val.id === 'without_tax' && !selectedHsnCode) {
+                          setFieldValue('selectedPurchaseTaxRate', null);
+                          setFieldTouched('selectedPurchaseTaxRate', false);
+                          setFieldError('selectedPurchaseTaxRate', undefined);
+                          setFieldValue('selectedTaxRate', null);
+                          setFieldValue('selectedTaxOption', defaultTaxOption);
                         }
                       },
                     })
                   }
                 />
 
-                {/* ✅ Purchase Tax Rate Sheet */}
+                {/* Purchase Tax Rate Sheet */}
                 <TaxRateSelectorBottomSheet
                   ref={purchaseTaxRateSheet.bottomSheetRef}
                   selectedTaxRate={values.selectedPurchaseTaxRate}
@@ -1772,42 +1666,95 @@ const AddPurchaseItem = () => {
                     })
                   }
                 />
+
+                {/* ✅ FIX: Selling Discount Type Sheet — converts value on type change like AddItem */}
                 <DiscountTypeSelectorBottomSheet
                   ref={discountTypeSheet.bottomSheetRef}
                   selectedDiscountType={values.selectedDiscountType}
-                  onDiscountTypeSelect={type =>
-                    handleSelect({
-                      field: 'selectedDiscountType',
-                      value: type,
-                      helpers: {
-                        setFieldValue,
-                        setFieldTouched,
-                        setFieldError,
-                      },
-                      closeFn: discountTypeSheet.close,
-                    })
-                  }
+                  onDiscountTypeSelect={type => {
+                    const currentInput = Number(values.discountPrice) || 0;
+                    const salesPrice = Number(values.salesPrice) || 0;
+                    let convertedInput = currentInput;
+
+                    if (
+                      type.id === 'percentage' &&
+                      values.selectedDiscountType?.id === 'amount'
+                    ) {
+                      convertedInput =
+                        salesPrice > 0
+                          ? parseFloat(
+                              ((currentInput / salesPrice) * 100).toFixed(2),
+                            )
+                          : 0;
+                    } else if (
+                      type.id === 'amount' &&
+                      values.selectedDiscountType?.id === 'percentage'
+                    ) {
+                      convertedInput = parseFloat(
+                        ((salesPrice * currentInput) / 100).toFixed(2),
+                      );
+                    }
+
+                    setFieldValue('selectedDiscountType', type);
+                    setFieldValue('discountType', type.id); // ✅ sync DB field
+                    setFieldValue(
+                      'discountPrice',
+                      convertedInput > 0 ? String(convertedInput) : '',
+                    );
+                    setTimeout(() => {
+                      setFieldTouched('selectedDiscountType', true);
+                      setFieldError('selectedDiscountType', undefined);
+                    }, 0);
+                    discountTypeSheet.close();
+                  }}
                 />
+
+                {/* ✅ FIX: Purchase Discount Type Sheet — converts value on type change like AddItem */}
                 <DiscountTypeSelectorBottomSheet
                   ref={purchaseDiscountTypeSheet.bottomSheetRef}
                   selectedDiscountType={values.selectedPurchaseDiscountType}
-                  onDiscountTypeSelect={type =>
-                    handleSelect({
-                      field: 'selectedPurchaseDiscountType',
-                      value: type,
-                      helpers: {
-                        setFieldValue,
-                        setFieldTouched,
-                        setFieldError,
-                      },
-                      closeFn: purchaseDiscountTypeSheet.close,
-                    })
-                  }
+                  onDiscountTypeSelect={type => {
+                    const currentInput = Number(values.purchaseDiscount) || 0;
+                    const purchasePrice = Number(values.purchasePrice) || 0;
+                    let convertedInput = currentInput;
+
+                    if (
+                      type.id === 'percentage' &&
+                      values.selectedPurchaseDiscountType?.id === 'amount'
+                    ) {
+                      convertedInput =
+                        purchasePrice > 0
+                          ? parseFloat(
+                              ((currentInput / purchasePrice) * 100).toFixed(2),
+                            )
+                          : 0;
+                    } else if (
+                      type.id === 'amount' &&
+                      values.selectedPurchaseDiscountType?.id === 'percentage'
+                    ) {
+                      convertedInput = parseFloat(
+                        ((purchasePrice * currentInput) / 100).toFixed(2),
+                      );
+                    }
+
+                    setFieldValue('selectedPurchaseDiscountType', type);
+                    setFieldValue('purchaseDiscountType', type.id); // ✅ sync DB field
+                    setFieldValue(
+                      'purchaseDiscount',
+                      convertedInput > 0 ? String(convertedInput) : '',
+                    );
+                    setTimeout(() => {
+                      setFieldTouched('selectedPurchaseDiscountType', true);
+                      setFieldError('selectedPurchaseDiscountType', undefined);
+                    }, 0);
+                    purchaseDiscountTypeSheet.close();
+                  }}
                 />
               </>
             );
           }}
         </Formik>
+
         <CustomAlert
           visible={alertVisible}
           onDismiss={() => setAlertVisible(false)}
@@ -1833,100 +1780,30 @@ const AddPurchaseItem = () => {
             },
           ]}
         />
-
-        {/* // </KeyboardAvoidingView> */}
       </SafeAreaView>
     </View>
   );
 };
 
-// Your exact styles - unchanged
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 20,
-  },
-  content: {
-    paddingHorizontal: 20,
-  },
+  container: { flex: 1 },
+  scrollContent: { flexGrow: 1, paddingBottom: 20 },
+  content: { paddingHorizontal: 20 },
   headerSection: {
     flexDirection: 'row',
     alignItems: 'center',
     marginVertical: 8,
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginLeft: 8,
-  },
-  divider: {
-    marginBottom: 8,
-    height: 1,
-  },
-  inputContainer: {
-    position: 'relative',
-    marginBottom: 8,
-  },
-  input: {
-    marginBottom: 8,
-    backgroundColor: 'transparent',
-  },
-  inputDisabled: {
-    opacity: 0.6,
-  },
-  inputContent: {
-    fontSize: 16,
-  },
-  itemCodeInputContainer: {
-    position: 'relative',
-  },
-  itemCodeInputContent: {
-    fontSize: 16,
-    paddingRight: 110,
-  },
-  assignCodeButton: {
-    position: 'absolute',
-    right: 8,
-    top: '50%',
-    transform: [{ translateY: -16 }],
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 15,
-    borderWidth: 1,
-    minWidth: 90,
-    height: 30,
-    alignItems: 'center',
-    justifyContent: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 3,
-    zIndex: 10,
-  },
-  assignCodeButtonText: {
-    fontSize: 10,
-    fontWeight: '600',
-    textAlign: 'center',
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-  },
-  salesPriceSection: {
-    marginTop: 8,
-  },
-  PurchasePriceSection: {
-    marginTop: 8,
-  },
-  salesPriceInputContainer: {
-    position: 'relative',
-  },
-  salesPriceInputContent: {
-    fontSize: 16,
-    paddingRight: 130,
-  },
+  headerTitle: { fontSize: 18, fontWeight: '600', marginLeft: 8 },
+  divider: { marginBottom: 8, height: 1 },
+  inputContainer: { position: 'relative', marginBottom: 8 },
+  input: { marginBottom: 8, backgroundColor: 'transparent' },
+  inputDisabled: { opacity: 0.6 },
+  inputContent: { fontSize: 16 },
+  salesPriceSection: { marginTop: 8 },
+  PurchasePriceSection: { marginTop: 8 },
+  salesPriceInputContainer: { position: 'relative' },
+  salesPriceInputContent: { fontSize: 16, paddingRight: 130 },
   taxOptionButton: {
     position: 'absolute',
     right: 8,
@@ -1954,31 +1831,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
     flex: 1,
   },
-  submitButton: {
-    borderRadius: 12,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    marginVertical: 8,
-    marginHorizontal: 20,
-  },
-  submitButtonContent: {},
-  submitButtonLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  discountPriceSection: {
-    marginTop: 8,
-  },
-  discountPriceInputContainer: {
-    position: 'relative',
-  },
-  discountPriceInputContent: {
-    fontSize: 16,
-    paddingRight: 130,
-  },
+  discountPriceInputContainer: { position: 'relative' },
+  discountPriceInputContent: { fontSize: 16, paddingRight: 130 },
   discountTypeButton: {
     position: 'absolute',
     right: 8,
@@ -2006,8 +1860,23 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
     flex: 1,
   },
-  taxRateSection: {
-    marginTop: 8,
+  submitButton: {
+    borderRadius: 12,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    marginVertical: 8,
+    marginHorizontal: 20,
+  },
+  submitButtonContent: {},
+  submitButtonLabel: { fontSize: 16, fontWeight: '600' },
+  fieldError: {
+    color: '#b00020',
+    fontSize: 12,
+    marginTop: -4,
+    marginBottom: 8,
   },
 });
 

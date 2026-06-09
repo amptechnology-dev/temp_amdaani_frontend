@@ -27,7 +27,6 @@ export const generateInvoiceHTML = ({
 
   cartItems.forEach(item => {
     const qty = item.qty || item.quantity || 0;
-    const baseRate = item.baseRate || 0;
     const gstRate = item.gstRate || 0;
     const gstAmount = item.gstAmount || 0;
     const isTaxInclusive = item.isTaxInclusive || false;
@@ -40,7 +39,8 @@ export const generateInvoiceHTML = ({
 
     totalQty += qty;
     totalDiscount += discount;
-    totalTaxable += item.taxableValue || 0;
+    // ✅ Only accumulate taxable if GST rate > 0 (same as purchase)
+    totalTaxable += gstRate > 0 ? item.taxableValue || 0 : 0;
     totalGST += gstAmount;
     totalAmount += total;
   });
@@ -48,14 +48,14 @@ export const generateInvoiceHTML = ({
   const itemsHTML = cartItems
     .map((item, index) => {
       const qty = item.qty || item.quantity || 0;
-      const price = item.price || 0;
       const baseRate = item.baseRate || 0;
-      const taxableValue = item.taxableValue || 0;
-      let discount = item.discount * qty || 0;
       const gstRate = item.gstRate || 0;
       const gstAmount = item.gstAmount || 0;
       const totalAmount = item.total || 0;
       const isTaxInclusive = item.isTaxInclusive || false;
+
+      // ✅ Only show taxable value if GST rate > 0, otherwise 0 (same as purchase)
+      const taxableValue = gstRate > 0 ? item.taxableValue || 0 : 0;
 
       let perItemDiscount = Number(item.discount || 0);
       if (isTaxInclusive && gstRate > 0) {
@@ -78,25 +78,34 @@ export const generateInvoiceHTML = ({
         </td>
         <td class="qty">${qty}</td>
         <td class="unit">${item.unit || 'PCS'}</td>
-        <td class="rate">₹${baseRate.toFixed(2)}</td>
-      <td class="discount">
+        <td class="rate">&#8377;${baseRate.toFixed(2)}</td>
+        <td class="discount">
+          ${
+            totalDiscount > 0
+              ? `&#8377;${totalDiscount.toFixed(2)}${
+                  discountPercent ? ` (${discountPercent}%)` : ''
+                }`
+              : '&#8377;0.00 (0.00%)'
+          }
+        </td>
         ${
-          totalDiscount > 0
-            ? `₹${totalDiscount.toFixed(2)}${
-                discountPercent ? ` (${discountPercent}%)` : ''
-              }`
-            : '₹0.00 (0.00%)'
+          isGstInvoice
+            ? `
+          <td style="text-align:right;">&#8377;${taxableValue.toFixed(2)}</td>
+          <td class="gst-amount" style="text-align:right;">
+            ${
+              gstRate > 0
+                ? isTaxInclusive
+                  ? `<span style="color:#888;">&#8377;${gstAmount.toFixed(
+                      2,
+                    )} (${gstRate}%)<br><small></small></span>`
+                  : `&#8377;${gstAmount.toFixed(2)} (${gstRate}%)`
+                : `&#8212;`
+            }
+          </td>`
+            : ''
         }
-      </td>
-      ${
-        isGstInvoice
-          ? `
-        <td>₹${taxableValue.toFixed(2)}</td>
-          <td class="gst-amount">₹${gstAmount.toFixed(2)} (${gstRate}%)</td>
-        `
-          : ''
-      }
-        <td class="total-amount">₹${totalAmount.toFixed(2)}</td>
+        <td class="total-amount">&#8377;${totalAmount.toFixed(2)}</td>
       </tr>
     `;
     })
@@ -104,12 +113,6 @@ export const generateInvoiceHTML = ({
 
   let gstTotals = { taxableValue: 0, cgst: 0, sgst: 0, igst: 0 };
   let gstBreakdownHTML = '';
-
-  const totalPaymentAmount =
-    invoiceData?.transactions?.reduce(
-      (sum, transaction) => sum + Number(transaction.amount || 0),
-      0,
-    ) || 0;
 
   const isA5 = pageFormat === 'a5';
   const pageSize = isA5 ? 'A5' : 'A4';
@@ -136,10 +139,10 @@ export const generateInvoiceHTML = ({
     gstBreakdownHTML += `
       <tr>
         <td>${rate}%</td>
-        <td>₹${taxable.toFixed(2)}</td>
-        <td>₹${cgst.toFixed(2)}</td>
-        <td>₹${sgst.toFixed(2)}</td>
-        <td>₹${igst.toFixed(2)}</td>
+        <td>&#8377;${taxable.toFixed(2)}</td>
+        <td>&#8377;${cgst.toFixed(2)}</td>
+        <td>&#8377;${sgst.toFixed(2)}</td>
+        <td>&#8377;${igst.toFixed(2)}</td>
       </tr>
     `;
 
@@ -152,10 +155,10 @@ export const generateInvoiceHTML = ({
   gstBreakdownHTML += `
     <tr style="font-weight:bold; background:#f8f8f8;">
       <td>Total</td>
-      <td>₹${gstTotals.taxableValue.toFixed(2)}</td>
-      <td>₹${gstTotals.cgst.toFixed(2)}</td>
-      <td>₹${gstTotals.sgst.toFixed(2)}</td>
-      <td>₹${gstTotals.igst.toFixed(2)}</td>
+      <td>&#8377;${gstTotals.taxableValue.toFixed(2)}</td>
+      <td>&#8377;${gstTotals.cgst.toFixed(2)}</td>
+      <td>&#8377;${gstTotals.sgst.toFixed(2)}</td>
+      <td>&#8377;${gstTotals.igst.toFixed(2)}</td>
     </tr>
   `;
 
@@ -191,14 +194,12 @@ export const generateInvoiceHTML = ({
   const roundOffValue = (roundedGrandTotal - rawGrandTotal).toFixed(2);
 
   let qrURL = '';
-
   if (storedata?.bankDetails?.upiId) {
     const upiString = `upi://pay?pa=${
       storedata.bankDetails.upiId
     }&pn=${encodeURIComponent(
       storedata?.name || 'Merchant',
     )}&am=${roundedGrandTotal}&cu=INR`;
-
     qrURL = `https://quickchart.io/qr?text=${encodeURIComponent(upiString)}`;
   }
 
@@ -208,10 +209,13 @@ export const generateInvoiceHTML = ({
     ((invoiceCalculations?.discountTotal ?? 0) > 0 ? 1 : 0) +
     (roundOffValue ?? 0 > 0 ? 1 : 0);
 
-  // ✅ Filter out zero-amount transactions once, reuse below
+  // ✅ Filter out zero-amount transactions
   const nonZeroTransactions = (invoiceData?.transactions || []).filter(
     t => Number(t.amount || 0) > 0,
   );
+
+  // ✅ colspan: 5 base cols + discount(1) + if GST: taxable(1) + gst(1)
+  const colspanCount = isGstInvoice ? 7 : 5;
 
   return /*html*/ `
   <!DOCTYPE html>
@@ -222,414 +226,83 @@ export const generateInvoiceHTML = ({
     <title>GST Invoice</title>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Arial', sans-serif; font-size: 11px; line-height: 1.3; color: #000; background: #fff; padding: 8px; }
-        .invoice-container { max-width: ${invoiceContainerWidth}; margin: 0 auto; border: 1px solid #000; background: #fff; }
-        .invoice-header { text-align: center; padding: 12px; border-bottom: 1px solid #000; background: #f8f8f8; }
-        .invoice-title { font-size: 20px; font-weight: bold; margin-bottom: 4px; }
-        .company-name { font-size: 16px; font-weight: bold; color: #2c5aa0; margin-bottom: 2px; }
-        .company-details { font-size: 10px; color: #666; }
-        .invoice-info { display: flex; border-bottom: 1px solid #000; }
-        .invoice-info-left, .invoice-info-right { flex: 1; padding: 10px; }
-        .invoice-info-left { border-right: 1px solid #000; }
-        .info-row { display: flex; margin-bottom: 4px; }
-        .info-label { min-width: 80px; font-weight: bold; }
-        .customer-section { border-bottom: 1px solid #000; padding: 10px; }
-        .customer-title { font-weight: bold; font-size: 12px; margin-bottom: 2px; color: #2c5aa0; }
-        .items-table { width: 100%; border-collapse: collapse; font-size: 10px; }
-        .items-table th { background: #2c5aa0; color: white; padding: 8px 4px; border: 1px solid #000; font-size: 9px; }
-        .items-table td { padding: 6px 4px; border: 1px solid #000; text-align: center; }
-        .totals-section { border-top: 2px solid #000; display: flex; }
-        .amount-words { flex: 1; padding: 10px; border-right: 1px solid #000; }
-        .words-text { font-size: 12px; font-weight: bold; color: #2c5aa0; }
-        .totals-table-container { width: 300px; }
-        .totals-table { width: 100%; border-collapse: collapse; font-size: 10px; }
-        .totals-table td { padding: 6px 8px; border: 1px solid #000; }
-        .totals-table .center-row td { text-align: center; }
-        .grand-total { background: #2c5aa0; color: white; font-size: 12px; font-weight: bold; text-align: center; }
-        .gst-breakdown { margin-top: 10px; border-top: 1px solid #000; }
-        .gst-breakdown-title { padding: 8px; background: #f0f0f0; font-weight: bold; text-align: center; }
-        .gst-table { width: 100%; border-collapse: collapse; font-size: 9px; }
-        .gst-table th, .gst-table td { padding: 6px 8px; border: 1px solid #000; text-align: center; }
-        .gst-table th { background: #2c5aa0; color: white; }
-        .description {
-          text-align: left !important;
-          white-space: normal;
-          word-break: break-word;
-          overflow-wrap: anywhere;
-        }
-        .description .item-name,
-        .description .item-code,
-        .description .tax-type {
-          text-align: left;
-          display: block;
-          white-space: normal;
-          word-break: break-word;
-          overflow-wrap: anywhere;
-        }
-        .footer-section {
-          display: flex;
-          border-top: 1px solid #000;
-          margin-top: 10px;
-          min-height: 80px;
-          justify-content: flex-end;
-        }
-        .terms-section {
-          flex: 1;
-          padding: 10px;
-          border-right: 1px solid #000;
-        }
-        .signature-section {
-          width: 220px;
-          padding: 10px;
-          text-align: center;
-        }
-        .signature-image {
-          max-height: 40px;
-          max-width: 100%;
-          object-fit: contain;
-        }
-        .section-title { font-weight: bold; margin-bottom: 6px; font-size: 11px; color: #2c5aa0; }
-        .signature-line { border-top: 1px solid #000; margin-top: 40px; padding-top: 4px; font-size: 10px; font-weight: bold; }
-        .tax-type { font-size: 9px; color: #666; }
-        @media print { body { margin: 0; padding: 4px; } .invoice-container { border: 1px solid #000; } }
-      </style>
-      <style>
-      :root {
-        --brand: #2c5aa0;
-        --ink: #000;
-        --muted: #666;
-      }
-
-      .brand-strip {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 6px 10px;
-        border-bottom: 1px solid #000;
-        background: #f9fafc;
-      }
-      .brand-left {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 10px;
-        color: #555;
-      }
-      .brand-app-logo {
-        height: 14px;
-        width: auto;
-      }
-
-      .header-grid {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        padding: 14px 16px;
-        border-bottom: 1.5px solid #000;
-        background: #ffffff;
-        flex-wrap: wrap;
-        gap: 12px;
-      }
-
-      .header-left {
-        display: flex;
-        flex-direction: row;
-        align-items: flex-start;
-        gap: 10px;
-        flex: 1;
-        min-width: 220px;
-      }
-
-      .logo-wrap {
-        display: flex;
-        align-items: flex-start;
-        justify-content: center;
-        flex-shrink: 0;
-      }
-      .company-logo {
-        height: 60px;
-        width: auto;
-        max-width: 100px;
-        object-fit: contain;
-        margin-right: 8px;
-      }
-
-      .company-block {
-        display: flex;
-        flex-direction: column;
-        text-align: left;
-        align-items: flex-start;
-        flex: 1;
-      }
-      .company-name {
-        font-size: 18px;
-        font-weight: 800;
-        color: var(--brand);
-        margin-bottom: 2px;
-        text-transform: uppercase;
-      }
-      .company-tagline {
-        font-size: 10.5px;
-        color: #555;
-        margin-bottom: 4px;
-        font-style: italic;
-      }
-      .company-details {
-        font-size: 10px;
-        color: #444;
-        line-height: 1.4;
-        white-space: normal !important;
-        overflow-wrap: anywhere;
-        word-break: break-word;
-        text-align: left;
-      }
-
-      .meta-block {
-        display: flex;
-        flex-direction: column;
-        align-items: flex-end;
-        text-align: right;
-        justify-content: center;
-        min-width: 180px;
-      }
-      .invoice-badge {
-        font-weight: 700;
-        font-size: 14px;
-        padding: 6px 12px;
-        border-radius: 6px;
-        text-transform: uppercase;
-        background: var(--brand);
-        color: #fff;
-        border: 1px solid #000;
-        letter-spacing: 0.4px;
-        text-align: center;
-        margin-bottom: 4px;
-      }
-
-      .items-table td.rate,
-      .items-table td.discount,
-      .items-table td:nth-child(7),
-      .items-table td.gst-amount,
-      .items-table td.total-amount {
-        text-align: right !important;
-      }
-      .totals-table td.amount,
-      .items-table .totals-row .amount,
-      .items-table .grand-total-row .amount,
-      .items-table .summary-total-row td:not(.description):not(.sr-no) {
-        text-align: right;
-      }
-
-      .invoice-status-badge {
-        font-weight: 800;
-        font-size: 12px;
-        color: #e53935;
-        background: transparent;
-        margin-top: 2px;
-        text-transform: uppercase;
-        letter-spacing: 0.6px;
-      }
-
-      .gst-breakdown-title {
-        padding: 4px 0;
-        font-size: 12px;
-        text-align: center;
-        color: #2c5aa0;
-        background: #f0f4ff;
-        border: 1px solid #000;
-        border-bottom: none;
-      }
-
-      .payment-status-container {
-        text-align: right;
-        margin-top: 4px;
-        margin-right: 8px;
-      }
-
-      .payment-status {
-        display: inline-block;
-        padding: 2px 14px;
-        border-radius: 20px;
-        font-weight: 600;
-        font-size: 8px;
-        text-transform: capitalize;
-        font-style: italic;
-        letter-spacing: 0.5px;
-        color: #fff;
-      }
-
+      body { font-family: 'Arial', sans-serif; font-size: 11px; line-height: 1.3; color: #000; background: #fff; padding: 8px; }
+      .invoice-container { max-width: ${invoiceContainerWidth}; margin: 0 auto; border: 1px solid #000; background: #fff; }
+      .invoice-info { display: flex; border-bottom: 1px solid #000; }
+      .invoice-info-left, .invoice-info-right { flex: 1; padding: 10px; }
+      .invoice-info-left { border-right: 1px solid #000; }
+      .info-row { display: flex; margin-bottom: 4px; }
+      .info-label { min-width: 80px; font-weight: bold; }
+      .customer-title { font-weight: bold; font-size: 12px; margin-bottom: 2px; color: #2c5aa0; }
+      .items-table { width: 100%; border-collapse: collapse; font-size: 10px; }
+      .items-table th { background: #2c5aa0; color: white; padding: 8px 4px; border: 1px solid #000; font-size: 9px; }
+      .items-table td { padding: 6px 4px; border: 1px solid #000; text-align: center; }
+      .gst-breakdown { margin-top: 10px; border-top: 1px solid #000; }
+      .gst-table { width: 100%; border-collapse: collapse; font-size: 9px; }
+      .gst-table th, .gst-table td { padding: 6px 8px; border: 1px solid #000; text-align: center; }
+      .gst-table th { background: #2c5aa0; color: white; }
+      .description { text-align: left !important; white-space: normal; word-break: break-word; overflow-wrap: anywhere; }
+      .description .item-name, .description .item-code, .description .tax-type { text-align: left; display: block; white-space: normal; word-break: break-word; }
+      .tax-type { font-size: 9px; color: #666; }
+      .footer-section { display: flex; border-top: 1px solid #000; margin-top: 10px; min-height: 80px; justify-content: flex-end; }
+      .terms-section { flex: 1; padding: 10px; border-right: 1px solid #000; }
+      .signature-section { width: 220px; padding: 10px; text-align: center; }
+      .signature-image { max-height: 40px; max-width: 100%; object-fit: contain; }
+      .section-title { font-weight: bold; margin-bottom: 6px; font-size: 11px; color: #2c5aa0; }
+      .signature-line { border-top: 1px solid #000; margin-top: 40px; padding-top: 4px; font-size: 10px; font-weight: bold; }
+      .items-table td.rate, .items-table td.discount,
+      .items-table td.gst-amount, .items-table td.total-amount { text-align: right !important; }
+      :root { --brand: #2c5aa0; }
+      .brand-strip { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; border-bottom: 1px solid #000; background: #f9fafc; }
+      .brand-left { display: flex; align-items: center; gap: 6px; font-size: 10px; color: #555; }
+      .brand-app-logo { height: 14px; width: auto; }
+      .header-grid { display: flex; justify-content: space-between; align-items: flex-start; padding: 14px 16px; border-bottom: 1.5px solid #000; background: #ffffff; flex-wrap: wrap; gap: 12px; }
+      .header-left { display: flex; flex-direction: row; align-items: flex-start; gap: 10px; flex: 1; min-width: 220px; }
+      .logo-wrap { display: flex; align-items: flex-start; justify-content: center; flex-shrink: 0; }
+      .company-logo { height: 60px; width: auto; max-width: 100px; object-fit: contain; margin-right: 8px; }
+      .company-block { display: flex; flex-direction: column; text-align: left; align-items: flex-start; flex: 1; }
+      .company-name { font-size: 18px; font-weight: 800; color: var(--brand); margin-bottom: 2px; text-transform: uppercase; }
+      .company-tagline { font-size: 10.5px; color: #555; margin-bottom: 4px; font-style: italic; }
+      .company-details { font-size: 10px; color: #444; line-height: 1.4; white-space: normal !important; overflow-wrap: anywhere; word-break: break-word; text-align: left; }
+      .meta-block { display: flex; flex-direction: column; align-items: flex-end; text-align: right; justify-content: center; min-width: 180px; }
+      .invoice-badge { font-weight: 700; font-size: 14px; padding: 6px 12px; border-radius: 6px; text-transform: uppercase; background: var(--brand); color: #fff; border: 1px solid #000; letter-spacing: 0.4px; text-align: center; margin-bottom: 4px; }
+      .gst-breakdown-title { padding: 4px 0; font-size: 12px; text-align: center; color: #2c5aa0; background: #f0f4ff; border: 1px solid #000; border-bottom: none; }
+      .payment-status-container { text-align: right; margin-top: 4px; margin-right: 8px; }
+      .payment-status { display: inline-block; padding: 2px 14px; border-radius: 20px; font-weight: 600; font-size: 8px; text-transform: capitalize; font-style: italic; letter-spacing: 0.5px; color: #fff; }
       .payment-status.paid { background-color: #43a047; }
       .payment-status.partial { background-color: #fb8c00; }
       .payment-status.unpaid { background-color: #e53935; }
-
-      .meta-table {
-        border-collapse: collapse;
-        font-size: 9.5px;
-      }
-      .meta-table td {
-        padding: 3px 6px;
-      }
-      .meta-table td:first-child {
-        font-weight: 600;
-        color: #333;
-      }
-
+      .items-table .totals-row td, .items-table .grand-total-row td { border: 1px solid #000; font-size: 10px; padding: 6px 8px; }
+      .amount-words-cell { font-size: 10px; background: #fafafa; color: #000; }
+      .items-table .label { text-align: left; font-weight: 600; background: #f8f8f8; }
+      .items-table .amount { text-align: right; font-weight: 600; }
+      .grand-total-row .label, .grand-total-row .amount { background: #2c5aa0; color: #fff; font-weight: bold; }
+      .no-break { page-break-inside: avoid; }
+      .payment-row .label { font-weight: 600; background: #f8f8f8; text-align: left; }
+      .payment-row .amount { text-align: right !important; font-weight: 600; }
+      .items-table-wrap { position: relative; }
+      .items-table-watermark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 2; }
+      .items-table-watermark .text { font-family: Arial, sans-serif; font-weight: 800; font-size: clamp(36px, 10vw, 96px); letter-spacing: 0.5em; text-transform: uppercase; color: rgba(0,0,0,0.08); transform: rotate(-28deg); user-select: none; white-space: nowrap; }
+      @media (max-width: 380px) { .items-table-watermark .text { font-size: clamp(28px, 12vw, 72px); letter-spacing: 0.35em; } }
       @media (max-width: 600px) {
-        .header-grid {
-          flex-direction: row;
-          align-items: flex-start;
-          justify-content: space-between;
-          flex-wrap: nowrap;
-          gap: 8px;
-        }
-        .header-left {
-          flex-direction: row;
-          align-items: center;
-          flex: 1;
-          min-width: 0;
-        }
-        .company-block {
-          align-items: flex-start;
-          text-align: left;
-        }
-        .meta-block {
-          align-items: flex-end;
-          text-align: right;
-          justify-content: flex-start;
-          min-width: fit-content;
-        }
-        .invoice-badge {
-          font-size: 12px;
-          padding: 4px 8px;
-        }
-        .terms-section {
-          flex-direction: column;
-          align-items: center;
-        }
+        .header-grid { flex-direction: row; align-items: flex-start; justify-content: space-between; flex-wrap: nowrap; gap: 8px; }
+        .header-left { flex-direction: row; align-items: center; flex: 1; min-width: 0; }
+        .company-block { align-items: flex-start; text-align: left; }
+        .meta-block { align-items: flex-end; text-align: right; justify-content: flex-start; min-width: fit-content; }
+        .invoice-badge { font-size: 12px; padding: 4px 8px; }
       }
-
       @media print {
         body { margin: 0; padding: 0; }
         thead { display: table-header-group; }
         tfoot { display: table-footer-group; }
         .page-break { page-break-before: always; }
         .no-break { page-break-inside: avoid; }
-        .brand-strip, .header-grid, .footer-section {
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-        }
-      }
-
-      @media print {
-        body { counter-reset: pageTotal; }
-        @page {
-          size: ${pageSize};
-          margin: 6mm;
-          counter-increment: page;
-          @bottom-right {
-            content: "Page " counter(page) " of " counter(pages);
-            font-size: 10px;
-            color: #444;
-            font-family: Arial, sans-serif;
-          }
-        }
-        .page-number {
-          position: fixed;
-          bottom: 8mm;
-          right: 20mm;
-          font-size: 10px;
-          color: #444;
-          font-family: Arial, sans-serif;
-        }
-        .page-number::after {
-          content: "Page " counter(page);
-        }
-      }
-
-      .items-table .totals-row td,
-      .items-table .grand-total-row td {
-        border: 1px solid #000;
-        font-size: 10px;
-        padding: 6px 8px;
-      }
-
-      .amount-words-cell {
-        font-size: 10px;
-        background: #fafafa;
-        color: #000;
-      }
-
-      .items-table .label {
-        text-align: left;
-        font-weight: 600;
-        background: #f8f8f8;
-      }
-
-      .items-table .amount {
-        text-align: center;
-        font-weight: 600;
-      }
-
-      .grand-total-row .label,
-      .grand-total-row .amount {
-        background: #2c5aa0;
-        color: #fff;
-        font-weight: bold;
-      }
-
-      .no-break { page-break-inside: avoid; }
-
-      .payment-row .label {
-        font-weight: 600;
-        background: #f8f8f8;
-        text-align: left;
-      }
-
-      .payment-row .amount {
-        text-align: right !important;
-        font-weight: 600;
-      }
-
-      .items-table-wrap { position: relative; }
-
-      .items-table-watermark {
-        position: absolute;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        pointer-events: none;
-        z-index: 2;
-      }
-
-      .items-table-watermark .text {
-        font-family: Arial, sans-serif;
-        font-weight: 800;
-        font-size: clamp(36px, 10vw, 96px);
-        letter-spacing: 0.5em;
-        text-transform: uppercase;
-        color: rgba(0, 0, 0, 0.08);
-        transform: rotate(-28deg);
-        user-select: none;
-        white-space: nowrap;
-      }
-
-      @media (max-width: 380px) {
-        .items-table-watermark .text {
-          font-size: clamp(28px, 12vw, 72px);
-          letter-spacing: 0.35em;
-        }
-      }
-
-      @media print {
-        .items-table-watermark .text {
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-        }
+        .brand-strip, .header-grid, .footer-section { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        .items-table-watermark .text { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        @page { size: ${pageSize}; margin: 6mm; }
       }
     </style>
   </head>
-
   <body>
     <div class="invoice-container">
       <table style="width:100%; border-collapse: collapse;">
@@ -728,12 +401,12 @@ export const generateInvoiceHTML = ({
                       ? `<div>State: ${
                           formValues.customerState || formValues.state
                         }${
-                          formValues.customerPostalCode ||
-                          (formValues.postalCode &&
-                            `, Pin: ${
-                              formValues?.customerPostalCode ||
-                              formValues?.postalCode
-                            }`)
+                          formValues.customerPostalCode || formValues.postalCode
+                            ? `, Pin: ${
+                                formValues.customerPostalCode ||
+                                formValues.postalCode
+                              }`
+                            : ''
                         }</div>`
                       : ''
                   }
@@ -766,69 +439,71 @@ export const generateInvoiceHTML = ({
         <tbody>
           <tr>
             <td>
-            <div class="items-table-wrap">
-              ${
-                invoiceData?.status?.toLowerCase() === 'cancelled'
-                  ? `
-                <div class="items-table-watermark">
-                  <div class="text">CANCELLED</div>
-                </div>`
-                  : ''
-              }
-              <table class="items-table">
-                <thead>
-                  <tr>
-                    <th>Sl. No.</th>
-                    <th>Item Description</th>
-                    <th>Qty</th>
-                    <th>Unit</th>
-                    <th>Price/ Unit(₹)</th>
-                    <th>Discount(₹)</th>
-                    ${
-                      isGstInvoice
-                        ? `<th>Taxable Value(₹)</th><th>GST(₹)</th>`
-                        : ''
-                    }
-                    <th>Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${itemsHTML}
+              <div class="items-table-wrap">
+                ${
+                  invoiceData?.status?.toLowerCase() === 'cancelled'
+                    ? `<div class="items-table-watermark"><div class="text">CANCELLED</div></div>`
+                    : ''
+                }
 
-                  <!-- Summary Totals Row -->
-                  <tr class="summary-total-row" style="font-weight:bold; background:#f8f8f8;">
-                    <td class="sr-no"></td>
-                    <td class="description" style="text-align:left;">Total</td>
-                    <td class="qty" style="text-align:center;">${totalQty}</td>
-                    <td class="unit"></td>
-                    <td class="rate"></td>
-                    <td class="discount">₹${totalDiscount.toFixed(2)}</td>
-                    ${
-                      isGstInvoice
-                        ? `<td>₹${totalTaxable.toFixed(
-                            2,
-                          )}</td><td class="gst-amount">₹${totalGST.toFixed(
-                            2,
-                          )}</td>`
-                        : ''
-                    }
-                    <td class="total-amount">₹${totalAmount.toFixed(2)}</td>
-                  </tr>
-
-                  <tr class="totals-row no-break">
-                    <td colspan="${
-                      isGstInvoice ? 7 : 5
-                    }" rowspan="${totalsRowCount}" class="amount-words-cell"
-                      style="text-align:left; vertical-align:top; border-right:1px solid #000; padding:10px;">
-                      <div class="amount-words-title" style="font-weight:bold; color:#2c5aa0;">Amount in Words:</div>
-                      <div class="words-text" style="font-size:11px;">${amountInWords}</div>
-
+                <table class="items-table">
+                  <thead>
+                    <tr>
+                      <th>Sl. No.</th>
+                      <th>Item Description</th>
+                      <th>Qty</th>
+                      <th>Unit</th>
+                      <th>Price/Unit(&#8377;)</th>
+                      <th>Discount(&#8377;)</th>
                       ${
-                        // ✅ Only show Payment Summary if this is not A5 and there are non-zero amount transactions
-                        showPaymentSummary && nonZeroTransactions.length > 0
-                          ? `
+                        isGstInvoice
+                          ? `<th>Taxable Value(&#8377;)</th><th>GST Amt.(%)</th>`
+                          : ''
+                      }
+                      <th>Amount(&#8377;)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${itemsHTML}
+
+                    <!-- Summary Totals Row -->
+                    <tr class="summary-total-row" style="font-weight:bold; background:#f8f8f8;">
+                      <td></td>
+                      <td style="text-align:left;">Total</td>
+                      <td>${totalQty}</td>
+                      <td></td>
+                      <td></td>
+                      <td class="discount">&#8377;${totalDiscount.toFixed(
+                        2,
+                      )}</td>
+                      ${
+                        isGstInvoice
+                          ? `<td style="text-align:right;">&#8377;${totalTaxable.toFixed(
+                              2,
+                            )}</td>
+                             <td class="gst-amount" style="text-align:right;">&#8377;${totalGST.toFixed(
+                               2,
+                             )}</td>`
+                          : ''
+                      }
+                      <td class="total-amount">&#8377;${totalAmount.toFixed(
+                        2,
+                      )}</td>
+                    </tr>
+
+                    <!-- Amount in Words + Totals -->
+                    <tr class="totals-row no-break">
+                      <td colspan="${colspanCount}" rowspan="${totalsRowCount}"
+                        class="amount-words-cell"
+                        style="text-align:left; vertical-align:top; border-right:1px solid #000; padding:10px;">
+                        <div style="font-weight:bold; color:#2c5aa0;">Amount in Words:</div>
+                        <div style="font-size:11px; font-weight:bold; color:#2c5aa0; margin-top:2px;">${amountInWords}</div>
+
+                        ${
+                          showPaymentSummary && nonZeroTransactions.length > 0
+                            ? `
                         <div style="margin-top:15px;">
-                          <div style="font-weight:bold; color:#2c5aa0; padding: 4px 0; font-size: 12px; text-align: center; background: #f0f4ff;">Payment Summary</div>
+                          <div style="font-weight:bold; color:#2c5aa0; padding:4px 0; font-size:12px; text-align:center; background:#f0f4ff;">Payment Summary</div>
                           <table style="width:100%; border-collapse:collapse; font-size:10px;">
                             <thead>
                               <tr style="background-color:#f5f5f5;">
@@ -840,168 +515,159 @@ export const generateInvoiceHTML = ({
                             <tbody>
                               ${nonZeroTransactions
                                 .map(
-                                  transaction => `
-                                <tr>
-                                  <td style="border:1px solid #ddd; padding:6px; text-align:left;">${format(
-                                    new Date(transaction.createdAt),
-                                    'dd-MMM-yyyy hh:mm a',
-                                  )}</td>
-                                  <td style="border:1px solid #ddd; padding:6px; text-align:right;">₹${transaction.amount.toFixed(
-                                    2,
-                                  )}</td>
-                                  <td style="border:1px solid #ddd; padding:6px; text-align:center;">${transaction.paymentMethod.toUpperCase()}</td>
-                                </tr>
-                              `,
+                                  t => `
+                              <tr>
+                                <td style="border:1px solid #ddd; padding:6px; text-align:left;">${format(
+                                  new Date(t.createdAt),
+                                  'dd-MMM-yyyy hh:mm a',
+                                )}</td>
+                                <td style="border:1px solid #ddd; padding:6px; text-align:right;">&#8377;${t.amount.toFixed(
+                                  2,
+                                )}</td>
+                                <td style="border:1px solid #ddd; padding:6px; text-align:center;">${t.paymentMethod.toUpperCase()}</td>
+                              </tr>`,
                                 )
                                 .join('')}
                             </tbody>
                           </table>
                         </div>`
-                          : ''
-                      }
-                    </td>
-
-                    <td class="label">Subtotal</td>
-                    <td class="amount">₹${
-                      createdInvoice
-                        ? invoiceData?.subTotal.toFixed(2)
-                        : invoiceCalculations.subtotal.toFixed(2)
-                    }</td>
-                  </tr>
-
-                  ${
-                    (invoiceCalculations?.discountTotal ?? 0) > 0
-                      ? `
-                  <tr class="totals-row no-break">
-                    <td class="label">Extra Discount</td>
-                    <td class="amount" style="color:#e53935;">−₹${
-                      createdInvoice
-                        ? Number(invoiceData?.discountTotal).toFixed(2)
-                        : Number(invoiceCalculations.discountTotal).toFixed(2)
-                    }</td>
-                  </tr>`
-                      : ''
-                  }
-
-                  ${
-                    roundOffValue != 0
-                      ? `
-                  <tr class="totals-row no-break">
-                    <td class="label">Round Off</td>
-                    <td class="amount" style="color:${
-                      roundOffValue < 0 ? '#e53935' : '#43a047'
-                    };">
-                      ${
+                            : ''
+                        }
+                      </td>
+                      <td class="label">Subtotal</td>
+                      <td class="amount">&#8377;${
                         createdInvoice
-                          ? `${
-                              Number(invoiceData?.roundOff) >= 0 ? '+' : ''
-                            }${Number(invoiceData?.roundOff).toFixed(2)}`
-                          : `${roundOffValue < 0 ? '−' : '+'}₹${Math.abs(
-                              roundOffValue,
-                            ).toFixed(2)}`
-                      }
-                    </td>
-                  </tr>`
-                      : ''
-                  }
+                          ? Number(invoiceData?.subTotal).toFixed(2)
+                          : invoiceCalculations.subtotal.toFixed(2)
+                      }</td>
+                    </tr>
 
-                  <tr class="grand-total-row no-break">
-                    <td class="label">Net Total</td>
-                    <td class="amount">₹${
-                      createdInvoice
-                        ? Math.round(invoiceData?.grandTotal).toFixed(2)
-                        : Math.round(
-                            invoiceCalculations.grandTotal -
-                              (invoiceCalculations?.discountTotal || 0),
-                          ).toFixed(2)
-                    }</td>
-                  </tr>
+                    ${
+                      isGstInvoice
+                        ? `
+                    <tr class="totals-row no-break">
+                      <td class="label">Total Tax</td>
+                      <td class="amount">&#8377;${Number(totalGST).toFixed(
+                        2,
+                      )}</td>
+                    </tr>`
+                        : ''
+                    }
 
-                  ${
-                    showPaymentDetails &&
-                    (payment.status !== 'paid' || payment.due > 0)
-                      ? `
-                  <tr class="payment-row no-break">
-                    <td class="label">Paid Amount</td>
-                    <td class="amount">₹${payment.paid.toFixed(2)}</td>
-                  </tr>
-                  <tr class="payment-row no-break">
-                    <td class="label">Due Amount</td>
-                    <td class="amount" style="color:${
-                      payment.due > 0 ? '#e53935' : '#000'
-                    };">
-                      ₹${Math.round(payment.due).toFixed(2)}
-                    </td>
-                  </tr>`
-                      : ''
-                  }
-                </tbody>
-              </table>
+                    ${
+                      (invoiceCalculations?.discountTotal ?? 0) > 0
+                        ? `
+                    <tr class="totals-row no-break">
+                      <td class="label">Extra Discount</td>
+                      <td class="amount" style="color:#e53935;">&minus;&#8377;${
+                        createdInvoice
+                          ? Number(invoiceData?.discountTotal).toFixed(2)
+                          : Number(invoiceCalculations.discountTotal).toFixed(2)
+                      }</td>
+                    </tr>`
+                        : ''
+                    }
 
-              <!-- Payment Status Badge -->
-              ${
-                showPaymentDetails
-                  ? `<div class="payment-status-container">
-                <span class="payment-status ${payment.status?.toLowerCase()}">
-                  ${
-                    payment.status === 'paid'
-                      ? 'Amount is Fully Paid'
-                      : payment.status === 'partial'
-                      ? 'Amount is Partially Paid'
-                      : 'Amount is Unpaid'
-                  }
-                </span>
-              </div>
+                    ${
+                      roundOffValue != 0
+                        ? `
+                    <tr class="totals-row no-break">
+                      <td class="label">Round Off</td>
+                      <td class="amount" style="color:${
+                        roundOffValue < 0 ? '#e53935' : '#43a047'
+                      };">
+                        ${
+                          createdInvoice
+                            ? `${
+                                Number(invoiceData?.roundOff || 0) >= 0
+                                  ? '+'
+                                  : ''
+                              }${Number(invoiceData?.roundOff || 0).toFixed(2)}`
+                            : `${
+                                roundOffValue < 0 ? '&minus;' : '+'
+                              }&#8377;${Math.abs(roundOffValue).toFixed(2)}`
+                        }
+                      </td>
+                    </tr>`
+                        : ''
+                    }
 
-              <!-- Payment Details -->
-              ${
-                invoiceData?.paymentMethod || invoiceData?.paymentNote
-                  ? `
-                <div style="text-align: right; margin-top: 4px; margin-right: 8px; font-size: 9px; line-height: 1.6;">
+                    <tr class="grand-total-row no-break">
+                      <td class="label">Net Total</td>
+                      <td class="amount">&#8377;${
+                        createdInvoice
+                          ? Math.round(invoiceData?.grandTotal).toFixed(2)
+                          : Math.round(
+                              invoiceCalculations.grandTotal -
+                                (invoiceCalculations?.discountTotal || 0),
+                            ).toFixed(2)
+                      }</td>
+                    </tr>
+
+                    ${
+                      showPaymentDetails &&
+                      (payment.status !== 'paid' || payment.due > 0)
+                        ? `
+                    <tr class="payment-row no-break">
+                      <td class="label">Paid Amount</td>
+                      <td class="amount">&#8377;${payment.paid.toFixed(2)}</td>
+                    </tr>
+                    <tr class="payment-row no-break">
+                      <td class="label">Due Amount</td>
+                      <td class="amount" style="color:${
+                        payment.due > 0 ? '#e53935' : '#000'
+                      };">
+                        &#8377;${Math.round(payment.due).toFixed(2)}
+                      </td>
+                    </tr>`
+                        : ''
+                    }
+                  </tbody>
+                </table>
+
+                ${
+                  showPaymentDetails
+                    ? `
+                <div class="payment-status-container">
+                  <span class="payment-status ${payment.status?.toLowerCase()}">
+                    ${
+                      payment.status === 'paid'
+                        ? 'Amount is Fully Paid'
+                        : payment.status === 'partial'
+                        ? 'Amount is Partially Paid'
+                        : 'Amount is Unpaid'
+                    }
+                  </span>
+                </div>
+
+                ${
+                  invoiceData?.paymentMethod || invoiceData?.paymentNote
+                    ? `
+                <div style="text-align:right; margin-top:4px; margin-right:8px; font-size:9px; line-height:1.6;">
                   ${
                     invoiceData.paymentMethod
-                      ? `
-                    <div style="margin-bottom: 4px;">
-                      <span style="color: #666;">${
-                        payment.status === 'paid'
-                          ? 'Payment Method'
-                          : payment.status === 'partial'
-                          ? 'Payment Method'
-                          : ''
-                      }</span>
-                      <span style="color: #000; font-weight: 600; margin-left: 6px;">${
-                        payment.status === 'paid'
-                          ? invoiceData.paymentMethod.toUpperCase()
-                          : payment.status === 'partial'
-                          ? invoiceData.paymentMethod.toUpperCase()
-                          : ''
-                      }</span>
-                    </div>`
+                      ? `<div style="margin-bottom:4px;"><span style="color:#666;">Payment Method:</span><span style="color:#000; font-weight:600; margin-left:6px;">${invoiceData.paymentMethod.toUpperCase()}</span></div>`
                       : ''
                   }
                   ${
                     invoiceData.paymentNote
-                      ? `
-                    <div>
-                      <span style="color: #666;">Note:</span>
-                      <span style="color: #000; margin-left: 6px;">${invoiceData.paymentNote}</span>
-                    </div>`
+                      ? `<div><span style="color:#666;">Note:</span><span style="color:#000; margin-left:6px;">${invoiceData.paymentNote}</span></div>`
                       : ''
                   }
                 </div>`
-                  : ''
-              }`
-                  : ''
-              }
-            </div>
+                    : ''
+                }`
+                    : ''
+                }
+              </div>
 
-            ${
-              !preview &&
-              Object.keys(invoiceCalculations.gstBreakdown).some(
-                r => parseFloat(r) > 0,
-              ) &&
-              isGstInvoice
-                ? `
+              ${
+                !preview &&
+                isGstInvoice &&
+                Object.keys(invoiceCalculations.gstBreakdown).some(
+                  r => parseFloat(r) > 0,
+                )
+                  ? `
               <div class="gst-breakdown">
                 <div class="gst-breakdown-title">Tax Summary</div>
                 <table class="gst-table">
@@ -1017,8 +683,8 @@ export const generateInvoiceHTML = ({
                   <tbody>${gstBreakdownHTML}</tbody>
                 </table>
               </div>`
-                : ''
-            }
+                  : ''
+              }
             </td>
           </tr>
         </tbody>
@@ -1034,8 +700,7 @@ export const generateInvoiceHTML = ({
                 ${
                   hasBankDetails
                     ? `
-                  <div class="terms-section"
-                    style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
+                  <div class="terms-section" style="display:flex; justify-content:space-between; align-items:flex-start; gap:10px;">
                     <div>
                       <div class="section-title" style="font-weight:600; margin-bottom:4px;">Bank Details:</div>
                       ${
@@ -1063,10 +728,10 @@ export const generateInvoiceHTML = ({
                       storedata?.bankDetails?.upiId
                         ? `
                       <div style="text-align:center;">
-                        <div style="font-weight:bold; font-size:12px; margin-bottom:4px;">Scan & Pay</div>
+                        <div style="font-weight:bold; font-size:12px; margin-bottom:4px;">Scan &amp; Pay</div>
                         <img src="${qrURL}" width="70" height="70" />
                         <div style="font-size:10px; margin-top:4px;">UPI ID: ${storedata.bankDetails.upiId}</div>
-                        <div style="font-size:10px;">Amount: ₹${roundedGrandTotal}</div>
+                        <div style="font-size:10px;">Amount: &#8377;${roundedGrandTotal}</div>
                       </div>`
                         : ''
                     }
@@ -1093,19 +758,17 @@ export const generateInvoiceHTML = ({
     </div>
     ${
       invoiceData?.remarks
-        ? `<pre style="font-size: 8px; color: #666; margin-top: 8px;">Remarks : ${invoiceData.remarks}</pre>`
+        ? `<pre style="font-size:8px; color:#666; margin-top:8px;">Remarks : ${invoiceData.remarks}</pre>`
         : ''
     }
     ${
-      preview
-        ? ''
-        : storedata?.settings?.invoiceTerms
+      !preview && storedata?.settings?.invoiceTerms
         ? `
-    <div style="font-size: 8px; color: #666; margin-top: 8px; padding-left: 10px; padding-right: 10px; text-align: left;">
-      <div style="padding-left: 10px; font-size: 8px;">${storedata.settings.invoiceTerms}</div>
+    <div style="font-size:8px; color:#666; margin-top:8px; padding-left:10px; padding-right:10px; text-align:left;">
+      <div style="padding-left:10px; font-size:8px;">${storedata.settings.invoiceTerms}</div>
     </div>`
         : ''
     }
-    </body>
+  </body>
   </html>`;
 };

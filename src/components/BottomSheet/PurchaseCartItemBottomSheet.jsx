@@ -60,12 +60,11 @@ const InfoRow = ({ label, value, theme }) => (
 
 const PurchaseCartItemBottomSheet = forwardRef(
   ({ item, onUpdate, purchase }, ref) => {
+    console.log('Rendering PurchaseCartItemBottomSheet for item:', item);
     const theme = useTheme();
 
     const defaultTaxOption = { id: 'without_tax', label: 'Exclude Tax' };
     const withTaxOption = { id: 'with_tax', label: 'Include Tax' };
-
-    console.log('upte ', item);
 
     // ── HSN Code state ─────────────────────────────────────────────────────
     const [selectedHsnCode, setSelectedHsnCode] = useState(null);
@@ -93,14 +92,14 @@ const PurchaseCartItemBottomSheet = forwardRef(
       useState(defaultTaxOption);
     const [purchaseTaxRate, setPurchaseTaxRate] = useState(null);
 
-    // ── Selling discount (purchase mode) ──────────────────────────────────
-    // Source field: item.discountPrice (flat ₹ amount on sellingPrice)
+    // ── Selling discount ───────────────────────────────────────────────────
+    // Internal format: 'amount' | 'percent'  (NOT 'percentage')
     const [sellDiscountType, setSellDiscountType] = useState('amount');
     const [sellDiscountValue, setSellDiscountValue] = useState('0');
     const [finalSellingPrice, setFinalSellingPrice] = useState(0);
 
     // ── Purchase discount ──────────────────────────────────────────────────
-    // Source field: item.purchaseDiscount (flat ₹ per unit, ex-tax)
+    // Internal format: 'amount' | 'percent'  (NOT 'percentage')
     const [discountType, setDiscountType] = useState('amount');
     const [discountValue, setDiscountValue] = useState('0');
 
@@ -115,8 +114,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
     useEffect(() => {
       if (!item) return;
 
-      // ── 1. Purchase price (raw costPrice — field may be costPrice or price) ──
-      // costPrice is the canonical field; price is the alias used in cart items
+      // ── 1. Purchase price ─────────────────────────────────────────────────
       const pp = parseFloat(
         Number(
           item.costPrice > 0
@@ -130,7 +128,6 @@ const PurchaseCartItemBottomSheet = forwardRef(
       setPurchasePriceText(toFixed2(pp));
 
       // ── 2. Selling price ──────────────────────────────────────────────────
-      // productOriginalPrice is set when item comes from AddPurchaseItems
       const sp = parseFloat(
         Number(
           item.productOriginalPrice > 0
@@ -150,20 +147,20 @@ const PurchaseCartItemBottomSheet = forwardRef(
       setQtyInput(String(item.qty || 1));
 
       // ── 5. Purchase discount ──────────────────────────────────────────────
-      // purchaseDiscount is a flat per-unit ₹ ex-tax amount stored on the item.
-      // In purchase mode we always use 'amount' type for purchase discount.
+      // DB saves purchaseDiscountType as 'percentage' | 'amount'
+      // Bottom sheet uses 'percent' | 'amount' internally — normalize here
       const rawPurchaseDiscType = item.purchaseDiscountType || 'amount';
       const normPurchaseDiscType =
         rawPurchaseDiscType === 'percentage' ? 'percent' : rawPurchaseDiscType;
 
       let pdRaw = 0;
       if (normPurchaseDiscType === 'percent') {
-        // Use purchaseDiscountPercentage field for the % value
+        // Read the % number — purchaseDiscountPercentage is the input value
         pdRaw = Number(
           item.purchaseDiscountPercentage ?? item.purchaseDiscountPercent ?? 0,
         );
       } else {
-        // Use flat ₹ amount
+        // Read flat ₹ amount — purchaseDiscount is the calculated flat value
         pdRaw = Number(
           item.purchaseDiscount ?? item.purchaseDiscountAmount ?? 0,
         );
@@ -177,38 +174,62 @@ const PurchaseCartItemBottomSheet = forwardRef(
       setPrice(parseFloat(Math.max(0, pp - pdAmt).toFixed(2)));
 
       // ── 6. Selling discount ───────────────────────────────────────────────
-      // discountPrice = flat ₹ discount on sellingPrice (for selling side)
-      // discountPercent = percent discount on sellingPrice
-      // We read whichever is set — prefer explicit discountType if present.
+      // ✅ FIX: normalize discount type from BOTH sources
+      //   - sellDiscountType  (bottom sheet format): 'percent' | 'amount'
+      //   - discountType      (DB format):           'percentage' | 'amount'
       const rawSellDiscType =
         item.sellDiscountType || item.discountType || 'amount';
+
       const normSellDiscType =
         rawSellDiscType === 'percentage' ? 'percent' : rawSellDiscType;
 
       let sdRaw = 0;
+      let resolvedSellDiscType = normSellDiscType; // ← may be overridden below
+
       if (normSellDiscType === 'percent') {
-        // Prefer sellDiscountPercent → discountPercentage → discountPercent
         sdRaw = Number(
-          item.sellDiscountPercent ??
-            item.discountPercentage ??
-            item.discountPercent ??
-            0,
+          item.sellDiscountPercent > 0
+            ? item.sellDiscountPercent
+            : item.discountPercent > 0
+            ? item.discountPercent
+            : item.discountPercentage ?? 0,
         );
       } else {
-        // Prefer sellDiscount → discountPrice
-        sdRaw = Number(
-          item.sellDiscount > 0 ? item.sellDiscount : item.discountPrice ?? 0,
+        // Type says 'amount' — but check if flat amount is actually zero
+        // while a percentage field has a value. This handles stale/mismatched saves.
+        const flatAmt = Number(
+          item.sellDiscount > 0
+            ? item.sellDiscount
+            : item.discountPrice > 0
+            ? item.discountPrice
+            : 0,
         );
+
+        const pctFallback = Number(
+          item.sellDiscountPercent > 0
+            ? item.sellDiscountPercent
+            : item.discountPercent > 0
+            ? item.discountPercent
+            : item.discountPercentage ?? 0,
+        );
+
+        if (flatAmt === 0 && pctFallback > 0) {
+          // Saved as 'amount' but the real value is in a % field — correct it
+          resolvedSellDiscType = 'percent';
+          sdRaw = pctFallback;
+        } else {
+          sdRaw = flatAmt;
+        }
       }
 
-      setSellDiscountType(normSellDiscType);
+      setSellDiscountType(resolvedSellDiscType); // ← use resolved, not raw
       setSellDiscountValue(toFixed2(sdRaw));
 
-      const sdAmt = normSellDiscType === 'percent' ? (sp * sdRaw) / 100 : sdRaw;
+      const sdAmt =
+        resolvedSellDiscType === 'percent' ? (sp * sdRaw) / 100 : sdRaw;
       setFinalSellingPrice(parseFloat(Math.max(0, sp - sdAmt).toFixed(2)));
 
       // ── 7. HSN / GST ──────────────────────────────────────────────────────
-      // GST rate: purchaseGstRate is the purchase-side rate; gstRate is selling-side.
       const purchaseGst = Number(item.purchaseGstRate ?? item.gstRate ?? 0);
       const sellingGst = Number(item.gstRate ?? item.purchaseGstRate ?? 0);
 
@@ -221,40 +242,32 @@ const PurchaseCartItemBottomSheet = forwardRef(
       }
 
       // ── 8. Purchase tax inclusive flag ────────────────────────────────────
-      // isPurchaseTaxInclusive is the purchase-side flag.
-      // Fallback to isTaxInclusive only if isPurchaseTaxInclusive is undefined.
-      const purchaseTaxInclusive = Boolean(
-        item.isPurchaseTaxInclusive != null
-          ? item.isPurchaseTaxInclusive
-          : item.isTaxInclusive ?? false,
-      );
+      // ✅ FIX: ONLY read isPurchaseTaxInclusive — NEVER fall back to isTaxInclusive
+      //         isTaxInclusive is the SELLING side flag and must not affect purchase
+      const purchaseTaxInclusive = item.isPurchaseTaxInclusive === true;
 
       if (purchaseGst > 0) {
         setPurchaseTaxRate({ rate: purchaseGst, label: `${purchaseGst}% GST` });
-        setPurchaseTaxOption(
-          purchaseTaxInclusive ? withTaxOption : defaultTaxOption,
-        );
       } else {
         setPurchaseTaxRate(null);
-        setPurchaseTaxOption(
-          purchaseTaxInclusive ? withTaxOption : defaultTaxOption,
-        );
       }
+      setPurchaseTaxOption(
+        purchaseTaxInclusive ? withTaxOption : defaultTaxOption,
+      );
 
       // ── 9. Selling tax inclusive flag ─────────────────────────────────────
-      // isTaxInclusive is the selling-side flag.
-      const sellingTaxInclusive = Boolean(item.isTaxInclusive ?? false);
+      // isTaxInclusive is strictly the selling-side flag
+      const sellingTaxInclusive = item.isTaxInclusive === true;
 
       if (sellingGst > 0) {
         setTaxRate({ rate: sellingGst, label: `${sellingGst}% GST` });
-        setTaxOption(sellingTaxInclusive ? withTaxOption : defaultTaxOption);
       } else {
         setTaxRate(null);
-        setTaxOption(sellingTaxInclusive ? withTaxOption : defaultTaxOption);
       }
+      setTaxOption(sellingTaxInclusive ? withTaxOption : defaultTaxOption);
     }, [item]);
 
-    // ── Recompute "price after purchase discount" whenever inputs change ───
+    // ── Recompute price after purchase discount whenever inputs change ─────
     useEffect(() => {
       const base = Number(purchasePrice || 0);
       const value = Number(discountValue) || 0;
@@ -305,7 +318,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
 
         hsnSelectorSheet.close();
       },
-      [hsnSelectorSheet, defaultTaxOption],
+      [hsnSelectorSheet],
     );
 
     // ── HSN create handler ─────────────────────────────────────────────────
@@ -333,15 +346,13 @@ const PurchaseCartItemBottomSheet = forwardRef(
 
         setHsnCodeRefreshKey(Date.now());
       },
-      [hsnCreateSheet, defaultTaxOption],
+      [hsnCreateSheet],
     );
 
     const TAX_RATES = [0, 5, 12, 18, 28];
 
     const discountNumeric = Number(discountValue) || 0;
     const isDiscountApplied = discountNumeric > 0;
-
-    console.log('++', item);
 
     // ─── Render ──────────────────────────────────────────────────────────────
     return (
@@ -498,7 +509,6 @@ const PurchaseCartItemBottomSheet = forwardRef(
                     keyboardType="decimal-pad"
                     style={[styles.input, { flex: 1 }]}
                   />
-                  {/* isPurchaseTaxInclusive toggle */}
                   <TouchableOpacity
                     style={[
                       styles.taxBadge,
@@ -550,7 +560,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
                   </TouchableOpacity>
                 </View>
 
-                {/* Purchase Discount — always 'amount' type (₹ per unit, ex-tax) */}
+                {/* Purchase Discount */}
                 <View style={styles.discountRow}>
                   <ToggleButton.Row
                     value={discountType}
@@ -753,7 +763,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
               </TouchableOpacity>
             </View>
 
-            {/* Sell-side discount (purchase mode only) */}
+            {/* ── Sell-side discount (purchase mode only) ── */}
             {purchase && (
               <>
                 <View style={styles.discountRow}>
@@ -819,7 +829,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
               </>
             )}
 
-            {/* Non-purchase mode: discount on selling price */}
+            {/* ── Non-purchase mode: discount on selling price ── */}
             {!purchase && (
               <>
                 <View style={styles.discountRow}>
@@ -879,7 +889,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
               </>
             )}
 
-            {/* Selling Tax Rate chips (shown in both modes) */}
+            {/* ── Selling Tax Rate chips (shown in both modes) ── */}
             <View style={styles.taxRateRow}>
               <Text
                 style={[
@@ -956,21 +966,21 @@ const PurchaseCartItemBottomSheet = forwardRef(
               style={styles.input}
             />
 
-            {/* ── UPDATE ────────────────────────────────────────────────── */}
+            {/* ── UPDATE BUTTON ─────────────────────────────────────────── */}
             <Button
               mode="contained"
               disabled={qtyNumber <= 0}
               style={styles.updateButton}
               contentStyle={styles.updateButtonContent}
               onPress={() => {
-                // Compute final purchase discount amount
+                // ── Purchase discount final amount ────────────────────────
                 const baseForDiscount = purchase ? purchasePrice : sellingPrice;
                 const discountAmount =
                   discountType === 'percent'
                     ? (baseForDiscount * discountNumeric) / 100
                     : discountNumeric;
 
-                // Compute final sell discount amount
+                // ── Sell discount final amount ─────────────────────────────
                 const sellDiscNum = Number(sellDiscountValue) || 0;
                 const sellDiscountAmt =
                   sellDiscountType === 'percent'
@@ -992,26 +1002,42 @@ const PurchaseCartItemBottomSheet = forwardRef(
 
                   qty: qtyNumber,
 
-                  // Purchase discount (flat ₹ per unit, ex-tax)
+                  // ── Purchase discount ─────────────────────────────────────
+                  // purchaseDiscount = flat ₹ amount (always, regardless of input type)
+                  // purchaseDiscountType saved as internal 'percent'/'amount' format
                   ...(purchase && {
                     purchaseDiscount: parseFloat(discountAmount.toFixed(2)),
+                    purchaseDiscountType: discountType, // 'percent' | 'amount'
+                    purchaseDiscountPercentage:
+                      discountType === 'percent' ? discountNumeric : 0,
                   }),
 
-                  // Selling discount
+                  // ── Selling discount ──────────────────────────────────────
+                  // Store BOTH the flat amount AND the % value so prefill works
                   discountPrice: parseFloat(sellDiscountAmt.toFixed(2)),
+
+                  discountType:
+                    sellDiscountType === 'percent' ? 'percentage' : 'amount',
+
+                  discountPercentage:
+                    sellDiscountType === 'percent' ? sellDiscNum : 0,
+
                   discountPercent:
                     sellDiscountType === 'percent' ? sellDiscNum : 0,
-                  discountType: sellDiscountType,
+
                   sellDiscount: parseFloat(sellDiscountAmt.toFixed(2)),
-                  sellDiscountType,
+
+                  sellDiscountType:
+                    sellDiscountType === 'percent' ? 'percentage' : 'amount',
+
                   sellDiscountPercent:
                     sellDiscountType === 'percent' ? sellDiscNum : 0,
 
-                  // Selling GST
+                  // ── Selling GST ───────────────────────────────────────────
                   gstRate: taxRate?.rate ?? 0,
                   isTaxInclusive: taxOption?.id === 'with_tax',
 
-                  // Purchase GST
+                  // ── Purchase GST ──────────────────────────────────────────
                   purchaseGstRate: purchaseTaxRate?.rate ?? 0,
                   isPurchaseTaxInclusive: purchaseTaxOption?.id === 'with_tax',
                 });

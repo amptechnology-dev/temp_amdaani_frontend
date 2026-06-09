@@ -31,8 +31,6 @@ export const generatePurchaseHTML = ({
   let totalGST = 0;
   let totalAmount = 0;
 
-  // ✅ FIX 1: Use purchaseDiscount (per-unit flat rupee value) instead of item.discount * qty
-  //           Divide by costPrice (original price BEFORE discount) for correct percent display
   cartItems.forEach(item => {
     const qty = item.qty || item.quantity || 0;
     const gstRate = item.gstRate || 0;
@@ -43,54 +41,49 @@ export const generatePurchaseHTML = ({
 
     const total = item.total || 0;
 
-    // ✅ Flat per-unit discount (DO NOT adjust using GST)
     const perUnitDiscount = Number(item.purchaseDiscount ?? item.discount ?? 0);
 
-    // ✅ Total discount
     const discount = perUnitDiscount * qty;
+
+    // ✅ Only accumulate taxable value if GST rate > 0
+    const taxableValue = gstRate > 0 ? Number(item.taxableValue || 0) : 0;
 
     totalQty += qty;
     totalDiscount += discount;
-    totalTaxable += item.taxableValue || 0;
+    totalTaxable += taxableValue;
 
-    // ✅ GST total
     totalGST += gstAmount ? gstAmount : 0;
 
     totalAmount += total;
   });
 
+  console.log('fix it ', cartItems);
+
   const itemsHTML = cartItems
     .map((item, index) => {
       const qty = item.qty || item.quantity || 0;
 
-      // ✅ Original price BEFORE discount
       const costPrice = item.costPrice || item.price || 0;
 
-      // ✅ Price AFTER discount (taxable rate)
       const baseRate = item.baseRate || 0;
 
-      const taxableValue = item.taxableValue || 0;
       const gstRate = item.gstRate || 0;
       const gstAmount = item.gstAmount || 0;
       const totalAmount = item.total || 0;
 
-      const isTaxInclusive =
-        item.isPurchaseTaxInclusive || item.isTaxInclusive || false;
+      // ✅ Only show taxable value if GST rate > 0, otherwise force 0
+      const taxableValue = gstRate > 0 ? item.taxableValue || 0 : 0;
+
+      const isTaxInclusive = item.isPurchaseTaxInclusive || false;
 
       const mrp = item.mrp;
 
-      // ✅ Per-unit discount
-      // ❌ No GST adjustment
       const perItemDiscount = Number(
         item.purchaseDiscount ?? item.discount ?? 0,
       );
 
-      // ✅ Total discount for row
       const totalDiscountAmt = perItemDiscount * qty;
 
-      // ✅ Correct discount percentage
-      // Example:
-      // ₹10 off on ₹100 = 10%
       const discountPercent =
         costPrice > 0 && perItemDiscount > 0
           ? ((perItemDiscount / costPrice) * 100).toFixed(2)
@@ -102,34 +95,33 @@ export const generatePurchaseHTML = ({
         <td class="description">
           <div class="item-name">${item.name}</div>
           ${item.hsn ? `<div class="item-code">HSN: ${item.hsn}</div>` : ''}
-         
         </td>
         <td class="qty">${qty}</td>
         <td class="unit">${item.unit || 'PCS'}</td>
-        <td class="rate">₹${baseRate.toFixed(2)}</td>
-        <td class="mrp">₹${mrp ? mrp.toFixed(2) : '—'}</td>
+        <td class="rate">&#8377;${baseRate.toFixed(2)}</td>
+        <td class="mrp">&#8377;${mrp ? mrp.toFixed(2) : '&#8212;'}</td>
         <td class="discount">
           ${
             totalDiscountAmt > 0
-              ? `₹${totalDiscountAmt.toFixed(2)}${
+              ? `&#8377;${totalDiscountAmt.toFixed(2)}${
                   discountPercent ? ` (${discountPercent}%)` : ''
                 }`
-              : '₹0.00 (0.00%)'
+              : '&#8377;0.00 (0.00%)'
           }
         </td>
-        <td style="text-align:right;">₹${taxableValue.toFixed(2)}</td>
+        <td style="text-align:right;">&#8377;${taxableValue.toFixed(2)}</td>
         <td class="gst-amount" style="text-align:right;">
           ${
             gstRate > 0
               ? isTaxInclusive
-                ? `<span style="color:#888;">₹${gstAmount.toFixed(
+                ? `<span style="color:#888;">&#8377;${gstAmount.toFixed(
                     2,
                   )} (${gstRate}%)<br><small></small></span>`
-                : `₹${gstAmount.toFixed(2)} (${gstRate}%)`
-              : `—`
+                : `&#8377;${gstAmount.toFixed(2)} (${gstRate}%)`
+              : `&#8212;`
           }
         </td>
-        <td class="total-amount">₹${totalAmount.toFixed(2)}</td>
+        <td class="total-amount">&#8377;${totalAmount.toFixed(2)}</td>
       </tr>
     `;
     })
@@ -155,10 +147,10 @@ export const generatePurchaseHTML = ({
     gstBreakdownHTML += `
       <tr>
         <td>${rate}%</td>
-        <td>₹${taxable.toFixed(2)}</td>
-        <td>₹${cgst.toFixed(2)}</td>
-        <td>₹${sgst.toFixed(2)}</td>
-        <td>₹${igst.toFixed(2)}</td>
+        <td>&#8377;${taxable.toFixed(2)}</td>
+        <td>&#8377;${cgst.toFixed(2)}</td>
+        <td>&#8377;${sgst.toFixed(2)}</td>
+        <td>&#8377;${igst.toFixed(2)}</td>
       </tr>
     `;
 
@@ -171,10 +163,10 @@ export const generatePurchaseHTML = ({
   gstBreakdownHTML += `
     <tr style="font-weight:bold; background:#f8f8f8;">
       <td>Total</td>
-      <td>₹${gstTotals.taxableValue.toFixed(2)}</td>
-      <td>₹${gstTotals.cgst.toFixed(2)}</td>
-      <td>₹${gstTotals.sgst.toFixed(2)}</td>
-      <td>₹${gstTotals.igst.toFixed(2)}</td>
+      <td>&#8377;${gstTotals.taxableValue.toFixed(2)}</td>
+      <td>&#8377;${gstTotals.cgst.toFixed(2)}</td>
+      <td>&#8377;${gstTotals.sgst.toFixed(2)}</td>
+      <td>&#8377;${gstTotals.igst.toFixed(2)}</td>
     </tr>
   `;
 
@@ -339,8 +331,7 @@ export const generatePurchaseHTML = ({
               </div>`
                   : ''
               }
- 
-              
+
               <div class="invoice-info">
                 ${
                   hasCustomerDetails
@@ -404,7 +395,7 @@ export const generatePurchaseHTML = ({
             </td>
           </tr>
         </thead>
- 
+
         <tbody>
           <tr>
             <td>
@@ -415,7 +406,7 @@ export const generatePurchaseHTML = ({
                 <div class="items-table-watermark"><div class="text">CANCELLED</div></div>`
                     : ''
                 }
- 
+
                 <table class="items-table">
                   <thead>
                     <tr>
@@ -423,17 +414,17 @@ export const generatePurchaseHTML = ({
                       <th>Item Description</th>
                       <th>Qty</th>
                       <th>Unit</th>
-                      <th>Price/Unit(₹)</th>
-                      <th>MRP(₹)</th>
-                      <th>Discount(₹)</th>
-                      <th>Taxable Value(₹)</th>
+                      <th>Price/Unit(&#8377;)</th>
+                      <th>MRP(&#8377;)</th>
+                      <th>Discount(&#8377;)</th>
+                      <th>Taxable Value(&#8377;)</th>
                       <th>GST Amt.(%)</th>
-                      <th>Amount(₹)</th>
+                      <th>Amount(&#8377;)</th>
                     </tr>
                   </thead>
                   <tbody>
                     ${itemsHTML}
- 
+
                     <!-- Summary Totals Row -->
                     <tr class="summary-total-row" style="font-weight:bold; background:#f8f8f8;">
                       <td></td>
@@ -442,12 +433,16 @@ export const generatePurchaseHTML = ({
                       <td></td>
                       <td></td>
                       <td></td>
-                      <td class="discount">₹${totalDiscount.toFixed(2)}</td>
-                      <td>₹${totalTaxable.toFixed(2)}</td>
-                      <td class="gst-amount">₹${totalGST.toFixed(2)}</td>
-                      <td class="total-amount">₹${totalAmount.toFixed(2)}</td>
+                      <td class="discount">&#8377;${totalDiscount.toFixed(
+                        2,
+                      )}</td>
+                      <td>&#8377;${totalTaxable.toFixed(2)}</td>
+                      <td class="gst-amount">&#8377;${totalGST.toFixed(2)}</td>
+                      <td class="total-amount">&#8377;${totalAmount.toFixed(
+                        2,
+                      )}</td>
                     </tr>
- 
+
                     <!-- Amount in Words + Totals -->
                     <tr class="totals-row no-break">
                       <td colspan="${colspanCount}" rowspan="${totalsRowCount}"
@@ -455,7 +450,7 @@ export const generatePurchaseHTML = ({
                         style="text-align:left; vertical-align:top; border-right:1px solid #000; padding:10px;">
                         <div style="font-weight:bold; color:#2c5aa0;">Amount in Words:</div>
                         <div style="font-size:11px; font-weight:bold; color:#2c5aa0; margin-top:2px;">${amountInWords}</div>
- 
+
                         ${
                           invoiceData?.transactions &&
                           invoiceData.transactions.length > 0
@@ -479,7 +474,7 @@ export const generatePurchaseHTML = ({
                                   new Date(transaction.createdAt),
                                   'dd-MMM-yyyy hh:mm a',
                                 )}</td>
-                                <td style="border:1px solid #ddd; padding:6px; text-align:right;">₹${transaction.amount.toFixed(
+                                <td style="border:1px solid #ddd; padding:6px; text-align:right;">&#8377;${transaction.amount.toFixed(
                                   2,
                                 )}</td>
                                 <td style="border:1px solid #ddd; padding:6px; text-align:center;">${transaction.paymentMethod.toUpperCase()}</td>
@@ -493,25 +488,27 @@ export const generatePurchaseHTML = ({
                         }
                       </td>
                       <td class="label">Subtotal</td>
-                      <td class="amount">₹${
+                      <td class="amount">&#8377;${
                         createdInvoice
                           ? Number(invoiceData?.subTotal).toFixed(2)
                           : invoiceCalculations.subtotal.toFixed(2)
                       }</td>
                     </tr>
- 
+
                     <!-- Total Tax — always shown -->
                     <tr class="totals-row no-break">
                       <td class="label">Total Tax</td>
-                      <td class="amount">₹${Number(totalGST).toFixed(2)}</td>
+                      <td class="amount">&#8377;${Number(totalGST).toFixed(
+                        2,
+                      )}</td>
                     </tr>
- 
+
                     ${
                       effectiveDiscountTotal > 0
                         ? `
                     <tr class="totals-row no-break">
                       <td class="label">Extra Discount</td>
-                      <td class="amount" style="color:#e53935;">−₹${
+                      <td class="amount" style="color:#e53935;">&minus;&#8377;${
                         createdInvoice
                           ? Number(invoiceData?.discountTotal).toFixed(2)
                           : Number(invoiceCalculations.discountTotal).toFixed(2)
@@ -519,7 +516,7 @@ export const generatePurchaseHTML = ({
                     </tr>`
                         : ''
                     }
- 
+
                     ${
                       roundOffValue != 0
                         ? `
@@ -535,18 +532,18 @@ export const generatePurchaseHTML = ({
                                   ? '+'
                                   : ''
                               }${Number(invoiceData?.roundOff || 0).toFixed(2)}`
-                            : `${roundOffValue < 0 ? '−' : '+'}₹${Math.abs(
-                                roundOffValue,
-                              ).toFixed(2)}`
+                            : `${
+                                roundOffValue < 0 ? '&minus;' : '+'
+                              }&#8377;${Math.abs(roundOffValue).toFixed(2)}`
                         }
                       </td>
                     </tr>`
                         : ''
                     }
- 
+
                     <tr class="grand-total-row no-break">
                       <td class="label">Net Total</td>
-                      <td class="amount">₹${
+                      <td class="amount">&#8377;${
                         createdInvoice
                           ? Number(invoiceData?.grandTotal).toFixed(2)
                           : (
@@ -555,14 +552,14 @@ export const generatePurchaseHTML = ({
                             ).toFixed(2)
                       }</td>
                     </tr>
- 
+
                     ${
                       payment.status !== 'paid' ||
                       Math.round(payment.due * 100) / 100 > 0.01
                         ? `
                     <tr class="payment-row no-break">
                       <td class="label">Paid Amount</td>
-                      <td class="amount">₹${payment.paid.toFixed(2)}</td>
+                      <td class="amount">&#8377;${payment.paid.toFixed(2)}</td>
                     </tr>
                     <tr class="payment-row no-break">
                       <td class="label">Due Amount</td>
@@ -570,13 +567,13 @@ export const generatePurchaseHTML = ({
                         Math.round(payment.due * 100) / 100 > 0.01
                           ? '#e53935'
                           : '#000'
-                      };">₹${payment.due.toFixed(2)}</td>
+                      };">&#8377;${payment.due.toFixed(2)}</td>
                     </tr>`
                         : ''
                     }
                   </tbody>
                 </table>
- 
+
                 <!-- Payment Status Badge -->
                 <div class="payment-status-container">
                   <span class="payment-status ${payment.status?.toLowerCase()}">
@@ -589,7 +586,7 @@ export const generatePurchaseHTML = ({
                     }
                   </span>
                 </div>
- 
+
                 ${
                   invoiceData?.paymentMethod || invoiceData?.paymentNote
                     ? `
@@ -616,7 +613,7 @@ export const generatePurchaseHTML = ({
                     : ''
                 }
               </div>
- 
+
               <!-- GST breakdown — always shown if any item has GST -->
               ${
                 !preview &&
@@ -644,12 +641,10 @@ export const generatePurchaseHTML = ({
             </td>
           </tr>
         </tbody>
- 
-        
+
       </table>
     </div>
- 
-   
+
   </body>
   </html>`;
 };

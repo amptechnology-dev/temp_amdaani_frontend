@@ -197,9 +197,9 @@ const AddPurchaseItems = () => {
     fetchProducts();
   }, []);
 
-  // const existing = route.params.existingCart;
+  const existing = route.params.existingCart;
 
-  //console.log('exinsing cart', existing);
+  console.log('exinsing cart', existing);
 
   // ─── Initialize cart from route params ───────────────────────────────────
   useEffect(() => {
@@ -298,8 +298,18 @@ const AddPurchaseItems = () => {
         ...(isPurchase &&
           !item._manualDiscountApplied && {
             discountPrice: item.discountPrice ?? 0,
+
             discountPercent: item.discountPercent ?? 0,
+
             discountType: item.discountType ?? 'amount',
+
+            discountPercentage: item.discountPercentage ?? 0,
+
+            sellDiscount: item.sellDiscount ?? 0,
+
+            sellDiscountType: item.sellDiscountType ?? 'amount',
+
+            sellDiscountPercent: item.sellDiscountPercent ?? 0,
           }),
       };
 
@@ -562,18 +572,55 @@ const AddPurchaseItems = () => {
       if (!isPurchase) {
         const syncFields = {
           sellingPrice: finalItem.sellingPrice,
+
           discountPrice: finalItem.discountPrice,
+
           discountPercent: finalItem.discountPercent,
+
           discountType: finalItem.discountType,
         };
+
         setProducts(prev =>
           prev.map(p =>
             p._id === finalItem._id ? { ...p, ...syncFields } : p,
           ),
         );
+
         setFilteredProducts(prev =>
           prev.map(p =>
             p._id === finalItem._id ? { ...p, ...syncFields } : p,
+          ),
+        );
+      } else {
+        // Sync purchase-side discount fields back into product list
+
+        // so re-opening the bottom sheet shows the saved values
+
+        const purchaseSyncFields = {
+          discountPrice: finalItem.discountPrice,
+
+          discountPercent: finalItem.discountPercent,
+
+          discountPercentage: finalItem.discountPercentage,
+
+          discountType: finalItem.discountType,
+
+          sellDiscountType: finalItem.sellDiscountType,
+
+          sellDiscountPercent: finalItem.sellDiscountPercent,
+
+          sellDiscount: finalItem.sellDiscount,
+        };
+
+        setProducts(prev =>
+          prev.map(p =>
+            p._id === finalItem._id ? { ...p, ...purchaseSyncFields } : p,
+          ),
+        );
+
+        setFilteredProducts(prev =>
+          prev.map(p =>
+            p._id === finalItem._id ? { ...p, ...purchaseSyncFields } : p,
           ),
         );
       }
@@ -1053,6 +1100,8 @@ const AddPurchaseItems = () => {
     }
 
     const onItemsSelected = route?.params?.onItemsSelected;
+
+    console.log('final cart', cart);
 
     if (onItemsSelected) {
       // ✅ Attach frozen previousQty from ref map onto each item

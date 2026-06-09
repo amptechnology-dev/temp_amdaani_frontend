@@ -705,13 +705,11 @@ export default function Purchase() {
                 item.purchaseGstRate ?? item.gstRate ?? 0,
               ),
               isPurchaseTaxInclusive: Boolean(
-                item.isPurchaseTaxInclusive ?? item.isTaxInclusive ?? false,
+                item.isPurchaseTaxInclusive ?? false,
               ),
               qty: Number(item.quantity ?? item.qty ?? 0),
               gstRate: Number(item.purchaseGstRate ?? item.gstRate ?? 0),
-              isTaxInclusive: Boolean(
-                item.isPurchaseTaxInclusive ?? item.isTaxInclusive ?? false,
-              ),
+              isTaxInclusive: Boolean(item.isTaxInclusive ?? false),
               discount: Number(item.purchaseDiscount ?? item.discount ?? 0),
               hsn: item.hsn ?? '',
               unit: item.unit ?? 'Piece',
@@ -811,9 +809,9 @@ export default function Purchase() {
 
       // ✅ FIX: read isPurchaseTaxInclusive first, fallback to isTaxInclusive
       const isPurchaseTaxInclusive = Boolean(
-        item.isPurchaseTaxInclusive ?? item.isTaxInclusive ?? false,
+        item.isPurchaseTaxInclusive ?? false,
       );
-      const isTaxInclusive = isPurchaseTaxInclusive; // keep in sync for serialisation
+      const isTaxInclusive = item.isTaxInclusive; // keep in sync for serialisation
 
       let baseRate = 0;
       let taxableValue = 0;
@@ -1145,6 +1143,8 @@ export default function Purchase() {
 
       if (isEditMode && existingPurchase?._id) {
         console.log('Editing existing purchase:', existingPurchase._id);
+
+        console.log('-->', purchaseData);
         res = await api.put(
           `/purchase/id/${existingPurchase._id}`,
           purchaseData,
