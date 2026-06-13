@@ -109,7 +109,7 @@ const PurchaseDetail = ({ route, navigation }) => {
       setLoading(true);
       setError(null);
       const res = await api.get(`/purchase/id/${purchaseId}`);
-      // console.log('Purchase Data', res);
+      console.log('Purchase Data', res);
       if (res?.success) {
         setPurchase(res.data);
       } else {
@@ -260,36 +260,47 @@ const PurchaseDetail = ({ route, navigation }) => {
     );
 
     const cartItems = items.map(item => {
-      console.log('---item ', item);
       const qty = Number(item.quantity || 0);
       const rawRate = Number(item.rate || 0);
       const gstRate = Number(item.gstRate || 0);
-      const isInc = !!item.isTaxInclusive;
+      const isInc = !!(
+        item.isPurchaseTaxInclusive ??
+        item.isTaxInclusive ??
+        false
+      );
+      const perUnitDiscountRaw = Number(item.discount || 0);
 
       let baseRate = 0;
       let taxableValue = 0;
       let gstAmount = 0;
       let totalAmount = 0;
-      let perUnitDiscountRaw = Number(item.discount || 0);
       let perUnitDiscountExclusive = perUnitDiscountRaw;
 
       if (isInc) {
-        // ✅ GST baked inside rate — extract base, total = rawRate × qty (no extra tax)
-        baseRate = gstRate > 0 ? rawRate / (1 + gstRate / 100) : rawRate;
-        perUnitDiscountExclusive =
-          gstRate > 0
-            ? perUnitDiscountRaw / (1 + gstRate / 100)
-            : perUnitDiscountRaw;
+        // ✅ Tax inclusive: GST is baked into the rate
+        // Extract base price from the inclusive rate
+        const divisor = 1 + gstRate / 100;
+        baseRate = gstRate > 0 ? rawRate / divisor : rawRate;
 
-        taxableValue = baseRate * qty - perUnitDiscountExclusive * qty;
+        // Discount is also tax-inclusive — extract base discount
+        perUnitDiscountExclusive =
+          gstRate > 0 ? perUnitDiscountRaw / divisor : perUnitDiscountRaw;
+
+        // Net inclusive price per unit after discount
+        const netInclusivePerUnit = rawRate - perUnitDiscountRaw;
+
+        // Taxable value = net inclusive / divisor * qty
+        taxableValue = (netInclusivePerUnit / divisor) * qty;
         gstAmount = gstRate > 0 ? taxableValue * (gstRate / 100) : 0;
-        totalAmount = rawRate * qty - perUnitDiscountRaw * qty; // ✅ no extra tax
+
+        // ✅ Total = net inclusive price × qty (no extra tax added)
+        totalAmount = netInclusivePerUnit * qty;
       } else {
-        // ✅ GST on top — total = taxableValue + gstAmount
+        // ✅ Tax exclusive: GST added on top
         baseRate = rawRate;
-        taxableValue = baseRate * qty - perUnitDiscountRaw * qty;
+        taxableValue = (baseRate - perUnitDiscountRaw) * qty;
         gstAmount = gstRate > 0 ? taxableValue * (gstRate / 100) : 0;
-        totalAmount = taxableValue + gstAmount; // ✅ tax added
+        totalAmount = taxableValue + gstAmount;
       }
 
       return {
@@ -298,7 +309,7 @@ const PurchaseDetail = ({ route, navigation }) => {
         qty,
         quantity: qty,
         unit: item.unit,
-        price: rawRate,
+        price: rawRate, // ✅ always the raw rate as stored
         mrp: item.mrp,
         baseRate,
         gstRate,
@@ -338,7 +349,7 @@ const PurchaseDetail = ({ route, navigation }) => {
     );
 
     const invoiceCalculations = {
-      subtotal: Number(sums.subtotal.toFixed(2)),
+      subTotal: Number(invoiceCalculations.subtotal),
       discountTotal: Number(sums.discountTotal.toFixed(2)),
       gstTotal: Number(sums.gstTotal.toFixed(2)),
       grandTotal: Number(computedGrand.toFixed(2)),
@@ -374,7 +385,7 @@ const PurchaseDetail = ({ route, navigation }) => {
       invoiceData: {
         ...purchase,
         isIgst,
-        subTotal: Number(purchase.subTotal ?? invoiceCalculations.subtotal),
+        subTotal: Number(invoiceCalculations.subtotal),
         discountTotal: Number(
           purchase.discountTotal ?? invoiceCalculations.discountTotal,
         ),

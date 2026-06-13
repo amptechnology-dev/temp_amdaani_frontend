@@ -248,7 +248,7 @@ const PurchaseReport = () => {
 
       console.log('purchse res', res);
       // api utility may return axios response (res.data) or already-unwrapped ({ success, data })
-      console.log('res', res);
+      console.log('res88', res);
       let rows = res?.data?.data ?? res?.data ?? [];
       console.log('res', res);
       // ensure it's always an array
@@ -336,14 +336,22 @@ const PurchaseReport = () => {
     const toNum = v => Number(v || 0);
     return {
       count: purchases.length,
-      subTotal: purchases.reduce((s, r) => s + toNum(r.subTotal), 0),
+      subTotal: purchases.reduce(
+        (s, r) => s + toNum(r.taxableValue ?? r.subTotal),
+        0,
+      ),
       gstTotal: purchases.reduce((s, r) => s + toNum(r.gstTotal), 0),
       discountTotal: purchases.reduce((s, r) => s + toNum(r.discountTotal), 0),
       grandTotal: purchases.reduce((s, r) => s + toNum(r.grandTotal), 0),
       totalQty: purchases.reduce(
         (s, r) =>
           s +
-          (r.items || []).reduce((qs, it) => qs + Number(it.quantity || 0), 0),
+          (r.totalItemsQty != null
+            ? Number(r.totalItemsQty)
+            : (r.items || []).reduce(
+                (qs, it) => qs + Number(it.quantity || 0),
+                0,
+              )),
         0,
       ),
     };
@@ -369,20 +377,22 @@ const PurchaseReport = () => {
   // ─── Row helpers ──────────────────────────────────────────────────────────
   const getRowData = (purchase, sl) => {
     const currency = n => `₹${Number(n || 0).toFixed(2)}`;
-    const totalQty = (purchase.items || []).reduce(
-      (s, it) => s + Number(it.quantity || 0),
-      0,
-    );
-    const discountPct = (purchase.items || []).reduce(
-      (s, it) => s + Number(it.discount || 0),
-      0,
-    );
+    const totalQty =
+      purchase.totalItemsQty != null
+        ? Number(purchase.totalItemsQty)
+        : (purchase.items || []).reduce(
+            (s, it) => s + Number(it.quantity || 0),
+            0,
+          );
 
     // ✅ New fields
     const gstTotal = Number(purchase.gstTotal || 0);
     const cgst = purchase.isIgst ? 0 : gstTotal / 2;
     const sgst = purchase.isIgst ? 0 : gstTotal / 2;
-    const taxableValue = Number(purchase.subTotal || 0);
+    const discountPct = Number(purchase.discountTotal || 0);
+    const taxableValue = Number(
+      purchase.taxableValue ?? purchase.subTotal ?? 0,
+    );
 
     return {
       sl,

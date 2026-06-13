@@ -134,9 +134,13 @@ const PurchaseCartItemBottomSheet = forwardRef(
             ? item.productOriginalPrice
             : item.sellingPrice > 0
             ? item.sellingPrice
+            : item.price > 0 // ✅ ADD THIS fallback
+            ? item.price
             : 0,
         ).toFixed(2),
       );
+      setSellingPrice(sp);
+      setSellingPriceText(toFixed2(sp));
       setSellingPrice(sp);
       setSellingPriceText(toFixed2(sp));
 
@@ -173,30 +177,32 @@ const PurchaseCartItemBottomSheet = forwardRef(
         normPurchaseDiscType === 'percent' ? (pp * pdRaw) / 100 : pdRaw;
       setPrice(parseFloat(Math.max(0, pp - pdAmt).toFixed(2)));
 
-      // ── 6. Selling discount ───────────────────────────────────────────────
-      // ✅ FIX: normalize discount type from BOTH sources
-      //   - sellDiscountType  (bottom sheet format): 'percent' | 'amount'
-      //   - discountType      (DB format):           'percentage' | 'amount'
+      // ── 6. Selling discount ───────────────────────────────────────────────────
+      // Priority: discountType (DB field) > sellDiscountType (may be stale)
       const rawSellDiscType =
-        item.sellDiscountType || item.discountType || 'amount';
+        item.discountType || // ✅ check discountType FIRST (most reliable)
+        item.sellDiscountType ||
+        'amount';
 
       const normSellDiscType =
         rawSellDiscType === 'percentage' ? 'percent' : rawSellDiscType;
 
       let sdRaw = 0;
-      let resolvedSellDiscType = normSellDiscType; // ← may be overridden below
+      let resolvedSellDiscType = normSellDiscType;
 
       if (normSellDiscType === 'percent') {
+        // Read percentage value — check all possible field names
         sdRaw = Number(
-          item.sellDiscountPercent > 0
-            ? item.sellDiscountPercent
+          item.discountPercentage > 0 // ✅ check this FIRST (your data has 50 here)
+            ? item.discountPercentage
             : item.discountPercent > 0
             ? item.discountPercent
-            : item.discountPercentage ?? 0,
+            : item.sellDiscountPercent > 0
+            ? item.sellDiscountPercent
+            : 0,
         );
       } else {
-        // Type says 'amount' — but check if flat amount is actually zero
-        // while a percentage field has a value. This handles stale/mismatched saves.
+        // Type says 'amount' — but verify a % field doesn't have the real value
         const flatAmt = Number(
           item.sellDiscount > 0
             ? item.sellDiscount
@@ -206,23 +212,32 @@ const PurchaseCartItemBottomSheet = forwardRef(
         );
 
         const pctFallback = Number(
-          item.sellDiscountPercent > 0
-            ? item.sellDiscountPercent
+          item.discountPercentage > 0 // ✅ check discountPercentage first
+            ? item.discountPercentage
             : item.discountPercent > 0
             ? item.discountPercent
-            : item.discountPercentage ?? 0,
+            : item.sellDiscountPercent > 0
+            ? item.sellDiscountPercent
+            : 0,
         );
 
         if (flatAmt === 0 && pctFallback > 0) {
-          // Saved as 'amount' but the real value is in a % field — correct it
           resolvedSellDiscType = 'percent';
           sdRaw = pctFallback;
+        } else if (flatAmt > 0 && pctFallback > 0) {
+          // ✅ BOTH exist — trust discountType to decide which to show
+          if (normSellDiscType === 'amount') {
+            sdRaw = flatAmt;
+          } else {
+            resolvedSellDiscType = 'percent';
+            sdRaw = pctFallback;
+          }
         } else {
           sdRaw = flatAmt;
         }
       }
 
-      setSellDiscountType(resolvedSellDiscType); // ← use resolved, not raw
+      setSellDiscountType(resolvedSellDiscType);
       setSellDiscountValue(toFixed2(sdRaw));
 
       const sdAmt =

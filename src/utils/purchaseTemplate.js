@@ -65,7 +65,7 @@ export const generatePurchaseHTML = ({
 
       const costPrice = item.costPrice || item.price || 0;
 
-      const baseRate = item.baseRate || 0;
+      const baseRate = item.baseRate || item.price || item.rate || 0;
 
       const gstRate = item.gstRate || 0;
       const gstAmount = item.gstAmount || 0;

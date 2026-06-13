@@ -265,6 +265,65 @@ export default function NewSale() {
     // Sheet closes itself in its own handleSave after calling onSave
   };
 
+  useEffect(() => {
+    const loadInvoiceDetails = async () => {
+      if (isEditMode && existingInvoice?._id) {
+        try {
+          const res = await api.get(`/invoice/id/${existingInvoice._id}`);
+          if (res?.success && res?.data) {
+            const fullInvoice = res.data;
+
+            console.log('data-->', res.data);
+
+            const normalizedItems = (fullInvoice.items || []).map(item => ({
+              ...item,
+              qty: Number(item.quantity ?? item.qty ?? 0),
+              price: Number(item.sellingPrice ?? item.price ?? 0),
+              gstRate: Number(item.gstRate ?? 0),
+              isTaxInclusive: item.isTaxInclusive ?? false,
+              discount: Number(item.discount ?? 0),
+              hsn: item.hsn ?? '',
+              unit: item.unit ?? 'pcs',
+              total: Number(item.total ?? 0),
+            }));
+
+            setCartItems(normalizedItems);
+            setShowPreview(true);
+            setSelectedCustomer({
+              name: fullInvoice.customerName,
+              mobile: fullInvoice.customerMobile,
+              address: fullInvoice.customerAddress,
+              gstNumber: fullInvoice.customerGstNumber || '',
+            });
+
+            // Ensure invoice type reflects saved invoice
+            if (fullInvoice.type === 'gst' || fullInvoice.type === 'non-gst') {
+              setInvoiceKind(fullInvoice.type);
+            }
+
+            // ✅ ADD THIS BLOCK HERE ↓↓↓
+            setPaidAmount(
+              Number(fullInvoice.amountPaid ?? fullInvoice.grandTotal ?? 0),
+            );
+            setPaymentMethod(fullInvoice.paymentMethod || 'cash');
+            setPaymentNote(fullInvoice.paymentNote || '');
+            setInvoiceRemarks(fullInvoice.remarks || '');
+            hasUserEditedPaid.current = true;
+            // ✅ ADD THIS BLOCK HERE ↑↑↑
+
+            setInvoiceLoaded(true);
+          } else {
+            console.warn('Invoice fetch failed or empty data');
+          }
+        } catch (err) {
+          console.error('Failed to fetch invoice details:', err);
+        }
+      }
+    };
+
+    loadInvoiceDetails();
+  }, [isEditMode, existingInvoice]);
+
   const shouldShowBackAlert = () => {
     const fv = formikRef.current?.values || {};
     // show alert if invoice is loaded or any customer info entered

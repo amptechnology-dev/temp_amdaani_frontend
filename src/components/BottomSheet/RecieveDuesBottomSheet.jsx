@@ -1,15 +1,21 @@
 import React, { forwardRef, useState, useEffect } from 'react';
-import { View, StyleSheet, KeyboardAvoidingView, Platform } from 'react-native';
+import {
+  View,
+  StyleSheet,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableOpacity,
+} from 'react-native';
 import {
   TextInput,
   Button,
   Text,
   useTheme,
-  SegmentedButtons,
   Portal,
   Snackbar,
   Card,
   Divider,
+  Icon,
 } from 'react-native-paper';
 import BaseBottomSheet from './BaseBottomSheet';
 import * as Yup from 'yup';
@@ -32,15 +38,14 @@ const ReceivePaymentBottomSheet = forwardRef(
     const [form, setForm] = useState({
       amount: '',
       paymentMethod: 'cash',
+      note: '',
     });
 
     const [errors, setErrors] = useState({});
     const [touched, setTouched] = useState({});
 
-    // Calculate due amount
     const dueAmount = invoiceData?.amountDue;
 
-    // Auto-fill amount when invoiceData changes
     useEffect(() => {
       if (invoiceData && dueAmount > 0) {
         setForm(prev => ({
@@ -50,7 +55,6 @@ const ReceivePaymentBottomSheet = forwardRef(
       }
     }, [invoiceData, dueAmount]);
 
-    // Validation Schema
     const validationSchema = Yup.object().shape({
       amount: Yup.number()
         .typeError('Amount must be a number')
@@ -60,18 +64,15 @@ const ReceivePaymentBottomSheet = forwardRef(
         .min(1, 'Amount must be at least ₹1'),
       paymentMethod: Yup.string()
         .oneOf(
-          ['cash', 'card', 'upi', 'bank_transfer'],
+          ['cash', 'card', 'upi', 'bank_transfer'], // ✅ underscore
           'Invalid payment method',
         )
         .required('Payment method is required'),
-
       note: Yup.string().max(100, 'Note cannot exceed 100 characters'),
     });
 
     const handleChange = (field, value) => {
       setForm(prev => ({ ...prev, [field]: value }));
-
-      // Clear error when user starts typing
       if (errors[field]) {
         setErrors(prev => ({ ...prev, [field]: '' }));
       }
@@ -104,33 +105,17 @@ const ReceivePaymentBottomSheet = forwardRef(
           newErrors[err.path] = err.message;
         });
         setErrors(newErrors);
-
-        // Mark all fields as touched to show errors
-        setTouched({
-          amount: true,
-          paymentMethod: true,
-        });
-
+        setTouched({ amount: true, paymentMethod: true });
         return false;
       }
     };
 
     const showAlert = (title, message, type = 'error') => {
-      setAlert({
-        visible: true,
-        title,
-        message,
-        type,
-      });
+      setAlert({ visible: true, title, message, type });
     };
 
     const hideAlert = () => {
-      setAlert({
-        visible: false,
-        title: '',
-        message: '',
-        type: 'error',
-      });
+      setAlert({ visible: false, title: '', message: '', type: 'error' });
     };
 
     const handlePayment = async () => {
@@ -138,7 +123,6 @@ const ReceivePaymentBottomSheet = forwardRef(
       if (!isValid) return;
 
       setLoading(true);
-
       try {
         const response = await api.post(
           `/invoice/add-payment/${invoiceData._id}`,
@@ -149,28 +133,22 @@ const ReceivePaymentBottomSheet = forwardRef(
           },
         );
 
-        // console.log('Payment response:', response);
-
         if (response.success) {
           Toast.show({
             type: 'success',
             text1: 'Payment received successfully!',
           });
-
           onPaymentSuccess?.(response.data);
-
           setTimeout(() => {
             ref.current?.close();
             resetForm();
           }, 1500);
         }
       } catch (error) {
-        // console.log('Payment error:', error);
-
+        console.log('Payment error:', error);
         if (error.response?.data?.success === false) {
           const errorMessage = error.response.data.message || 'Payment failed';
           const detailedError = error.response.data.errors?.[0]?.message;
-
           showAlert('Payment Failed', detailedError || errorMessage, 'error');
         } else {
           showAlert(
@@ -185,10 +163,7 @@ const ReceivePaymentBottomSheet = forwardRef(
     };
 
     const resetForm = () => {
-      setForm({
-        amount: '',
-        paymentMethod: 'cash',
-      });
+      setForm({ amount: '', paymentMethod: 'cash', note: '' });
       setErrors({});
       setTouched({});
     };
@@ -203,35 +178,18 @@ const ReceivePaymentBottomSheet = forwardRef(
     };
 
     const paymentMethods = [
-      {
-        value: 'cash',
-        label: 'Cash',
-        icon: 'cash',
-      },
-      {
-        value: 'card',
-        label: 'Card',
-        icon: 'credit-card',
-      },
-      {
-        value: 'upi',
-        label: 'UPI',
-        icon: 'cellphone',
-      },
-      {
-        value: 'bank_transfer',
-        label: 'Bank Transfer',
-        icon: 'bank',
-      },
+      { value: 'cash', label: 'Cash', icon: 'cash' },
+      { value: 'card', label: 'Card', icon: 'credit-card' },
+      { value: 'upi', label: 'UPI', icon: 'cellphone' },
+      { value: 'bank_transfer', label: 'Bank Transfer', icon: 'bank' }, // ✅ underscore
     ];
 
-    const formatCurrency = amount => {
-      return new Intl.NumberFormat('en-IN', {
+    const formatCurrency = amount =>
+      new Intl.NumberFormat('en-IN', {
         style: 'currency',
         currency: 'INR',
         minimumFractionDigits: 2,
       }).format(amount);
-    };
 
     return (
       <>
@@ -242,9 +200,7 @@ const ReceivePaymentBottomSheet = forwardRef(
           showHeader
           initialSnapIndex={-1}
           contentType="scroll"
-          contentContainerStyle={{
-            backgroundColor: theme.colors.surface,
-          }}
+          contentContainerStyle={{ backgroundColor: theme.colors.surface }}
           footerComponent={
             <View
               style={[
@@ -278,9 +234,9 @@ const ReceivePaymentBottomSheet = forwardRef(
         >
           <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={[styles.container]}
+            style={styles.container}
           >
-            {/* Invoice Summary */}
+            {/* ── Invoice Summary ── */}
             <Card
               style={[
                 styles.summaryCard,
@@ -352,7 +308,7 @@ const ReceivePaymentBottomSheet = forwardRef(
               </Card.Content>
             </Card>
 
-            {/* Amount Input */}
+            {/* ── Amount Input ── */}
             <View style={styles.inputContainer}>
               <TextInput
                 label="Payment Amount"
@@ -385,7 +341,6 @@ const ReceivePaymentBottomSheet = forwardRef(
                   {errors.amount}
                 </Text>
               )}
-
               {dueAmount <= 0 && (
                 <Text
                   style={[
@@ -398,7 +353,7 @@ const ReceivePaymentBottomSheet = forwardRef(
               )}
             </View>
 
-            {/* Payment Method */}
+            {/* ── Payment Method ── */}
             <View style={styles.paymentMethodSection}>
               <Text
                 variant="titleSmall"
@@ -406,27 +361,70 @@ const ReceivePaymentBottomSheet = forwardRef(
               >
                 Payment Method
               </Text>
-              <SegmentedButtons
-                value={form.paymentMethod}
-                onValueChange={value => handleChange('paymentMethod', value)}
-                buttons={paymentMethods}
-                style={styles.segmentedButtons}
-              />
 
+              {/* ✅ Custom chip row — replaces SegmentedButtons */}
+              <View style={styles.paymentMethodRow}>
+                {paymentMethods.map(method => {
+                  const isSelected = form.paymentMethod === method.value;
+                  return (
+                    <TouchableOpacity
+                      key={method.value}
+                      onPress={() =>
+                        handleChange('paymentMethod', method.value)
+                      }
+                      style={[
+                        styles.paymentChip,
+                        {
+                          backgroundColor: isSelected
+                            ? theme.colors.primaryContainer
+                            : theme.colors.surfaceVariant,
+                          borderColor: isSelected
+                            ? theme.colors.primary
+                            : 'transparent',
+                          borderWidth: 1.5,
+                        },
+                      ]}
+                    >
+                      <Icon
+                        source={method.icon}
+                        size={18}
+                        color={
+                          isSelected
+                            ? theme.colors.primary
+                            : theme.colors.onSurfaceVariant
+                        }
+                      />
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: '600',
+                          marginTop: 4,
+                          color: isSelected
+                            ? theme.colors.primary
+                            : theme.colors.onSurfaceVariant,
+                        }}
+                      >
+                        {method.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* Payment Reference / Note */}
               <TextInput
-                label="Payment Reference"
+                label="Payment Reference (Optional)"
                 mode="outlined"
-                value={form.reference}
+                value={form.note}
                 onChangeText={text => handleChange('note', text)}
                 onBlur={() => handleBlur('note')}
                 style={styles.input}
                 theme={{ roundness: 12 }}
-                contentStyle={styles.inputContent}
-                error={touched.reference && !!errors.reference}
+                error={touched.note && !!errors.note}
               />
-              {touched.reference && errors.reference && (
+              {touched.note && errors.note && (
                 <Text style={[styles.errorText, { color: theme.colors.error }]}>
-                  {errors.reference}
+                  {errors.note}
                 </Text>
               )}
             </View>
@@ -456,13 +454,7 @@ const ReceivePaymentBottomSheet = forwardRef(
           title={alert.title}
           message={alert.message}
           type={alert.type}
-          actions={[
-            {
-              label: 'OK',
-              onPress: hideAlert,
-              mode: 'contained',
-            },
-          ]}
+          actions={[{ label: 'OK', onPress: hideAlert, mode: 'contained' }]}
         />
       </>
     );
@@ -509,8 +501,18 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     fontWeight: '600',
   },
-  segmentedButtons: {
-    marginBottom: 8,
+  // ✅ New chip styles
+  paymentMethodRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  paymentChip: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 10,
   },
   footer: {
     flexDirection: 'row',

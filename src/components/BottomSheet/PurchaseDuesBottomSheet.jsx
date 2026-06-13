@@ -62,7 +62,7 @@ const PurchaseDuesBottomSheet = forwardRef(
         .min(1, 'Amount must be at least ₹1'),
       paymentMethod: Yup.string()
         .oneOf(
-          ['cash', 'card', 'upi', 'bank_transfer'],
+          ['cash', 'card', 'upi', 'bank_transfer'], // ✅ underscore
           'Invalid payment method',
         )
         .required('Payment method is required'),
@@ -206,7 +206,7 @@ const PurchaseDuesBottomSheet = forwardRef(
       { value: 'cash', label: 'Cash', icon: 'cash' },
       { value: 'card', label: 'Card', icon: 'credit-card' },
       { value: 'upi', label: 'UPI', icon: 'cellphone' },
-      { value: 'bank_transfer', label: 'Bank Transfer', icon: 'bank' },
+      { value: 'bank_transfer', label: 'Bank Transfer', icon: 'bank' }, // ✅ underscore
     ];
 
     const formatCurrency = amount =>

@@ -297,19 +297,16 @@ const AddPurchaseItems = () => {
         // ✅ Only reset discount fields if item has no prior edits
         ...(isPurchase &&
           !item._manualDiscountApplied && {
-            discountPrice: item.discountPrice ?? 0,
-
-            discountPercent: item.discountPercent ?? 0,
-
-            discountType: item.discountType ?? 'amount',
-
-            discountPercentage: item.discountPercentage ?? 0,
-
-            sellDiscount: item.sellDiscount ?? 0,
-
-            sellDiscountType: item.sellDiscountType ?? 'amount',
-
-            sellDiscountPercent: item.sellDiscountPercent ?? 0,
+            discountPrice: item.discountPrice ?? prod.discountPrice ?? 0,
+            discountPercent: item.discountPercent ?? prod.discountPercent ?? 0,
+            discountPercentage:
+              item.discountPercentage ?? prod.discountPercentage ?? 0,
+            discountType: item.discountType ?? prod.discountType ?? 'amount', // ✅ source of truth
+            sellDiscount: item.sellDiscount ?? prod.sellDiscount ?? 0,
+            sellDiscountType:
+              item.discountType ?? item.sellDiscountType ?? 'amount', // ✅ use discountType first
+            sellDiscountPercent:
+              item.sellDiscountPercent ?? prod.sellDiscountPercent ?? 0,
           }),
       };
 
