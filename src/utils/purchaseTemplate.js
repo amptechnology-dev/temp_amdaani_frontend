@@ -63,9 +63,12 @@ export const generatePurchaseHTML = ({
     .map((item, index) => {
       const qty = item.qty || item.quantity || 0;
 
-      const costPrice = item.costPrice || item.price || 0;
-
-      const baseRate = item.baseRate || item.price || item.rate || 0;
+      const costPrice = Number(item.costPrice ?? item.rate ?? item.price ?? 0);
+      const purchaseDiscount = Number(
+        item.purchaseDiscount ?? item.discount ?? 0,
+      );
+      const netRate = Math.max(0, costPrice - purchaseDiscount);
+      const baseRate = netRate;
 
       const gstRate = item.gstRate || 0;
       const gstAmount = item.gstAmount || 0;

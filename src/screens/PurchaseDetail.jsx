@@ -309,7 +309,9 @@ const PurchaseDetail = ({ route, navigation }) => {
         qty,
         quantity: qty,
         unit: item.unit,
-        price: rawRate, // ✅ always the raw rate as stored
+        price: rawRate,
+        costPrice: rawRate,
+        baseRate: rawRate, // ✅ always the raw rate as stored
         mrp: item.mrp,
         baseRate,
         gstRate,
@@ -349,7 +351,7 @@ const PurchaseDetail = ({ route, navigation }) => {
     );
 
     const invoiceCalculations = {
-      subTotal: Number(invoiceCalculations.subtotal),
+      subtotal: Number(sums.subtotal.toFixed(2)),
       discountTotal: Number(sums.discountTotal.toFixed(2)),
       gstTotal: Number(sums.gstTotal.toFixed(2)),
       grandTotal: Number(computedGrand.toFixed(2)),
@@ -385,7 +387,7 @@ const PurchaseDetail = ({ route, navigation }) => {
       invoiceData: {
         ...purchase,
         isIgst,
-        subTotal: Number(invoiceCalculations.subtotal),
+        subTotal: Number(purchase.subTotal ?? invoiceCalculations.subtotal),
         discountTotal: Number(
           purchase.discountTotal ?? invoiceCalculations.discountTotal,
         ),
