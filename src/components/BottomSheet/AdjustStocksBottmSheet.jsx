@@ -1,4 +1,5 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+
 import {
   View,
   ScrollView,
@@ -74,6 +75,7 @@ const AdjustStockBottomSheet = React.forwardRef(
       initialSnapIndex = -1,
       onActionTypeChange,
       initialActionType = 'add',
+      openSignal = 0,
       ...props
     },
     ref,
@@ -81,20 +83,30 @@ const AdjustStockBottomSheet = React.forwardRef(
     const theme = useTheme();
     const [isDatePickerVisible, setDatePickerVisible] = useState(false);
     const [reason, setReason] = useState('');
+    const formikRef = useRef(null);
 
-    const initialValues = {
-      actionType: initialActionType,
-      adjustmentDate: new Date(),
-      quantity: '',
-      rate: costPrice?.toString() || '',
-      reason: null,
-      remarks: '',
-    };
-
-    console.log(
-      'AdjustStockBottomSheet rendered with selectedReason:',
-      selectedReason,
+    const buildInitialValues = useCallback(
+      () => ({
+        actionType: initialActionType,
+        adjustmentDate: new Date(),
+        quantity: '',
+        rate: costPrice?.toString() || '',
+        reason: null,
+        remarks: '',
+      }),
+      [initialActionType, costPrice],
     );
+
+    const initialValues = buildInitialValues();
+
+    // Re-runs every time openStockSheet() fires, even for the same product —
+    // this is what gives each open a clean form, now that the sheet itself
+    // is never unmounted.
+    useEffect(() => {
+      if (openSignal > 0) {
+        formikRef.current?.resetForm({ values: buildInitialValues() });
+      }
+    }, [openSignal, buildInitialValues]);
 
     useEffect(() => {
       setReason(selectedReason?.id || '');
@@ -184,6 +196,7 @@ const AdjustStockBottomSheet = React.forwardRef(
           style={{ flex: 1 }}
         >
           <Formik
+            innerRef={formikRef}
             initialValues={initialValues}
             validationSchema={validationSchema}
             onSubmit={handleSubmit}
