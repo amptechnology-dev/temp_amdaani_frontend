@@ -45,19 +45,16 @@ import { FAB } from 'react-native-paper';
 import { WebView } from 'react-native-webview';
 import Share from 'react-native-share';
 
-// Smooth animation preset — reuse everywhere
+import { generatePurchaseHTML } from '../utils/purchaseTemplate';
+import { useAuth } from '../context/AuthContext';
+import CustomAlert from '../components/CustomAlert';
+
 const smoothEnter = (delay = 0, duration = 650) =>
   SlideInDown.duration(duration)
     .delay(delay)
-    .easing(Easing.bezier(0.22, 1, 0.36, 1)); // smooth, natural curve
+    .easing(Easing.bezier(0.22, 1, 0.36, 1));
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-// Import your invoice template function
-import { generateInvoiceHTML } from '../utils/invoiceTemplate';
-import { useAuth } from '../context/AuthContext';
-import { generatePurchaseHTML } from '../utils/purchaseTemplate';
-import CustomAlert from '../components/CustomAlert';
 
 const PurchaseDetail = ({ route, navigation }) => {
   const theme = useTheme();
@@ -86,11 +83,8 @@ const PurchaseDetail = ({ route, navigation }) => {
   const [error, setError] = useState(null);
   const [downloading, setDownloading] = useState(false);
   const [sharing, setSharing] = useState(false);
-
   const [alertVisible, setAlertVisible] = useState(false);
-
   const [cancelAlertVisible, setCancelAlertVisible] = useState(false);
-
   const [alertData, setAlertData] = useState({
     title: '',
     message: '',
@@ -104,12 +98,10 @@ const PurchaseDetail = ({ route, navigation }) => {
   };
 
   const fetchPurchase = async () => {
-    console.log('Fetching purchase details for ID:', purchaseId);
     try {
       setLoading(true);
       setError(null);
       const res = await api.get(`/purchase/id/${purchaseId}`);
-      console.log('Purchase Data', res);
       if (res?.success) {
         setPurchase(res.data);
       } else {
@@ -124,7 +116,6 @@ const PurchaseDetail = ({ route, navigation }) => {
   };
 
   useEffect(() => {
-    // console.log('Store Data in PurchaseDetail:', storedata);
     setTimeout(() => {
       fetchPurchase();
     }, 100);
@@ -135,40 +126,22 @@ const PurchaseDetail = ({ route, navigation }) => {
     fetchPurchase().finally(() => setRefreshing(false));
   }, [purchaseId]);
 
-  const handleShare = async () => {
-    try {
-      if (!purchase) return;
-      await Share.share({
-        message: `Purchase Invoice #${purchase.invoiceNumber}\nVendor: ${
-          purchase.vendorName
-        }\nAmount: ₹${purchase.grandTotal?.toFixed(2)}\nDate: ${format(
-          new Date(purchase.date),
-          'dd MMM yyyy',
-        )}`,
-        title: `Purchase #${purchase.invoiceNumber}`,
-      });
-    } catch (error) {
-      console.error('Error sharing:', error);
-    }
-  };
-
   const handleEdit = () => {
     setMenuVisible(false);
     navigation.navigate('Purchase', {
       mode: 'edit',
-      purchaseData: purchase, // 👈 STATE WALA PURCHASE
+      purchaseData: purchase,
     });
   };
 
   const cancelPurchase = async () => {
     try {
       setLoading(true);
-
       const res = await api.put(`/purchase/status/${purchase._id}`, {
         status: 'cancelled',
       });
-
       if (res?.success) {
+        console.log('re', res);
         await fetchPurchase();
         showAlert(
           'Purchase Cancelled',
@@ -190,30 +163,6 @@ const PurchaseDetail = ({ route, navigation }) => {
     }
   };
 
-  // const handleDelete = () => {
-  //   setMenuVisible(false);
-  //   Alert.alert(
-  //     'Delete Purchase',
-  //     'Are you sure you want to delete this purchase? This action cannot be undone.',
-  //     [
-  //       { text: 'Cancel', style: 'cancel' },
-  //       {
-  //         text: 'Delete',
-  //         style: 'destructive',
-  //         onPress: async () => {
-  //           try {
-  //             await api.delete(`/purchase/${purchase._id}`);
-  //             navigation.goBack();
-  //           } catch (err) {
-  //             Alert.alert('Error', 'Failed to delete purchase');
-  //           }
-  //         },
-  //       },
-  //     ],
-  //   );
-  // };
-
-  // Request storage permission for Android
   const requestStoragePermission = async () => {
     if (Platform.OS === 'android' && Platform.Version < 29) {
       const granted = await PermissionsAndroid.request(
@@ -226,13 +175,11 @@ const PurchaseDetail = ({ route, navigation }) => {
       );
       return granted === PermissionsAndroid.RESULTS.GRANTED;
     }
-    return true; // Android 10+ doesn't need permission
+    return true;
   };
 
-  console.log('purchase -->', purchase);
-
-  // Transform purchase data to match invoice template format
-  // Replace entire transformPurchaseToInvoiceData() with this:
+  // ─── Core: transform purchase DB data into generatePurchaseHTML props ───────
+  // Mirrors exactly the same calculation logic as Purchase.jsx invoiceCalculations
   const transformPurchaseToInvoiceData = () => {
     if (!purchase) return null;
 
@@ -253,161 +200,186 @@ const PurchaseDetail = ({ route, navigation }) => {
       amountPaid = 0,
       amountDue = 0,
       paymentNote,
+      subTotal = 0,
+      gstTotal = 0,
+      discountTotal = 0,
+      grandTotal = 0,
     } = purchase;
 
     const vendorHasGst = !!(
       vendorGstNumber && String(vendorGstNumber).trim().length > 0
     );
 
+    // ── Step 1: Build cartItems trusting DB stored computed values ───────────
+    // Same field mapping as Purchase.jsx invoiceCalculations useMemo
+    let subtotal = 0;
+    let totalTax = 0;
+
+    // ✅ gstBreakdown is ALWAYS built when any item has gstRate > 0
+    // regardless of vendorHasGst — so Tax Summary always shows in the PDF
+    const gstBreakdown = {};
+
     const cartItems = items.map(item => {
-      const qty = Number(item.quantity || 0);
-      const rawRate = Number(item.rate || 0);
-      const gstRate = Number(item.gstRate || 0);
-      const isInc = !!(
-        item.isPurchaseTaxInclusive ??
-        item.isTaxInclusive ??
-        false
+      const qty = Number(item.quantity ?? 0);
+      const rawCostPrice = Number(item.costPrice ?? item.rate ?? 0);
+
+      // purchaseDiscount in DB is always stored as flat ₹ amount (fixed in createPurchase)
+      const purchaseDiscount = Number(item.purchaseDiscount ?? 0);
+      const netRate = Math.max(0, rawCostPrice - purchaseDiscount);
+      const gstRate = Number(item.gstRate ?? 0);
+      const isPurchaseTaxInclusive = Boolean(
+        item.isPurchaseTaxInclusive ?? false,
       );
-      const perUnitDiscountRaw = Number(item.discount || 0);
 
-      let baseRate = 0;
-      let taxableValue = 0;
-      let gstAmount = 0;
-      let totalAmount = 0;
-      let perUnitDiscountExclusive = perUnitDiscountRaw;
+      // ── Trust DB computed values — same as what was saved by createPurchase ──
+      const baseRate = Number(
+        item.baseRate ??
+          (isPurchaseTaxInclusive && gstRate > 0
+            ? netRate / (1 + gstRate / 100)
+            : netRate),
+      );
+      const taxableValue = Number(item.taxableValue ?? baseRate * qty);
+      const gstAmount = Number(
+        item.gstAmount ?? taxableValue * (gstRate / 100),
+      );
+      const totalAmount = Number(
+        item.total ??
+          (isPurchaseTaxInclusive ? netRate * qty : taxableValue + gstAmount),
+      );
 
-      if (isInc) {
-        // ✅ Tax inclusive: GST is baked into the rate
-        // Extract base price from the inclusive rate
-        const divisor = 1 + gstRate / 100;
-        baseRate = gstRate > 0 ? rawRate / divisor : rawRate;
+      subtotal += taxableValue;
+      totalTax += gstAmount;
 
-        // Discount is also tax-inclusive — extract base discount
-        perUnitDiscountExclusive =
-          gstRate > 0 ? perUnitDiscountRaw / divisor : perUnitDiscountRaw;
+      // ── GST breakdown — built for ALL items with gstRate > 0 ──────────────
+      // ✅ KEY FIX: do NOT gate on vendorHasGst here.
+      // The tax summary in generatePurchaseHTML checks gstBreakdown keys,
+      // so we must populate it whenever any item has a non-zero gstRate.
+      if (gstRate > 0) {
+        const cgstAmount = isIgst ? 0 : gstAmount / 2;
+        const sgstAmount = isIgst ? 0 : gstAmount / 2;
+        const igstAmount = isIgst ? gstAmount : 0;
 
-        // Net inclusive price per unit after discount
-        const netInclusivePerUnit = rawRate - perUnitDiscountRaw;
-
-        // Taxable value = net inclusive / divisor * qty
-        taxableValue = (netInclusivePerUnit / divisor) * qty;
-        gstAmount = gstRate > 0 ? taxableValue * (gstRate / 100) : 0;
-
-        // ✅ Total = net inclusive price × qty (no extra tax added)
-        totalAmount = netInclusivePerUnit * qty;
-      } else {
-        // ✅ Tax exclusive: GST added on top
-        baseRate = rawRate;
-        taxableValue = (baseRate - perUnitDiscountRaw) * qty;
-        gstAmount = gstRate > 0 ? taxableValue * (gstRate / 100) : 0;
-        totalAmount = taxableValue + gstAmount;
+        if (!gstBreakdown[gstRate]) {
+          gstBreakdown[gstRate] = {
+            taxableAmount: 0,
+            cgstAmount: 0,
+            sgstAmount: 0,
+            igstAmount: 0,
+            totalGst: 0,
+          };
+        }
+        gstBreakdown[gstRate].taxableAmount += taxableValue;
+        gstBreakdown[gstRate].cgstAmount += cgstAmount;
+        gstBreakdown[gstRate].sgstAmount += sgstAmount;
+        gstBreakdown[gstRate].igstAmount += igstAmount;
+        gstBreakdown[gstRate].totalGst += gstAmount;
       }
 
       return {
+        // ── Identity ──────────────────────────────────────────────────────────
         name: item.name,
-        hsn: item.hsn,
+        hsn: item.hsn ?? '',
+        unit: item.unit ?? 'Piece',
+        mrp: Number(item.mrp ?? 0),
+
+        // ── Price fields — all aliases generatePurchaseHTML reads ─────────────
+        costPrice: rawCostPrice,
+        price: rawCostPrice,
+        rate: rawCostPrice,
+        purchaseDiscount: purchaseDiscount,
+        discount: purchaseDiscount,
+
+        // ── Tax ───────────────────────────────────────────────────────────────
+        gstRate,
+        isPurchaseTaxInclusive,
+        isTaxInclusive: isPurchaseTaxInclusive,
+
+        // ── Computed values — trusted from DB ─────────────────────────────────
+        baseRate,
+        taxableValue,
+        gstAmount,
+        total: Number(totalAmount.toFixed(4)),
+
+        // ── Quantity ──────────────────────────────────────────────────────────
         qty,
         quantity: qty,
-        unit: item.unit,
-        price: rawRate,
-        costPrice: rawRate,
-        baseRate: rawRate, // ✅ always the raw rate as stored
-        mrp: item.mrp,
-        baseRate,
-        gstRate,
-        gstAmount,
-        discount: perUnitDiscountRaw,
-        discountExclusivePerUnit: perUnitDiscountExclusive,
-        taxableValue,
-        total: Number(totalAmount.toFixed(4)),
-        isTaxInclusive: isInc,
       };
     });
 
-    const sums = cartItems.reduce(
-      (acc, it) => {
-        acc.subtotal += Number(it.baseRate || 0) * Number(it.qty || 0);
-        acc.discountTotal +=
-          Number(it.discountExclusivePerUnit || 0) * Number(it.qty || 0);
-        acc.gstTotal += Number(it.gstAmount || 0);
-        acc.totalAmount += Number(it.total || 0);
-        acc.totalQty += Number(it.qty || 0);
-        acc.totalTaxable += Number(it.taxableValue || 0);
-        return acc;
-      },
-      {
-        subtotal: 0,
-        discountTotal: 0,
-        gstTotal: 0,
-        totalAmount: 0,
-        totalQty: 0,
-        totalTaxable: 0,
-      },
-    );
+    // ── Step 2: invoiceCalculations — same shape as Purchase.jsx useMemo ─────
+    const grandTotalRaw = subtotal + totalTax;
+    const netTotal = grandTotalRaw - Number(discountTotal);
+    const roundedTotal = Math.round(netTotal);
+    const computedRoundOff = Number((roundedTotal - netTotal).toFixed(2));
 
-    const effectiveRoundOff = Number(roundOff || 0);
-    const computedGrand = Number(
-      (sums.totalAmount + effectiveRoundOff).toFixed(2),
-    );
-
+    // ✅ Always pass the full gstBreakdown — Tax Summary visibility is controlled
+    // inside generatePurchaseHTML by checking Object.keys(gstBreakdown).some(r > 0)
     const invoiceCalculations = {
-      subtotal: Number(sums.subtotal.toFixed(2)),
-      discountTotal: Number(sums.discountTotal.toFixed(2)),
-      gstTotal: Number(sums.gstTotal.toFixed(2)),
-      grandTotal: Number(computedGrand.toFixed(2)),
-      gstBreakdown: calculateGSTBreakdown(cartItems, isIgst),
-      totals: {
-        totalQty: sums.totalQty,
-        totalTaxable: Number(sums.totalTaxable.toFixed(2)),
-        totalGST: Number(sums.gstTotal.toFixed(2)),
-        totalAmount: Number(sums.totalAmount.toFixed(2)),
-      },
+      subtotal,
+      totalTax,
+      grandTotal: grandTotalRaw,
+      grandTotalRaw,
+      netTotal,
+      roundedTotal,
+      roundOff: Number(roundOff ?? computedRoundOff),
+      discountTotal: Number(discountTotal),
+      gstBreakdown, // ✅ always full, never {}
+      computedItems: cartItems,
+      itemCount: cartItems.length,
+      totalQuantity: cartItems.reduce((s, i) => s + i.qty, 0),
     };
 
+    // ── Step 3: formValues — all keys generatePurchaseHTML reads ─────────────
     const formValues = {
-      customerName: vendorName,
+      vendorName,
+      vendorNumber: vendorMobile,
       contactNumber: vendorMobile,
+      customerName: vendorName,
+      partyName: vendorName,
+      address: vendorAddress,
       customerAddress: vendorAddress,
-      customerGstNumber: vendorGstNumber,
+      state: vendorState,
       customerState: vendorState,
+      postalCode: vendorPostalCode,
       customerPostalCode: vendorPostalCode,
+      gstNumber: vendorGstNumber,
+      customerGstNumber: vendorGstNumber,
     };
 
+    // ── Step 4: payment ───────────────────────────────────────────────────────
     const payment = {
-      paid: Number(amountPaid || 0),
-      due: Number(amountDue || 0),
-      status: paymentStatus || 'unpaid',
+      paid: Number(amountPaid ?? 0),
+      due: Number(amountDue ?? 0),
+      status: paymentStatus ?? 'unpaid',
     };
 
-    const hasAnyGst = sums.gstTotal > 0;
+    // ── Step 5: invoiceData for createdInvoice=true path ─────────────────────
+    const invoiceData = {
+      ...purchase,
+      isIgst,
+      subTotal: Number(subTotal ?? subtotal),
+      gstTotal: Number(gstTotal ?? totalTax),
+      discountTotal: Number(discountTotal),
+      roundOff: Number(roundOff ?? computedRoundOff),
+      grandTotal: Number(grandTotal ?? roundedTotal),
+      paymentMethod,
+      paymentNote,
+      vendorHasGst,
+      status: purchase.status,
+    };
 
     return {
-      preview: false,
+      preview: false, // ✅ false = Tax Summary will render
       createdInvoice: true,
-      invoiceData: {
-        ...purchase,
-        isIgst,
-        subTotal: Number(purchase.subTotal ?? invoiceCalculations.subtotal),
-        discountTotal: Number(
-          purchase.discountTotal ?? invoiceCalculations.discountTotal,
-        ),
-        roundOff: Number(purchase.roundOff ?? effectiveRoundOff),
-        grandTotal: Number(
-          purchase.grandTotal ?? invoiceCalculations.grandTotal,
-        ),
-        gstTotal: Number(purchase.gstTotal ?? invoiceCalculations.gstTotal),
-        paymentMethod,
-        paymentNote,
-        vendorHasGst,
-      },
+      invoiceData,
       formValues,
       cartItems,
       invoiceCalculations,
       invoiceNumber,
+      invoiceDate: new Date(date),
       currentDate: new Date(),
       currentTime: format(new Date(), 'HH:mm:ss'),
-      invoiceDate: new Date(date),
-      isGstInvoice: hasAnyGst,
+      isGstInvoice: vendorHasGst,
       isFreePlan: true,
       appBrand: { name: 'AMDAANI', logoUrl: '' },
       payment,
@@ -415,81 +387,18 @@ const PurchaseDetail = ({ route, navigation }) => {
     };
   };
 
-  const calculateGSTBreakdown = (cartItems, isIgst) => {
-    const breakdown = {};
-
-    cartItems.forEach(item => {
-      const rate = Number(item.gstRate || 0);
-      if (rate === 0) return;
-
-      if (!breakdown[rate]) {
-        breakdown[rate] = {
-          taxableAmount: 0,
-          cgstAmount: 0,
-          sgstAmount: 0,
-          igstAmount: 0,
-        };
-      }
-
-      const taxable = Number(item.taxableValue || 0);
-      const gstAmount = Number(item.gstAmount || 0);
-
-      breakdown[rate].taxableAmount += taxable;
-
-      if (isIgst) {
-        breakdown[rate].igstAmount += gstAmount;
-      } else {
-        breakdown[rate].cgstAmount += gstAmount / 2;
-        breakdown[rate].sgstAmount += gstAmount / 2;
-      }
-    });
-
-    // Round values to 2 decimals for stability
-    Object.keys(breakdown).forEach(r => {
-      breakdown[r].taxableAmount = Number(
-        breakdown[r].taxableAmount.toFixed(2),
-      );
-      breakdown[r].cgstAmount = Number(
-        (breakdown[r].cgstAmount || 0).toFixed(2),
-      );
-      breakdown[r].sgstAmount = Number(
-        (breakdown[r].sgstAmount || 0).toFixed(2),
-      );
-      breakdown[r].igstAmount = Number(
-        (breakdown[r].igstAmount || 0).toFixed(2),
-      );
-    });
-
-    return breakdown;
-  };
-
-  // Generate PDF using your invoice template
+  // ─── Generate HTML for WebView / PDF ─────────────────────────────────────
   const generatePDFContent = () => {
     const purchaseData = transformPurchaseToInvoiceData();
     if (!purchaseData) return '';
-
-    // FORCE GST OFF FOR PURCHASE PREVIEW
-    purchaseData.isGstInvoice = false;
-    purchaseData.invoiceData.vendorHasGst = false;
-
-    const htmlContent = generatePurchaseHTML(purchaseData, storedata);
-
-    // Replace "Invoice" with "Purchase Invoice" in the template
-    return htmlContent
-      .replace(/Tax Invoice/g, 'Purchase Invoice')
-      .replace(/Bill To:/g, 'Vendor Details:')
-      .replace(/Invoice No:/g, 'Purchase No:')
-      .replace(/Invoice Date:/g, 'Purchase Date:')
-      .replace(/Invoice Time:/g, 'Purchase Time:');
+    // ✅ No overrides — vendorHasGst and gstBreakdown drive everything
+    return generatePurchaseHTML(purchaseData);
   };
 
-  // Download PDF function
   const downloadPDF = async () => {
     if (!purchase) return;
-
     try {
       setDownloading(true);
-
       const hasPermission = await requestStoragePermission();
       if (!hasPermission) {
         showAlert(
@@ -513,10 +422,8 @@ const PurchaseDetail = ({ route, navigation }) => {
           : RNFS.DocumentDirectoryPath;
 
       const finalPath = `${downloadsDir}/Purchase_Invoice_${purchase.invoiceNumber}.pdf`;
-
       await RNFS.copyFile(pdf.filePath, finalPath);
 
-      // ✅ SAME BEHAVIOR AS PRODUCT REPORT
       try {
         await FileViewer.open(finalPath, { showOpenWithDialog: true });
       } catch (openErr) {
@@ -534,13 +441,10 @@ const PurchaseDetail = ({ route, navigation }) => {
     }
   };
 
-  // Share PDF function
   const sharePDF = async () => {
     if (!purchase) return;
-
     try {
       setSharing(true);
-
       const pdf = await RNHTMLtoPDF.convert({
         html: generatePDFContent(),
         fileName: `Purchase_Invoice_${purchase.invoiceNumber}_${Date.now()}`,
@@ -568,7 +472,7 @@ const PurchaseDetail = ({ route, navigation }) => {
     }
   };
 
-  // Loading state
+  // ─── Loading state ────────────────────────────────────────────────────────
   if (loading && !purchase) {
     return (
       <SafeAreaView
@@ -589,7 +493,7 @@ const PurchaseDetail = ({ route, navigation }) => {
     );
   }
 
-  // Error state
+  // ─── Error state ──────────────────────────────────────────────────────────
   if (error) {
     return (
       <SafeAreaView
@@ -621,7 +525,7 @@ const PurchaseDetail = ({ route, navigation }) => {
     );
   }
 
-  // Empty state
+  // ─── Empty state ──────────────────────────────────────────────────────────
   if (!purchase) {
     return (
       <SafeAreaView
@@ -646,55 +550,12 @@ const PurchaseDetail = ({ route, navigation }) => {
     );
   }
 
-  const {
-    vendorName,
-    vendorMobile,
-    vendorAddress,
-    vendorGstNumber,
-    vendorPanNumber,
-    vendorState,
-    invoiceNumber,
-    date,
-    items = [],
-    subTotal = 0,
-    gstTotal = 0,
-    isIgst = false,
-    discountTotal = 0,
-    roundOff = 0,
-    grandTotal = 0,
-    paymentStatus,
-    paymentMethod,
-    amountPaid = 0,
-    amountDue = 0,
-    paymentNote,
-    status,
-    edited,
-  } = purchase;
-
-  // Calculate totals
-  const totalQuantity = items.reduce(
-    (sum, item) => sum + (item.quantity || 0),
-    0,
-  );
-
-  const getStatusConfig = status => {
-    const configs = {
-      paid: { color: '#10B981', bgColor: '#D1FAE5', icon: 'check-circle' },
-      partial: { color: '#F59E0B', bgColor: '#FEF3C7', icon: 'clock-alert' },
-      pending: { color: '#EF4444', bgColor: '#FEE2E2', icon: 'alert-circle' },
-    };
-    return configs[status?.toLowerCase()] || configs.pending;
-  };
-
-  const statusConfig = getStatusConfig(paymentStatus);
+  const purchaseHTML = generatePDFContent();
 
   const baseBottom = 120;
   const fabSpacing = 56;
-
   const editFabBottom = baseBottom;
   const cancelFabBottom = editFabBottom + fabSpacing;
-
-  const purchaseHTML = generatePDFContent();
 
   return (
     <SafeAreaView
@@ -724,7 +585,7 @@ const PurchaseDetail = ({ route, navigation }) => {
             styles.fab,
             { bottom: editFabBottom, backgroundColor: theme.colors.primary },
           ]}
-          onPress={() => handleEdit(purchase)}
+          onPress={() => handleEdit()}
           color="white"
         />
       )}
@@ -751,7 +612,6 @@ const PurchaseDetail = ({ route, navigation }) => {
           { backgroundColor: theme.colors.surface },
         ]}
       >
-        {/* SHARE BUTTON - LEFT SIDE */}
         <Button
           mode="contained-tonal"
           icon={sharing ? '' : 'share-variant'}
@@ -765,7 +625,6 @@ const PurchaseDetail = ({ route, navigation }) => {
           {sharing ? 'Sharing...' : 'Share PDF'}
         </Button>
 
-        {/* DOWNLOAD BUTTON - ALWAYS ON RIGHT SIDE */}
         <Button
           mode="contained"
           icon={downloading ? '' : 'download'}
@@ -782,14 +641,16 @@ const PurchaseDetail = ({ route, navigation }) => {
           {downloading ? 'Downloading...' : 'Download PDF'}
         </Button>
       </Animated.View>
+
       <CustomAlert
         visible={alertVisible}
         onDismiss={() => setAlertVisible(false)}
         title={alertData.title}
         message={alertData.message}
         type={alertData.type}
-        icons={alertData.actions}
+        actions={alertData.actions}
       />
+
       <CustomAlert
         visible={cancelAlertVisible}
         onDismiss={() => setCancelAlertVisible(false)}
@@ -816,109 +677,9 @@ const PurchaseDetail = ({ route, navigation }) => {
   );
 };
 
-// ========== REUSABLE COMPONENTS ==========
-
-const CompactRow = ({ icon, label, theme }) => (
-  <View style={styles.compactRow}>
-    <Icon name={icon} size={16} color={theme.colors.onSurfaceVariant} />
-    <Text
-      variant="bodyMedium"
-      style={[styles.compactRowText, { color: theme.colors.onSurface }]}
-      numberOfLines={2}
-    >
-      {label}
-    </Text>
-  </View>
-);
-
-const SummaryLine = ({
-  label,
-  value,
-  theme,
-  isNegative,
-  showSign,
-  signValue,
-  iconName,
-  iconColor,
-}) => {
-  const displayValue = signValue !== undefined ? signValue : value;
-  const prefix =
-    showSign && displayValue !== 0 ? (displayValue > 0 ? '+' : '') : '';
-
-  return (
-    <View style={styles.summaryRow}>
-      <View style={styles.summaryRowLeft}>
-        {iconName && (
-          <Icon
-            name={iconName}
-            size={16}
-            color={iconColor || theme.colors.onSurfaceVariant}
-          />
-        )}
-        <Text
-          variant="bodyMedium"
-          style={{ color: theme.colors.onSurfaceVariant }}
-        >
-          {label}
-        </Text>
-      </View>
-      <Text
-        variant="bodyMedium"
-        style={[styles.summaryValue, { color: theme.colors.onSurface }]}
-      >
-        {prefix}
-        {isNegative ? '-' : ''}₹{Math.abs(value)?.toFixed(2)}
-      </Text>
-    </View>
-  );
-};
-
-const PaymentAmountLine = ({ icon, label, value, theme, valueColor }) => (
-  <View style={styles.paymentRow}>
-    <View style={styles.paymentRowLeft}>
-      <Icon name={icon} size={18} color={theme.colors.onSurfaceVariant} />
-      <Text
-        variant="bodyMedium"
-        style={{ color: theme.colors.onSurfaceVariant }}
-      >
-        {label}
-      </Text>
-    </View>
-    <Text
-      variant="titleMedium"
-      style={[
-        styles.paymentValue,
-        { color: valueColor || theme.colors.onSurface },
-      ]}
-    >
-      ₹{value?.toFixed(2)}
-    </Text>
-  </View>
-);
-
-// ========== HELPER FUNCTIONS ==========
-
-const getPaymentMethodIcon = method => {
-  const icons = {
-    cash: 'cash',
-    card: 'credit-card',
-    upi: 'qrcode-scan',
-    bank: 'bank-transfer',
-    cheque: 'checkbook',
-    online: 'web',
-  };
-  return icons[method?.toLowerCase()] || 'cash';
-};
-
-// ========== STYLES ==========
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 100, // Extra padding for floating buttons
   },
   centered: {
     flex: 1,
@@ -934,8 +695,6 @@ const styles = StyleSheet.create({
   retryButton: {
     borderRadius: 8,
   },
-
-  // Floating Action Buttons
   floatingButtons: {
     position: 'absolute',
     bottom: 30,
@@ -953,324 +712,14 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     gap: 12,
   },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    gap: 8,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  buttonText: {
-    fontWeight: '700',
-    fontSize: 14,
-  },
-
-  // Header Card Styles
-  headerCard: {
-    margin: 16,
-    marginBottom: 12,
-    padding: 16,
-    borderRadius: 12,
-  },
-  headerTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  },
-  invoiceInfo: {
-    flex: 1,
-  },
-  invoiceLabel: {
-    letterSpacing: 0.5,
-    marginBottom: 2,
-  },
-  invoiceNumber: {
-    fontWeight: '700',
-  },
-  statusBadges: {
-    flexDirection: 'row',
-    gap: 6,
-    flexWrap: 'wrap',
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  editedBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  editedText: {
-    fontSize: 11,
-    fontWeight: '600',
-    letterSpacing: 0.3,
-  },
-  headerMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexWrap: 'wrap',
-  },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  metaDivider: {
-    width: 1,
-    height: 12,
-    backgroundColor: 'rgba(0,0,0,0.12)',
-  },
-  headerDivider: {
-    marginVertical: 12,
-  },
-  totalSection: {
-    alignItems: 'center',
-    gap: 4,
-  },
-  grandTotalAmount: {
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-
-  // Card Styles
-  card: {
-    marginHorizontal: 16,
-    marginBottom: 12,
-    padding: 14,
-    borderRadius: 12,
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 12,
-  },
-  cardTitle: {
-    fontWeight: '700',
-    flex: 1,
-  },
-  itemCountBadge: {
-    minWidth: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 8,
-  },
-
-  // Compact Grid
-  compactGrid: {
-    gap: 10,
-  },
-  compactRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  compactRowText: {
-    flex: 1,
-    lineHeight: 20,
-  },
-
-  // Enhanced Item Card Styles - Responsive
-  itemsContainer: {
-    gap: 0,
-  },
-  itemCard: {
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-  },
-  itemHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 10,
-    gap: 12,
-  },
-  itemNameContainer: {
-    flex: 1,
-    flexShrink: 1,
-    gap: 6,
-  },
-  itemNameText: {
-    fontWeight: '600',
-    lineHeight: 20,
-    flexWrap: 'wrap',
-    flexShrink: 1,
-  },
-  gstBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 4,
-  },
-  gstBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-  },
-  itemTotalAmount: {
-    fontWeight: '800',
-    flexShrink: 0,
-    minWidth: 80,
-    textAlign: 'right',
-  },
-  itemDetailsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    flexWrap: 'wrap',
-  },
-  itemDetailBox: {
-    gap: 4,
-  },
-  itemDetailLabel: {
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-  },
-  itemDetailValue: {
-    fontWeight: '600',
-  },
-  itemDetailDivider: {
-    width: 1,
-    height: 24,
-    backgroundColor: 'rgba(0,0,0,0.08)',
-  },
-  itemDivider: {
-    marginHorizontal: 12,
-  },
-
-  // Enhanced Summary Styles
-  summaryGrid: {
-    gap: 10,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 6,
-  },
-  summaryRowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1,
-  },
-  summaryValue: {
-    fontWeight: '700',
-    flexShrink: 0,
-  },
-  taxBreakdownContainer: {
-    paddingLeft: 24,
-    marginTop: -6,
-    marginBottom: 4,
-  },
-  taxBreakdownText: {
-    fontSize: 11,
-    fontStyle: 'italic',
-  },
-  summaryDivider: {
-    marginVertical: 8,
-  },
-  grandTotalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    borderRadius: 10,
-    marginTop: 4,
-  },
-  grandTotalLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  grandTotalLabel: {
-    fontWeight: '700',
-  },
-  grandTotalValue: {
-    fontWeight: '800',
-    flexShrink: 0,
-  },
-
-  // Payment Styles
-  paymentGrid: {
-    gap: 10,
-  },
-  paymentRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 6,
-  },
-  paymentRowLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1,
-  },
-  methodChip: {
-    height: 30,
-  },
-  chipText: {
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  paymentDivider: {
-    marginVertical: 4,
-  },
-  paymentValue: {
-    fontWeight: '700',
-  },
-  noteBox: {
-    flexDirection: 'row',
-    gap: 8,
-    padding: 10,
-    borderRadius: 8,
-    marginTop: 4,
-  },
-  noteText: {
-    flex: 1,
-    lineHeight: 18,
-  },
-
-  footer: {
-    height: 16,
-  },
   paperButton: {
     flex: 1,
     borderRadius: 12,
   },
-
   paperContent: {
-    flexDirection: 'row-reverse', // icon right side
+    flexDirection: 'row-reverse',
     height: 42,
   },
-
   paperLabel: {
     fontWeight: '700',
     fontSize: 14,

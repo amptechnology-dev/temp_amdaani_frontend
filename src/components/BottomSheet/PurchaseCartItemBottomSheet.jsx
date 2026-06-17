@@ -134,7 +134,7 @@ const PurchaseCartItemBottomSheet = forwardRef(
             ? item.productOriginalPrice
             : item.sellingPrice > 0
             ? item.sellingPrice
-            : item.price > 0 // ✅ ADD THIS fallback
+            : !purchase && item.price > 0
             ? item.price
             : 0,
         ).toFixed(2),

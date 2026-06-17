@@ -694,34 +694,71 @@ export default function Purchase() {
 
             const normalizedItems = (fullInvoice.items || []).map(item => ({
               ...item,
-              costPrice: Number(item.costPrice ?? item.rate ?? item.price ?? 0),
-              purchaseDiscount: Number(
-                item.purchaseDiscount ?? item.discount ?? 0,
-              ),
-              price: Number(item.costPrice ?? item.rate ?? item.price ?? 0), // ✅ ADD
-              sellingPrice: Number(item.sellingPrice ?? 0), // ✅ ADD
-              productOriginalPrice: Number(item.sellingPrice ?? 0),
-              purchaseGstRate: Number(
-                item.purchaseGstRate ?? item.gstRate ?? 0,
-              ),
+
+              // ── Identity ──────────────────────────────────────────────
+              _id: item._id || item.product,
+              productId: item.product,
+              product: item.product,
+
+              // ── Price — exactly as stored in DB ──────────────────────
+              costPrice: Number(item.costPrice ?? item.rate ?? 0),
+              price: Number(item.costPrice ?? item.rate ?? 0),
+              rate: Number(item.rate ?? 0),
+
+              // ── Tax inclusive flag — DB field name ───────────────────
               isPurchaseTaxInclusive: Boolean(
                 item.isPurchaseTaxInclusive ?? false,
               ),
-              qty: Number(item.quantity ?? item.qty ?? 0),
-              gstRate: Number(item.purchaseGstRate ?? item.gstRate ?? 0),
               isTaxInclusive: Boolean(item.isTaxInclusive ?? false),
-              discount: Number(item.purchaseDiscount ?? item.discount ?? 0),
+
+              // ── Purchase discount — exactly as stored ────────────────
+              purchaseDiscount: Number(item.purchaseDiscount ?? 0),
+              discount: Number(item.purchaseDiscount ?? 0),
+              purchaseDiscountType:
+                item.purchaseDiscountType === 'percentage'
+                  ? 'percentage'
+                  : 'amount',
+              purchaseDiscountPercentage: Number(
+                item.purchaseDiscountPercentage ?? 0,
+              ),
+
+              // ── GST ──────────────────────────────────────────────────
+              purchaseGstRate: Number(item.gstRate ?? 0),
+              gstRate: Number(item.gstRate ?? 0),
+
+              // ── Selling side — exactly as stored ─────────────────────
+              sellingPrice: Number(item.sellingPrice ?? 0),
+              sellDiscount: Number(item.sellingDiscount ?? 0),
+              discountType:
+                item.discountType === 'percentage' ? 'percentage' : 'amount',
+              discountPrice: Number(item.discountPrice ?? 0),
+              discountPercentage: Number(item.discountPercentage ?? 0),
+              sellDiscountType: item.sellDiscountType || 'amount',
+
+              // ── Quantity ──────────────────────────────────────────────
+              qty: Number(item.quantity ?? 0),
+              quantity: Number(item.quantity ?? 0),
+
+              // ── Metadata ─────────────────────────────────────────────
               hsn: item.hsn ?? '',
               unit: item.unit ?? 'Piece',
+              mrp: Number(item.mrp ?? 0),
               total: Number(item.total ?? 0),
-              _id: item._id || item.product,
-              sellDiscount: Number(
-                item.sellDiscount ?? item.sellingDiscount ?? 0,
-              ),
-              sellDiscountType: item.sellDiscountType || 'amount',
-              sellDiscountPercent: Number(item.sellDiscountPercent ?? 0),
-              productId: item.product,
+
+              // ── Stored computed values — trust DB, no recalculation ──
+              baseRate: Number(item.baseRate ?? item.rate ?? 0),
+              taxableValue: Number(item.taxableValue ?? 0),
+              gstAmount: Number(item.gstAmount ?? 0),
             }));
+
+            setCartItems(normalizedItems);
+            setShowPreview(true);
+            setSelectedCustomer({
+              name: fullInvoice.vendorName,
+              mobile: fullInvoice.vendorMobile,
+              address: fullInvoice.vendorAddress,
+              gstNumber: fullInvoice.vendorGstNumber || '',
+            });
 
             setCartItems(normalizedItems);
             setShowPreview(true);
@@ -1086,37 +1123,109 @@ export default function Purchase() {
 
       date: format(purchaseDate, 'yyyy-MM-dd'),
 
-      items: invoiceCalculations.computedItems.map(item => ({
-        product: item.product,
-        name: item.name,
-        hsn: item.hsn || '',
-        unit: item.unit || 'Piece',
-        mrp: Number(item.mrp ?? 0),
+      items: cartItems.map(item => {
+        const rawPrice = Number(item.costPrice ?? item.price ?? 0);
 
-        rate: Number(item.costPrice ?? item.price ?? 0),
-        costPrice: Number(item.costPrice ?? item.price ?? 0),
+        // ── Purchase discount ─────────────────────────────────────────────
+        const discType = (item.purchaseDiscountType ?? '')
+          .toLowerCase()
+          .includes('percent')
+          ? 'percentage'
+          : 'amount';
 
-        sellingPrice: Number(item.sellingPrice ?? item.price ?? 0),
-        previousQuantity: Number(item.previousQty ?? item.qty ?? 0),
-        sellingDiscount: Number(item.sellingDiscount ?? 0),
-        discount: Number(item.purchaseDiscount ?? 0),
-        sellingDiscount: Number(item.sellingDiscount ?? 0),
+        const discountPct =
+          discType === 'percentage'
+            ? Number(item.purchaseDiscountPercentage ?? 0)
+            : rawPrice > 0
+            ? Number(
+                ((Number(item.purchaseDiscount ?? 0) / rawPrice) * 100).toFixed(
+                  4,
+                ),
+              )
+            : 0;
 
-        gstRate: Number(item.gstRate ?? 0),
-        //GstRate: Number(item.gstRate ?? 0),
-        // purchaseGstRate: Number(item.gstRate ?? 0),
-        isPurchaseTaxInclusive: Boolean(item.isPurchaseTaxInclusive),
-        isTaxInclusive: Boolean(item.isTaxInclusive),
+        const flatDiscount =
+          discType === 'percentage'
+            ? Number(((discountPct / 100) * rawPrice).toFixed(2))
+            : Number(Number(item.purchaseDiscount ?? 0).toFixed(2));
 
-        quantity: Number(item.qty ?? 0),
+        // ── Selling side discount ─────────────────────────────────────────
+        const sellDiscType = (item.discountType ?? '')
+          .toLowerCase()
+          .includes('percent')
+          ? 'percentage'
+          : 'amount';
 
-        baseRate: Number(item.baseRate ?? 0),
-        taxableValue: Number(item.taxableValue ?? 0),
-        gstAmount: Number(item.gstAmount ?? 0),
+        const sellingPrice = Number(item.sellingPrice ?? 0);
 
-        total: Number(item.total ?? 0),
-      })),
+        // If type is "percentage" → read discountPercentage as the % source
+        // If type is "amount"     → read discountPrice as the ₹ source,
+        //                           then back-calculate the %
+        const sellDiscountPct =
+          sellDiscType === 'percentage'
+            ? Number(item.discountPercentage ?? item.discountPercent ?? 0)
+            : sellingPrice > 0
+            ? Number(
+                (
+                  (Number(item.discountPrice ?? 0) / sellingPrice) *
+                  100
+                ).toFixed(4),
+              )
+            : 0;
 
+        const sellFlatDiscount =
+          sellDiscType === 'percentage'
+            ? Number(((sellDiscountPct / 100) * sellingPrice).toFixed(2))
+            : Number(Number(item.discountPrice ?? 0).toFixed(2));
+
+        const computed =
+          invoiceCalculations.computedItems.find(
+            c =>
+              (c.product || c.productId) === (item.product || item.productId) &&
+              c._lineId === item._lineId,
+          ) ||
+          invoiceCalculations.computedItems.find(c => c.name === item.name);
+
+        return {
+          product: item.product || item.productId,
+          name: item.name,
+          hsn: item.hsn || '',
+          unit: item.unit || 'Piece',
+          mrp: Number(item.mrp ?? 0),
+
+          rate: rawPrice,
+          costPrice: rawPrice,
+
+          // ── Purchase discount (always both values stored) ─────────────
+          purchaseDiscount: flatDiscount, // always flat ₹
+          purchaseDiscountType: discType, // normalized "percentage"/"amount"
+          purchaseDiscountPercentage: discountPct, // always the % value
+
+          // ── Selling side (always both values stored) ──────────────────
+          sellingPrice,
+          sellingDiscount: Number(
+            item.sellingDiscount ?? item.sellDiscount ?? 0,
+          ),
+          discountType: sellDiscType, // normalized "percentage"/"amount"
+          discountPrice: sellFlatDiscount, // always flat ₹   e.g. 25
+          discountPercentage: sellDiscountPct, // always the %    e.g. 83.3333
+
+          previousQuantity: Number(item.previousQty ?? item.qty ?? 0),
+
+          gstRate: Number(item.purchaseGstRate ?? item.gstRate ?? 0),
+          isPurchaseTaxInclusive: Boolean(item.isPurchaseTaxInclusive ?? false),
+          isTaxInclusive: Boolean(item.isTaxInclusive ?? false),
+
+          quantity: Number(item.qty ?? item.quantity ?? 0),
+
+          baseRate: Number(computed?.baseRate ?? item.baseRate ?? 0),
+          taxableValue: Number(
+            computed?.taxableValue ?? item.taxableValue ?? 0,
+          ),
+          gstAmount: Number(computed?.gstAmount ?? item.gstAmount ?? 0),
+          total: Number(computed?.total ?? item.total ?? 0),
+        };
+      }),
       subTotal: Number(invoiceCalculations.subtotal.toFixed(2)),
 
       gstTotal: Number(invoiceCalculations.totalTax.toFixed(2)),
@@ -1211,7 +1320,7 @@ export default function Purchase() {
     const preparedCart = (cartItems || []).map((item, index) => ({
       ...item,
       _id: item._id || item.productId || `${item.name}-${index}`,
-      sellingPrice: item.price ?? item.sellingPrice ?? 0,
+      sellingPrice: item.sellingPrice ?? 0,
       qty: item.qty ?? item.quantity ?? 0,
       subtotal: item.total ?? item.subtotal ?? 0,
       previousQty: item.previousQty ?? item.qty ?? item.quantity ?? 0,

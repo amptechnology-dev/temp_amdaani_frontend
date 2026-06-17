@@ -415,6 +415,8 @@ const AddPurchaseItems = () => {
   const selectItem = useCallback(
     product => {
       // ✅ If already in cart, just increment quantity instead of adding a new line
+
+      console.log('selecting item', product);
       const existingItem = cart.find(
         c => c._id === product._id || c.name === product.name,
       );
@@ -434,6 +436,7 @@ const AddPurchaseItems = () => {
       const lineId = `${product._id}-${Date.now()}`;
       const newItem = {
         ...product,
+        sellingPrice: Number(product.sellingPrice ?? 0), // for sales mode, this is the main price field
         qty: finalQty,
         price: rawPrice,
         costPrice: rawPrice,
