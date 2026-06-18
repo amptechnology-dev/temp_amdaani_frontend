@@ -25,6 +25,10 @@ import { generateThermalInvoiceHTML } from '../utils/generateThermalInvoiceHTML'
 import { generateA5InvoiceHTML } from '../utils/generateA5InvoiceHTML';
 import { Printer } from '../native/Printer';
 import { printThermalInvoice } from '../utils/printThermal';
+// KOT is a separate action (see the "Print KOT" button below), not a
+// printMode — it always prints over the connected thermal printer
+// regardless of whether the main invoice print is set to a4/a5/thermal.
+import { printThermalKOT } from '../utils/Printthermalkot';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Navbar from '../components/Navbar';
 import {
@@ -52,6 +56,7 @@ export default function InvoiceDetail() {
   const [invoice, setInvoice] = useState(passedInvoice || null);
   const [loading, setLoading] = useState(!passedInvoice);
   const [printing, setPrinting] = useState(false);
+  const [printingKOT, setPrintingKOT] = useState(false);
   const [printMode, setPrintMode] = useState(route.params?.printMode || null);
   const [printSound, setPrintSound] = useState(null);
 
@@ -502,6 +507,42 @@ export default function InvoiceDetail() {
     }
   };
 
+  // ✅ Print KOT — independent of printMode. Available whenever Thermal is
+  // the selected mode, since a KOT always goes to the same Bluetooth
+  // kitchen printer regardless of how the customer bill itself is printed.
+  const handlePrintKOT = async () => {
+    try {
+      setPrintingKOT(true);
+
+      const connected = await Printer.ensureConnected();
+      if (!connected) {
+        Toast.show({
+          type: 'error',
+          text1: 'Printer not connected',
+          text2:
+            'Trying to reconnect failed — please select your printer again',
+        });
+        navigation.navigate('PrintPreference', {
+          invoice,
+          store: effectiveStoredata,
+        });
+        return;
+      }
+
+      await printThermalKOT(invoice, invoice.items, effectiveStoredata);
+      Toast.show({ type: 'success', text1: 'KOT printed' });
+    } catch (err) {
+      console.error('KOT print error:', err);
+      Toast.show({
+        type: 'error',
+        text1: 'KOT print failed',
+        text2: err.message || 'Unknown error',
+      });
+    } finally {
+      setPrintingKOT(false);
+    }
+  };
+
   // ✅ Share
   const handleShare = async () => {
     try {
@@ -718,7 +759,8 @@ export default function InvoiceDetail() {
             navigation.push('PrintPreference', {
               invoice,
               onPrinterSelected: async payload => {
-                // payload can be: { mode: 'a4' } OR { mode: 'thermal' } OR { mode: 'thermal', selectedPrinter: {...} }
+                // payload can be: { mode: 'a4' } OR { mode: 'a5' } OR
+                // { mode: 'thermal' } OR { mode: 'thermal', selectedPrinter: {...} }
                 try {
                   if (payload?.mode === 'a4') {
                     setPrintMode('a4');
@@ -748,7 +790,7 @@ export default function InvoiceDetail() {
               },
             })
           }
-          style={styles.actionButton}
+          style={[styles.actionButton]}
         >
           {invoice?.status === 'active' &&
             invoice?.paymentStatus === 'partial' &&
@@ -765,7 +807,7 @@ export default function InvoiceDetail() {
                   invoiceData: invoice,
                 })
               }
-              style={styles.actionButton}
+              style={[styles.actionButton]}
             >
               Edit
             </Button>
@@ -777,10 +819,23 @@ export default function InvoiceDetail() {
           loading={printing}
           disabled={printing}
           onPress={() => handlePrint()}
-          style={styles.actionButton}
+          style={[styles.actionButton]}
         >
           {printing ? 'Printing...' : 'Print'}
         </Button>
+
+        {printMode === 'thermal' && (
+          <Button
+            mode="contained"
+            icon={'printer'}
+            loading={printingKOT}
+            disabled={printingKOT}
+            onPress={() => handlePrintKOT()}
+            style={[styles.actionButton]}
+          >
+            {printingKOT ? 'Printing...' : 'Print Order Copy'}
+          </Button>
+        )}
 
         {/* <Button
                     mode="contained"
@@ -883,14 +938,16 @@ const styles = StyleSheet.create({
   webview: { flex: 1, backgroundColor: 'white' },
   footer: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexWrap: 'wrap', // ← ADD THIS
+    justifyContent: 'space-between',
     padding: 12,
+    gap: 8, // ← ADD THIS
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
   },
   actionButton: {
-    flex: 1,
-    marginHorizontal: 8,
+    flexBasis: '47%', // ← REPLACE flex: 1
+    marginHorizontal: 0, // ← remove the old horizontal margin
   },
   fab: {
     position: 'absolute',

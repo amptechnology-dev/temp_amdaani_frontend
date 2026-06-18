@@ -1,14 +1,12 @@
 import { format } from 'date-fns';
 import numberToWords from 'number-to-words';
 
-/**
- * Half A4 in landscape — same as cutting A4 (210×297 mm) along the long edge:
- * each half is 210 mm wide × 148.5 mm tall (√2:1 width:height).
- */
-const A4_WIDTH_MM = 210;
-const A4_HEIGHT_MM = 297;
-const A5_WIDTH_MM = A4_WIDTH_MM;
-const A5_HEIGHT_MM = A4_HEIGHT_MM / 2; // 148.5 mm
+// Page is A5 portrait (148×210mm) but content is rotated landscape inside it
+// So content area = 210mm wide × 148mm tall (swapped)
+const PAGE_W_MM = 148;
+const PAGE_H_MM = 210;
+const CONTENT_W_MM = 210; // landscape width
+const CONTENT_H_MM = 148; // landscape height
 
 export const generateA5InvoiceHTML = ({
   preview,
@@ -61,7 +59,7 @@ export const generateA5InvoiceHTML = ({
       let perItemDiscount = Number(item.discount || 0);
       if (isTaxInclusive && gstRate > 0)
         perItemDiscount = perItemDiscount / (1 + gstRate / 100);
-      const totalDiscount = perItemDiscount * qty;
+      const totalDiscountAmt = perItemDiscount * qty;
       const discountPercent =
         baseRate > 0 && perItemDiscount > 0
           ? ((perItemDiscount / baseRate) * 100).toFixed(1)
@@ -79,8 +77,8 @@ export const generateA5InvoiceHTML = ({
       }</span></td>
           <td class="r">₹${baseRate.toFixed(2)}</td>
           <td class="r">${
-            totalDiscount > 0
-              ? `₹${totalDiscount.toFixed(2)}${
+            totalDiscountAmt > 0
+              ? `₹${totalDiscountAmt.toFixed(2)}${
                   discountPercent
                     ? `<br><span class="isub">(${discountPercent}%)</span>`
                     : ''
@@ -150,34 +148,49 @@ export const generateA5InvoiceHTML = ({
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Invoice – A5</title>
+  <title>Invoice – A5 Landscape Content</title>
   <style>
-    /* ── Reset ── */
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { margin: 0; padding: 0; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: ${PAGE_W_MM}mm;
+      height: ${PAGE_H_MM}mm;
+      overflow: hidden;
+      background: #eee;
+    }
 
-    /* ── Half A4 landscape: 210 × 148.5 mm (√2:1) ── */
-    body {
+    /*
+     * .page  : the physical A5 portrait page (148 × 210mm)
+     * .wrap  : the content rotated 90° — 210mm wide × 148mm tall
+     *          anchored at the top-left corner of .page, then
+     *          rotated and shifted so it fills the page correctly.
+     */
+    .page {
+      width: ${PAGE_W_MM}mm;
+      height: ${PAGE_H_MM}mm;
+      position: relative;
+      overflow: hidden;
+      background: #fff;
+    }
+
+    .wrap {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: ${CONTENT_W_MM}mm;
+      height: ${CONTENT_H_MM}mm;
+      transform-origin: top left;
+      transform: rotate(90deg) translateY(-${PAGE_W_MM}mm);
+      background: #fff;
+      display: flex;
+      flex-direction: column;
       font-family: Arial, sans-serif;
       font-size: 8.5px;
       line-height: 1.3;
       color: #000;
-      background: #fff;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-    }
-
-    .wrap {
-      width: ${A5_WIDTH_MM}mm;
-      max-width: 100%;
-      min-height: ${A5_HEIGHT_MM}mm;
-      aspect-ratio: ${A5_WIDTH_MM} / ${A5_HEIGHT_MM};
-      margin: 0;
       border: 1px solid #000;
-      background: #fff;
-      display: flex;
-      flex-direction: column;
+      overflow: hidden;
     }
 
     /* ── Brand strip ── */
@@ -194,7 +207,7 @@ export const generateA5InvoiceHTML = ({
     }
     .brand-strip img { height: 11px; width: auto; }
 
-    /* ── Header (company name + badge only) ── */
+    /* ── Header ── */
     .hdr {
       display: flex;
       justify-content: space-between;
@@ -207,7 +220,7 @@ export const generateA5InvoiceHTML = ({
     .hdr-left { display: flex; align-items: flex-start; gap: 6px; flex: 1; }
     .logo { height: 32px; width: auto; max-width: 60px; object-fit: contain; }
     .co-name {
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 800;
       color: #2c5aa0;
       text-transform: uppercase;
@@ -219,33 +232,28 @@ export const generateA5InvoiceHTML = ({
       color: #fff;
       font-size: 10px;
       font-weight: 700;
-      padding: 4px 10px;
+      padding: 4px 12px;
       border-radius: 4px;
       text-transform: uppercase;
       white-space: nowrap;
       border: 1px solid #000;
     }
 
-    /* ── Store + invoice: one row, left / right ── */
+    /* ── Info bar ── */
     .info-bar {
       display: flex;
       border-bottom: 1px solid #000;
       font-size: 8.5px;
       flex-shrink: 0;
     }
-    .info-split {
-      display: flex;
-      width: 100%;
-    }
+    .info-split { display: flex; width: 100%; }
     .info-side {
       flex: 1;
       padding: 4px 8px;
       min-width: 0;
     }
-    .info-side + .info-side {
-      border-left: 1px solid #000;
-    }
-    .info-side.left { text-align: left; }
+    .info-side + .info-side { border-left: 1px solid #000; }
+    .info-side.left  { text-align: left; }
     .info-side.right { text-align: right; }
     .info-side .ttl {
       font-weight: 700;
@@ -255,8 +263,6 @@ export const generateA5InvoiceHTML = ({
     }
     .info-row { margin-bottom: 2px; }
     .info-lbl { font-weight: 600; }
-
-    /* customer row (full width below store/invoice) */
     .info-bar.customer-bar .info-side {
       flex: 1;
       border-left: none;
@@ -264,12 +270,8 @@ export const generateA5InvoiceHTML = ({
     }
 
     /* ── Items table ── */
-    .tbl-wrap { position: relative; flex: 1 1 auto; }
-    .tbl {
-      width: 100%;
-      border-collapse: collapse;
-      font-size: 8.5px;
-    }
+    .tbl-wrap { position: relative; flex: 0 1 auto; overflow: hidden; }
+    .tbl { width: 100%; border-collapse: collapse; font-size: 8.5px; }
     .tbl th {
       background: #2c5aa0;
       color: #fff;
@@ -289,7 +291,6 @@ export const generateA5InvoiceHTML = ({
     .tbl .bold { font-weight: 700; }
     .iname { font-weight: 600; }
     .isub { font-size: 7.5px; color: #555; }
-
     .sum-row td { font-weight: 700; background: #f0f4ff; }
 
     /* ── Totals block ── */
@@ -306,9 +307,9 @@ export const generateA5InvoiceHTML = ({
     }
     .words-lbl { font-weight: 700; color: #2c5aa0; margin-bottom: 2px; }
     .words-val { font-size: 9px; font-weight: 600; }
-    .amt-col { width: 155px; flex-shrink: 0; }
+    .amt-col { width: 160px; flex-shrink: 0; }
     .amt-tbl { width: 100%; border-collapse: collapse; font-size: 8.5px; }
-    .amt-tbl td { padding: 4px 6px; border: 1px solid #000; }
+    .amt-tbl td { padding: 3px 6px; border: 1px solid #000; }
     .amt-tbl .lbl { font-weight: 600; background: #f8f8f8; }
     .amt-tbl .val { text-align: right; font-weight: 600; }
     .grand .lbl, .grand .val {
@@ -334,34 +335,38 @@ export const generateA5InvoiceHTML = ({
     .ps.partial { background: #fb8c00; }
     .ps.unpaid  { background: #e53935; }
 
+    /* ── Footer ── */
     .ftr {
       display: flex;
       border-top: 1px solid #000;
-      min-height: 42px;
+      min-height: 40px;
       flex-shrink: 0;
     }
     .bank-col {
       flex: 1;
-      padding: 6px 8px;
+      padding: 5px 8px;
       border-right: 1px solid #000;
       font-size: 8px;
     }
     .bank-col .ttl { font-weight: 700; color: #2c5aa0; margin-bottom: 3px; }
     .sig-col {
       width: 130px;
-      padding: 6px 8px;
+      padding: 5px 8px;
       text-align: center;
       font-size: 8px;
     }
     .sig-line {
       border-top: 1px solid #000;
-      margin-top: 18px;
+      margin-top: 16px;
       padding-top: 2px;
       font-weight: 700;
       font-size: 7.5px;
     }
-    .sig-img { max-height: 28px; max-width: 100%; object-fit: contain; }
+    .sig-img { max-height: 26px; max-width: 100%; object-fit: contain; }
 
+    .remarks { font-size: 7.5px; color: #555; padding: 3px 8px; flex-shrink: 0; }
+
+    /* ── Cancelled watermark ── */
     .tbl-wrap.cancelled::after {
       content: "CANCELLED";
       position: absolute;
@@ -369,7 +374,7 @@ export const generateA5InvoiceHTML = ({
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: clamp(28px, 8vw, 72px);
+      font-size: clamp(28px, 6vw, 60px);
       font-weight: 900;
       letter-spacing: 0.4em;
       color: rgba(0,0,0,0.07);
@@ -379,39 +384,33 @@ export const generateA5InvoiceHTML = ({
       white-space: nowrap;
     }
 
+    /* ── Print ── */
     @media print {
-      body {
-        margin: 0;
-        padding: 0;
-        background: #fff;
-        display: block;
-      }
-      @page {
-        size: ${A5_WIDTH_MM}mm ${A5_HEIGHT_MM}mm landscape;
-        margin: 0;
-      }
       html, body {
         margin: 0 !important;
         padding: 0 !important;
+        width: ${PAGE_W_MM}mm !important;
+        height: ${PAGE_H_MM}mm !important;
+        background: #fff !important;
+        overflow: hidden !important;
+      }
+      @page {
+        size: ${PAGE_W_MM}mm ${PAGE_H_MM}mm portrait;
+        margin: 0;
+      }
+      .page {
+        width: ${PAGE_W_MM}mm !important;
+        height: ${PAGE_H_MM}mm !important;
       }
       .wrap {
-        width: ${A5_WIDTH_MM}mm;
-        min-height: ${A5_HEIGHT_MM}mm;
-        max-width: none;
-        margin: 0 !important;
-        aspect-ratio: ${A5_WIDTH_MM} / ${A5_HEIGHT_MM};
-        border: 1px solid #000;
+        border: none !important;
       }
-      thead { display: table-header-group; }
-      tfoot { display: table-footer-group; }
-      .no-break { page-break-inside: avoid; }
       * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
     }
-
-    .remarks { font-size: 7.5px; color: #555; padding: 4px 8px; flex-shrink: 0; }
   </style>
 </head>
 <body>
+<div class="page">
 <div class="wrap">
 
   ${
@@ -454,7 +453,6 @@ export const generateA5InvoiceHTML = ({
   </div>`
   }
 
-  <!-- Store address (left) + Invoice details (right) in one row -->
   <div class="info-bar">
     <div class="info-split">
       <div class="info-side left">
@@ -557,7 +555,6 @@ export const generateA5InvoiceHTML = ({
       </thead>
       <tbody>
         ${itemsHTML}
-
         <tr class="sum-row">
           <td></td>
           <td class="l bold">Total</td>
@@ -716,7 +713,7 @@ export const generateA5InvoiceHTML = ({
           ? `
       <div style="margin-top:5px; text-align:center;">
         <div style="font-size:7.5px; font-weight:700; margin-bottom:2px;">Scan &amp; Pay</div>
-        <img src="${qrURL}" width="52" height="52">
+        <img src="${qrURL}" width="50" height="50">
         <div style="font-size:7px;">₹${roundedGrandTotal}</div>
       </div>`
           : ''
@@ -749,6 +746,7 @@ export const generateA5InvoiceHTML = ({
       : ''
   }
 
+</div>
 </div>
 </body>
 </html>`;

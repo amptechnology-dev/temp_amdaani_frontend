@@ -511,7 +511,7 @@ const Item = ({ navigation }) => {
                     ]}
                   >
                     <Icon
-                      source="database-plus"
+                      source="tune"
                       size={18}
                       color={theme.colors.primary}
                     />

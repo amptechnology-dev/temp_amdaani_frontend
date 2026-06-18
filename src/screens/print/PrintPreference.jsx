@@ -17,7 +17,14 @@ import {
   Platform,
   Linking,
 } from 'react-native';
-import { Text, Button, useTheme, Card, IconButton } from 'react-native-paper';
+import {
+  Text,
+  Button,
+  useTheme,
+  Card,
+  IconButton,
+  Icon,
+} from 'react-native-paper';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Printer, ensureBtPermissions } from '../../native/Printer';
 import { ensureLocationEnabled } from '../../utils/permissions';
@@ -48,23 +55,23 @@ export default function PrintPreference() {
   const route = useRoute();
   const theme = useTheme();
 
-  // refs for safety across async callbacks
   const isMounted = useRef(true);
   const scanTimeoutRef = useRef(null);
   const connectedAddrRef = useRef(null);
   const devicesRef = useRef([]);
 
-  // event listeners refs to remove on unmount
   const foundListenerRef = useRef(null);
   const finishListenerRef = useRef(null);
   const btStateListenerRef = useRef(null);
 
+  const isThermalLikeMode = mode === 'thermal';
+
   useFocusEffect(
     useCallback(() => {
-      if (mode === 'thermal' && !scanning) {
+      if (isThermalLikeMode && !scanning) {
         performThermalScan();
       }
-    }, [mode]), // intentionally not including performThermalScan to keep stable reference
+    }, [mode]),
   );
 
   useFocusEffect(
@@ -73,7 +80,6 @@ export default function PrintPreference() {
         try {
           const isConn = await Printer.isConnected();
           if (!isConn) {
-            // console.log("🔄 Printer disconnected — trying auto reconnect");
             const ok = await Printer.ensureConnected();
             if (!ok) {
               Toast.show({
@@ -98,14 +104,13 @@ export default function PrintPreference() {
     }, []),
   );
 
-  // keep a ref in sync with latest devices so async callbacks can read it
   useEffect(() => {
     devicesRef.current = devices;
   }, [devices]);
 
   useEffect(() => {
     isMounted.current = true;
-    // listen for devices and scan-finished events emitted by native module
+
     foundListenerRef.current = eventEmitter.addListener('PrinterFound', dev => {
       if (!isMounted.current) return;
       setDevices(prev => {
@@ -121,7 +126,6 @@ export default function PrintPreference() {
         clearTimeout(scanTimeoutRef.current);
         scanTimeoutRef.current = null;
       }
-      // if scan finished but no devices found, prompt user to check Location (Android < 13 requires location for discovery)
       try {
         const api = Platform.Version;
         if (
@@ -154,21 +158,16 @@ export default function PrintPreference() {
             ],
           });
         }
-      } catch (e) {
-        // ignore errors
-      }
+      } catch (e) {}
     });
 
-    // optional: if native emits bluetooth state changes
     btStateListenerRef.current = eventEmitter.addListener(
       'BluetoothStateChanged',
       st => {
-        // native should send { state: "ON" | "OFF" | "TURNING_ON" | "TURNING_OFF" }
         if (!isMounted.current) return;
         const on = st?.state === 'ON';
         setBluetoothOn(on);
         if (!on && scanning) {
-          // stop UI scanning if BT turned off
           setScanning(false);
           if (scanTimeoutRef.current) {
             clearTimeout(scanTimeoutRef.current);
@@ -182,7 +181,6 @@ export default function PrintPreference() {
       },
     );
 
-    // check current bluetooth availability
     (async () => {
       try {
         const available = await Printer.isBluetoothAvailable();
@@ -193,12 +191,10 @@ export default function PrintPreference() {
     })();
 
     return () => {
-      // cleanup
       isMounted.current = false;
       foundListenerRef.current?.remove();
       finishListenerRef.current?.remove();
       btStateListenerRef.current?.remove();
-      // ensure native discovery cancelled if any
       try {
         Printer.cancelScan && Printer.cancelScan();
       } catch {}
@@ -209,7 +205,6 @@ export default function PrintPreference() {
     };
   }, []);
 
-  // load saved prefs
   useEffect(() => {
     (async () => {
       try {
@@ -220,30 +215,24 @@ export default function PrintPreference() {
         if (saved) {
           const parsed = JSON.parse(saved);
           setSavedPrinter(parsed);
-          // set connected visually if device currently connected according to native
           const isConn = await Printer.isConnected();
           if (isConn) {
             setConnectedPrinter(parsed);
             connectedAddrRef.current = parsed.address;
           }
         }
-      } catch (e) {
-        // ignore
-      }
+      } catch (e) {}
     })();
   }, []);
-
-  // auto-start scan when focus and thermal mode
 
   const [customAlert, setCustomAlert] = useState({
     visible: false,
     title: '',
     message: '',
-    type: 'info', // "info" | "success" | "warning" | "error"
-    actions: [], // [{ label, onPress, mode?, color? }]
+    type: 'info',
+    actions: [],
   });
 
-  // helper to open the alert
   const showAlert = useCallback(cfg => {
     setCustomAlert({
       visible: true,
@@ -278,15 +267,13 @@ export default function PrintPreference() {
   }, []);
 
   const performThermalScan = useCallback(async () => {
-    if (scanning) return; // prevent double scan
-    // permissions
+    if (scanning) return;
     const ok = await ensureBtPermissions();
     if (!ok) {
       Toast.show({ type: 'error', text1: 'Bluetooth permission not granted' });
       return;
     }
 
-    // For Android < 13, Location permission and (system) Location turned on might be required for discovery
     if (Platform.OS === 'android' && Platform.Version < 33) {
       const locOk = await ensureLocationEnabled();
       if (!locOk) {
@@ -314,17 +301,14 @@ export default function PrintPreference() {
             },
           ],
         });
-
         return;
       }
     }
 
-    // is bluetooth on?
     try {
       const available = await Printer.isBluetoothAvailable();
       if (!available) {
         setBluetoothOn(false);
-        // attempt to request enabling
         showAlert({
           title: 'Bluetooth is off',
           message: 'Please enable Bluetooth to scan for printers.',
@@ -352,42 +336,34 @@ export default function PrintPreference() {
             { label: 'Cancel', onPress: hideAlert },
           ],
         });
-
         return;
       }
     } catch (e) {
-      // assume off
       setBluetoothOn(false);
       Toast.show({ type: 'error', text1: 'Bluetooth not available' });
       return;
     }
 
-    // start scan
     setDevices([]);
     setScanning(true);
 
     try {
-      // ensure native discovery canceled before starting
       try {
         Printer.cancelScan && Printer.cancelScan();
       } catch {}
 
-      const okStart = await Printer.scan(); // native emits PrinterFound events and ScanFinished
+      const okStart = await Printer.scan();
       if (!okStart) {
-        // unlikely, but treat as failure
         throw new Error('Native scan failed');
       }
 
-      // safety timeout in case native never fires finished
       scanTimeoutRef.current = setTimeout(() => {
         if (!isMounted.current) return;
         setScanning(false);
         scanTimeoutRef.current = null;
-        // Toast.show({ type: "info", text1: "Scan timed out" });
         try {
           Printer.cancelScan && Printer.cancelScan();
         } catch {}
-        // if timeout reached with no devices found, suggest checking Location on older Android
         try {
           const api = Platform.Version;
           if (
@@ -419,7 +395,7 @@ export default function PrintPreference() {
             });
           }
         } catch (e) {}
-      }, 12_000); // 12s timeout
+      }, 12_000);
     } catch (e) {
       setScanning(false);
       Toast.show({ type: 'error', text1: 'Failed to start scan' });
@@ -429,7 +405,6 @@ export default function PrintPreference() {
   const tryConnectWithRetries = useCallback(async (dev, maxRetries = 3) => {
     let attempts = 0;
     setConnectingAddr(dev.address);
-    // ensure discovery is canceled (discovery can prevent connect on some devices)
     try {
       Printer.cancelScan && Printer.cancelScan();
     } catch {}
@@ -437,11 +412,9 @@ export default function PrintPreference() {
     while (attempts < maxRetries) {
       attempts++;
       try {
-        // Protect connect with a timeout
         const connectPromise = Printer.connect(dev.address);
-        const result = await promiseWithTimeout(connectPromise, 12_000); // 12s connect timeout
+        const result = await promiseWithTimeout(connectPromise, 12_000);
         if (result === true) {
-          // success
           setConnectedPrinter(dev);
           connectedAddrRef.current = dev.address;
           await AsyncStorage.setItem('selectedPrinter', JSON.stringify(dev));
@@ -452,13 +425,11 @@ export default function PrintPreference() {
           throw new Error('Connect failed');
         }
       } catch (e) {
-        // try again unless last attempt
         if (attempts >= maxRetries) {
           Toast.show({ type: 'error', text1: 'Failed to connect to printer' });
           setConnectingAddr(null);
           return false;
         } else {
-          // small backoff
           await sleep(700 * attempts);
         }
       }
@@ -495,8 +466,8 @@ export default function PrintPreference() {
       route.params?.onPrinterSelected?.({ mode });
     } else {
       const payload = connectedPrinter
-        ? { mode: 'thermal', selectedPrinter: connectedPrinter }
-        : { mode: 'thermal' };
+        ? { mode, selectedPrinter: connectedPrinter }
+        : { mode };
 
       if (connectedPrinter) {
         await AsyncStorage.setItem(
@@ -516,47 +487,82 @@ export default function PrintPreference() {
     setUserRefreshing(false);
   }, [performThermalScan]);
 
+  const MODES = [
+    { label: 'A4', value: 'a4', icon: 'file-document-outline' },
+    { label: 'A5', value: 'a5', icon: 'file-minus-outline' },
+    { label: 'Thermal', value: 'thermal', icon: 'receipt-outline' },
+  ];
+
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: theme.colors.background }}>
       <Navbar title={'Print Preference'} showBackButton />
 
-      {/* Mode selection */}
-      <View
-        style={{
-          flexDirection: 'row',
-          gap: 12,
-          marginBottom: 16,
-          paddingHorizontal: 16,
-          flexWrap: 'wrap',
-        }}
-      >
-        <Button
-          mode={mode === 'a4' ? 'contained' : 'outlined'}
-          onPress={() => setMode('a4')}
-          accessibilityLabel="Select A4"
+      {/* ── Segmented mode selector ── */}
+      <View style={{ paddingHorizontal: 16, marginBottom: 16 }}>
+        <Text
+          variant="labelMedium"
+          style={{ color: theme.colors.onSurfaceVariant, marginBottom: 8 }}
         >
-          A4 Invoice
-        </Button>
+          Print Format
+        </Text>
 
-        <Button
-          mode={mode === 'a5' ? 'contained' : 'outlined'}
-          onPress={() => setMode('a5')}
-          accessibilityLabel="Select A5"
+        <View
+          style={{
+            flexDirection: 'row',
+            backgroundColor: theme.colors.surfaceVariant,
+            borderRadius: 12,
+            padding: 4,
+            gap: 4,
+          }}
         >
-          A5 Invoice
-        </Button>
-
-        <Button
-          mode={mode === 'thermal' ? 'contained' : 'outlined'}
-          onPress={() => setMode('thermal')}
-          accessibilityLabel="Select Thermal"
-        >
-          Thermal Print
-        </Button>
+          {MODES.map(item => {
+            const isActive = mode === item.value;
+            return (
+              <TouchableOpacity
+                key={item.value}
+                onPress={() => setMode(item.value)}
+                accessibilityLabel={`Select ${item.label}`}
+                accessibilityRole="button"
+                style={{
+                  flex: 1,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingVertical: 10,
+                  borderRadius: 9,
+                  gap: 4,
+                  backgroundColor: isActive
+                    ? theme.colors.primaryContainer
+                    : 'transparent',
+                }}
+              >
+                <Icon
+                  source={item.icon}
+                  size={20}
+                  color={
+                    isActive
+                      ? theme.colors.primary
+                      : theme.colors.onSurfaceVariant
+                  }
+                />
+                <Text
+                  variant="labelSmall"
+                  style={{
+                    color: isActive
+                      ? theme.colors.primary
+                      : theme.colors.onSurfaceVariant,
+                    fontWeight: isActive ? '700' : '400',
+                  }}
+                >
+                  {item.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
-      {/* Thermal printers */}
-      {mode === 'thermal' && (
+      {/* ── Thermal printer list ── */}
+      {isThermalLikeMode && (
         <View style={{ flex: 1, paddingHorizontal: 16 }}>
           <View
             style={{
@@ -592,7 +598,6 @@ export default function PrintPreference() {
                 <TouchableOpacity
                   onPress={() => {
                     if (isConnected) {
-                      // already connected - toggle disconnect
                       showAlert({
                         title: 'Disconnect',
                         message: `Disconnect from ${item.name || 'printer'}?`,
@@ -626,10 +631,8 @@ export default function PrintPreference() {
                           },
                         ],
                       });
-
                       return;
                     }
-                    // otherwise attempt connect
                     connect(item);
                   }}
                   accessibilityRole="button"
@@ -712,7 +715,7 @@ export default function PrintPreference() {
         </View>
       )}
 
-      {/* Footer */}
+      {/* ── Footer save button ── */}
       <View style={{ padding: 16 }}>
         <Button
           mode="contained"
@@ -724,6 +727,7 @@ export default function PrintPreference() {
           Save
         </Button>
       </View>
+
       <CustomAlert
         visible={customAlert.visible}
         onDismiss={hideAlert}
@@ -736,7 +740,6 @@ export default function PrintPreference() {
   );
 }
 
-// small helpers
 function sleep(ms) {
   return new Promise(res => setTimeout(res, ms));
 }
