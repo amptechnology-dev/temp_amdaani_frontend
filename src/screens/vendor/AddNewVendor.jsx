@@ -121,6 +121,8 @@ const sanitizeValues = values => {
 const AddNewVendor = ({ navigation, route }) => {
   const theme = useTheme();
   const existingVendor = route?.params?.vendor ?? null;
+
+  console.log('vendor data', existingVendor);
   const isUpdate = !!existingVendor;
 
   const initialValues = {

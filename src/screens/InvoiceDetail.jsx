@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from 'react';
 import {
   View,
   StyleSheet,
@@ -25,9 +31,6 @@ import { generateThermalInvoiceHTML } from '../utils/generateThermalInvoiceHTML'
 import { generateA5InvoiceHTML } from '../utils/generateA5InvoiceHTML';
 import { Printer } from '../native/Printer';
 import { printThermalInvoice } from '../utils/printThermal';
-// KOT is a separate action (see the "Print KOT" button below), not a
-// printMode — it always prints over the connected thermal printer
-// regardless of whether the main invoice print is set to a4/a5/thermal.
 import { printThermalKOT } from '../utils/Printthermalkot';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Navbar from '../components/Navbar';
@@ -41,15 +44,16 @@ import Toast from 'react-native-toast-message';
 import Sound from 'react-native-sound';
 import CustomAlert from '../components/CustomAlert';
 
+// ── A5 PDF dimensions (landscape) ──
+const A5_PDF_WIDTH = 595;
+const A5_PDF_HEIGHT = 420;
+
 export default function InvoiceDetail() {
   const navigation = useNavigation();
   const route = useRoute();
   const theme = useTheme();
   const { authState, subscription, hasPermission } = useAuth();
   const prvstoredata = authState?.user?.store;
-  // console.log('Store data:', storedata);
-  // // console.log('Store data: ', storedata);
-  // console.log('Subcription data: ', subscription);
 
   const { invoice: passedInvoice, invoiceId } = route.params || {};
 
@@ -58,18 +62,87 @@ export default function InvoiceDetail() {
   const [printing, setPrinting] = useState(false);
   const [printingKOT, setPrintingKOT] = useState(false);
   const [printMode, setPrintMode] = useState(route.params?.printMode || null);
-  const [printSound, setPrintSound] = useState(null);
-
   const [cancelAlertVisible, setCancelAlertVisible] = useState(false);
 
-  const effectiveStoredata = React.useMemo(() => {
-    const hasEmbeddedStoreData = !!invoice?.name;
+  const webViewRef = useRef(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
 
+  const planName = subscription?.planName || subscription?.plan?.name || '';
+  const isFreePlan =
+    planName?.toLowerCase() === 'free' && subscription?.status === 'active';
+
+  const insets = useSafeAreaInsets();
+  const { height } = Dimensions.get('window');
+
+  const baseBottom = height < 700 ? 50 : 70;
+  const bottomSafe = insets.bottom + 10;
+  const fabSpacing = 50;
+  const isWhatsAppVisible = !!invoice?.customerMobile;
+
+  const whatsappFabBottom = baseBottom + bottomSafe;
+  const downloadFabBottom = isWhatsAppVisible
+    ? whatsappFabBottom + fabSpacing
+    : whatsappFabBottom;
+  const shareFabBottom = isWhatsAppVisible
+    ? downloadFabBottom + fabSpacing
+    : whatsappFabBottom + fabSpacing;
+  const cancelFabBottom = shareFabBottom + fabSpacing;
+
+  // ── Load print mode preference ──────────────────────────────────────────────
+  useEffect(() => {
+    const loadPreference = async () => {
+      if (!printMode) {
+        const savedMode = await AsyncStorage.getItem('printMode');
+        setPrintMode(savedMode || 'a4');
+      }
+    };
+    loadPreference();
+  }, []);
+
+  // ── Permission check ────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!hasPermission(permissions.CAN_VIEW_INVOICES)) {
+      Toast.show({
+        type: 'error',
+        text1: 'Permission Denied',
+        text2: 'You do not have permission to view invoices.',
+      });
+      navigation.goBack();
+    }
+  }, [hasPermission, navigation]);
+
+  // ── Fetch invoice if not passed ─────────────────────────────────────────────
+  const fetchInvoice = useCallback(async () => {
+    if (!invoiceId && !invoice?._id) return;
+    try {
+      setLoading(true);
+      const idToFetch = invoiceId || invoice._id;
+      const res = await api.get(`/invoice/id/${idToFetch}`);
+      if (res?.success && res?.data) {
+        setInvoice(res.data);
+      } else {
+        console.warn('Invoice not found or API response invalid');
+      }
+    } catch (err) {
+      console.error('Fetch invoice error:', err.response?.data || err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [invoiceId, invoice?._id]);
+
+  useEffect(() => {
+    if (!invoice && invoiceId) {
+      fetchInvoice();
+    }
+  }, [invoice, invoiceId, fetchInvoice]);
+
+  // ── Effective store data ────────────────────────────────────────────────────
+  const effectiveStoredata = useMemo(() => {
+    if (!invoice) return prvstoredata || {};
+    const hasEmbeddedStoreData = !!invoice?.name;
     if (hasEmbeddedStoreData) {
-      // ✅ Invoice snapshot takes PRIORITY
-      // prvstoredata only fills fields that are missing from the snapshot
       return {
-        ...prvstoredata, // base fallback for any missing fields
+        ...prvstoredata,
         name: invoice.name,
         tagline: invoice.tagline ?? prvstoredata?.tagline,
         ownershipType: invoice.ownershipType ?? prvstoredata?.ownershipType,
@@ -86,112 +159,204 @@ export default function InvoiceDetail() {
         isActive: invoice.isActive ?? prvstoredata?.isActive,
       };
     }
-
-    // Old invoice (no snapshot) — use live store data
     return prvstoredata || {};
   }, [invoice, prvstoredata]);
 
-  const webViewRef = useRef(null);
-  const [zoomLevel, setZoomLevel] = useState(1);
-
-  const planName = subscription?.planName || subscription?.plan?.name || ''; // robust lookup [3]
-  const isFreePlan =
-    planName?.toLowerCase() === 'free' && subscription?.status === 'active'; // strict check [3]
-
-  const insets = useSafeAreaInsets();
-  const { height } = Dimensions.get('window');
-
-  // base offset depending on screen size
-  const baseBottom = height < 700 ? 50 : 70;
-
-  // respect safe area padding (for notched devices)
-  const bottomSafe = insets.bottom + 10;
-
-  // spacing between FABs
-  const fabSpacing = 50;
-
-  // if WhatsApp FAB is visible, push Share FAB above it
-  const isWhatsAppVisible = !!invoice?.customerMobile;
-
-  const whatsappFabBottom = baseBottom + bottomSafe;
-  const downloadFabBottom = isWhatsAppVisible
-    ? whatsappFabBottom + fabSpacing
-    : whatsappFabBottom;
-  const shareFabBottom = isWhatsAppVisible
-    ? downloadFabBottom + fabSpacing
-    : whatsappFabBottom + fabSpacing;
-  const cancelFabBottom = shareFabBottom + fabSpacing;
-  useEffect(() => {
-    const loadPreference = async () => {
-      if (!printMode) {
-        const savedMode = await AsyncStorage.getItem('printMode');
-        setPrintMode(savedMode || 'a4'); // fallback default
-      }
-    };
-    loadPreference();
-  }, []);
-
-  useEffect(() => {
-    if (!hasPermission(permissions.CAN_VIEW_INVOICES)) {
-      // Alert.alert('Permission Denied', 'You do not have permission to view invoices.', [
-      //   { text: 'OK', onPress: () => navigation.goBack() }
-      // ]);
-      // Or just go back silently or show a placeholder
-      Toast.show({
-        type: 'error',
-        text1: 'Permission Denied',
-        text2: 'You do not have permission to view invoices.',
-      });
-      navigation.goBack();
+  // ── All computed invoice values in one memo ─────────────────────────────────
+  const invoiceComputed = useMemo(() => {
+    if (!invoice || !invoice.items) {
+      return null;
     }
-  }, [hasPermission, navigation]);
 
-  // useEffect(() => {
-  //     Sound.setCategory('Playback');
+    const isGstInvoice = (invoice?.type || 'gst') !== 'non-gst';
+    let subtotal = 0;
+    let totalTax = 0;
 
-  //     const sound = new Sound('print.mp3', Sound.MAIN_BUNDLE, (error) => {
-  //         if (error) {
-  //             // console.log('Failed to load sound', error);
-  //             return;
-  //         }
-  //     });
+    const enrichedItems = invoice.items.map(item => {
+      const gstRate = Number(item.gstRate || 0);
+      const qty = Number(item.quantity || 0);
+      const sellingPriceRaw = Number(item.sellingPrice || 0);
+      const discount = Number(item.discountPrice ?? item.discount ?? 0);
+      const sellingPrice = Math.max(0, sellingPriceRaw - discount);
 
-  //     setPrintSound(sound);
+      let baseRate = 0;
+      let taxableValue = 0;
+      let gstAmount = 0;
+      let totalAmount = 0;
 
-  //     return () => {
-  //         if (sound) {
-  //             sound.release();
-  //         }
-  //     };
-  // }, []);
-
-  const fetchInvoice = useCallback(async () => {
-    if (!invoiceId && !invoice?._id) return;
-    try {
-      setLoading(true);
-      const idToFetch = invoiceId || invoice._id;
-      const res = await api.get(`/invoice/id/${idToFetch}`);
-      if (res?.success && res?.data) {
-        setInvoice(res.data); // ✅ effectiveStoredata auto-updates via useMemo
+      if (isGstInvoice) {
+        if (item.isTaxInclusive) {
+          baseRate = sellingPriceRaw / (1 + gstRate / 100);
+          taxableValue = (sellingPrice / (1 + gstRate / 100)) * qty;
+          gstAmount = taxableValue * (gstRate / 100);
+          totalAmount = sellingPrice * qty;
+        } else {
+          baseRate = sellingPriceRaw;
+          taxableValue = sellingPrice * qty;
+          gstAmount = taxableValue * (gstRate / 100);
+          totalAmount = taxableValue + gstAmount;
+        }
       } else {
-        console.warn('Invoice not found or API response invalid');
+        baseRate = sellingPriceRaw;
+        taxableValue = sellingPrice * qty;
+        gstAmount = 0;
+        totalAmount = taxableValue;
       }
+
+      subtotal += totalAmount;
+      totalTax += gstAmount;
+
+      return {
+        ...item,
+        baseRate,
+        taxableValue,
+        gstAmount,
+        total: totalAmount,
+        discountApplied: discount,
+      };
+    });
+
+    const grandTotalRaw = enrichedItems.reduce((sum, i) => sum + i.total, 0);
+    const discountTotal = invoice?.discountTotal || 0;
+    const netTotal = Math.round(grandTotalRaw - discountTotal);
+
+    const gstBreakdown = {};
+    if (isGstInvoice) {
+      enrichedItems.forEach(item => {
+        const gstRate = Number(item.gstRate || 0);
+        const gstAmount = item.gstAmount;
+        const cgstAmount = gstAmount / 2;
+        const sgstAmount = gstAmount / 2;
+
+        if (!gstBreakdown[gstRate]) {
+          gstBreakdown[gstRate] = {
+            taxableAmount: 0,
+            cgstAmount: 0,
+            sgstAmount: 0,
+            igstAmount: 0,
+            totalGst: 0,
+          };
+        }
+
+        gstBreakdown[gstRate].taxableAmount += item.taxableValue;
+        gstBreakdown[gstRate].cgstAmount += cgstAmount;
+        gstBreakdown[gstRate].sgstAmount += sgstAmount;
+        gstBreakdown[gstRate].igstAmount += 0;
+        gstBreakdown[gstRate].totalGst += gstAmount;
+      });
+    }
+
+    const paidAmount = Number(invoice.amountPaid || 0);
+    const grandTotal = Number(Math.round(invoice.grandTotal || 0));
+    const dueAmount = Number(invoice.amountDue || 0);
+    const paymentStatus = invoice?.paymentStatus || 0;
+
+    return {
+      isGstInvoice,
+      enrichedItems,
+      subtotal,
+      totalTax,
+      grandTotalRaw,
+      discountTotal,
+      netTotal,
+      gstBreakdown,
+      paidAmount,
+      grandTotal,
+      dueAmount,
+      paymentStatus,
+    };
+  }, [invoice]);
+
+  // ── Generate HTML in a memo so WebView re-renders only when needed ──────────
+  const html = useMemo(() => {
+    if (!invoice || !invoiceComputed || !printMode) return '';
+
+    const {
+      isGstInvoice,
+      enrichedItems,
+      subtotal,
+      grandTotalRaw,
+      discountTotal,
+      netTotal,
+      gstBreakdown,
+      paidAmount,
+      dueAmount,
+    } = invoiceComputed;
+
+    const baseArgs = {
+      preview: false, // ← add this
+      createdInvoice: true,
+      invoiceData: invoice,
+      appBrand: { name: 'AMDAANI', logoUrl: '' },
+      formValues: {
+        customerName: invoice.customerName,
+        contactNumber: invoice.customerMobile,
+        customerAddress: invoice.customerAddress || '',
+        customerGstNumber: invoice.customerGstNumber || '',
+      },
+      cartItems: enrichedItems,
+      invoiceCalculations: {
+        subtotal,
+        totalTax: invoice.gstTotal,
+        discountTotal: discountTotal,
+        grandTotal: grandTotalRaw,
+        netTotal,
+        grandTotalRaw,
+        gstBreakdown: isGstInvoice ? gstBreakdown : {},
+      },
+      invoiceNumber: invoice.invoiceNumber,
+      currentDate: new Date(invoice.invoiceDate).toLocaleDateString('en-IN'),
+      currentTime: new Date(invoice.invoiceDate).toLocaleTimeString('en-IN', {
+        hour12: false,
+      }),
+      invoiceDate: invoice.invoiceDate,
+      storedata: effectiveStoredata,
+      isGstInvoice,
+      isFreePlan,
+      payment: {
+        paid: paidAmount,
+        due: dueAmount,
+        status: invoice.paymentStatus || 'unpaid',
+      },
+    };
+
+    try {
+      if (printMode === 'thermal') {
+        return generateThermalInvoiceHTML(baseArgs);
+      }
+      if (printMode === 'a5') {
+        return generateA5InvoiceHTML(baseArgs);
+      }
+      // Default: A4
+      return generateInvoiceHTML({
+        ...baseArgs,
+        invoiceCalculations: {
+          ...baseArgs.invoiceCalculations,
+          totalQuantity: (invoice.items ?? []).reduce(
+            (sum, i) => sum + (i.quantity || 0),
+            0,
+          ),
+          itemCount: (invoice.items ?? []).length,
+        },
+      });
     } catch (err) {
-      console.error('Fetch invoice error:', err.response?.data || err.message);
-    } finally {
-      setLoading(false);
+      console.error('HTML generation error:', err);
+      return '';
     }
-  }, [invoiceId, invoice?._id]);
+  }, [invoice, invoiceComputed, printMode, effectiveStoredata, isFreePlan]);
 
-  console.log('---=->', invoice);
+  // ── Helper: PDF convert options ─────────────────────────────────────────────
+  const getPdfOptions = fileName => ({
+    html,
+    fileName,
+    base64: false,
+    ...(printMode === 'a5' && {
+      width: A5_PDF_WIDTH,
+      height: A5_PDF_HEIGHT,
+    }),
+  });
 
-  // call it on mount if needed
-  useEffect(() => {
-    if (!invoice && invoiceId) {
-      fetchInvoice();
-    }
-  }, [invoice, invoiceId, fetchInvoice]);
-
+  // ── Loading state ───────────────────────────────────────────────────────────
   if (loading) {
     return (
       <SafeAreaView
@@ -201,237 +366,81 @@ export default function InvoiceDetail() {
         <View
           style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
         >
-          <Button loading={true}>
-            {!invoice ? 'Loading Invoice...' : 'Invoice not found'}
+          <Button loading={true}>Loading Invoice...</Button>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // ── No invoice found ────────────────────────────────────────────────────────
+  if (!invoice) {
+    return (
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+      >
+        <Navbar title="Invoice Detail" />
+        <View
+          style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Button onPress={fetchInvoice}>
+            Invoice not found. Tap to retry.
           </Button>
         </View>
       </SafeAreaView>
     );
   }
-  const isGstInvoice = (invoice?.type || 'gst') !== 'non-gst';
-  let subtotal = 0;
-  let totalTax = 0;
-  const enrichedItems = invoice?.items?.map(item => {
-    const gstRate = Number(item.gstRate || 0);
-    const qty = Number(item.quantity || 0);
-    const sellingPriceRaw = Number(item.sellingPrice || 0);
-    const discount = Number(item.discountPrice ?? item.discount ?? 0);
 
-    // 🧮 Apply discount before GST (and prevent negative price)
-    const sellingPrice = Math.max(0, sellingPriceRaw - discount);
-
-    let baseRate = 0;
-    let taxableValue = 0;
-    let gstAmount = 0;
-    let totalAmount = 0;
-
-    if (isGstInvoice) {
-      if (item.isTaxInclusive) {
-        // Tax inclusive: price already includes GST
-        baseRate = sellingPriceRaw / (1 + gstRate / 100);
-        taxableValue = (sellingPrice / (1 + gstRate / 100)) * qty;
-        gstAmount = taxableValue * (gstRate / 100);
-        totalAmount = sellingPrice * qty; // stays inclusive
-      } else {
-        // Tax exclusive: add GST after discount
-        baseRate = sellingPriceRaw;
-        taxableValue = sellingPrice * qty;
-        gstAmount = taxableValue * (gstRate / 100);
-        totalAmount = taxableValue + gstAmount;
-      }
-    } else {
-      // Non-GST invoice: just apply discount, no tax
-      baseRate = sellingPriceRaw;
-      taxableValue = sellingPrice * qty;
-      gstAmount = 0;
-      totalAmount = taxableValue;
-    }
-
-    // if (item.isTaxInclusive) {
-    //   subtotal += totalAmount - gstAmount; // extract taxable part
-    // } else {
-    //   subtotal += taxableValue;
-    // }
-    subtotal += totalAmount;
-    totalTax += gstAmount;
-    return {
-      ...item,
-      baseRate,
-      subtotal,
-      taxableValue,
-      gstAmount,
-      total: totalAmount,
-      discountApplied: discount, // ✅ helpful for PDF preview
-    };
-  });
-
-  // Recalculate grand total with discounts included
-  const grandTotalRaw = enrichedItems.reduce((sum, i) => sum + i.total, 0);
-  const roundedTotal = Math.round(grandTotalRaw);
-  const discountTotal = invoice?.discountTotal || 0;
-  const netTotal = Math.round(grandTotalRaw - discountTotal);
-  // ✅ Build GST breakdown from enriched items
-  const gstBreakdown = {};
-
-  if (isGstInvoice) {
-    enrichedItems.forEach(item => {
-      const gstRate = Number(item.gstRate || 0);
-      const taxableValue = item.taxableValue;
-      const gstAmount = item.gstAmount;
-      const cgstAmount = gstAmount / 2;
-      const sgstAmount = gstAmount / 2;
-      const igstAmount = 0;
-
-      if (!gstBreakdown[gstRate]) {
-        gstBreakdown[gstRate] = {
-          taxableAmount: 0,
-          cgstAmount: 0,
-          sgstAmount: 0,
-          igstAmount: 0,
-          totalGst: 0,
-        };
-      }
-
-      gstBreakdown[gstRate].taxableAmount += taxableValue;
-      gstBreakdown[gstRate].cgstAmount += cgstAmount;
-      gstBreakdown[gstRate].sgstAmount += sgstAmount;
-      gstBreakdown[gstRate].igstAmount += igstAmount;
-      gstBreakdown[gstRate].totalGst += gstAmount;
-    });
+  // ── Invoice data not yet computed (items missing) ───────────────────────────
+  if (!invoiceComputed) {
+    return (
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+      >
+        <Navbar title="Invoice Detail" />
+        <View
+          style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Button onPress={fetchInvoice}>
+            Invalid invoice data. Tap to reload.
+          </Button>
+        </View>
+      </SafeAreaView>
+    );
   }
-  const paidAmount = Number(invoice.amountPaid || 0);
-  const grandTotal = Number(Math.round(invoice.grandTotal || 0));
-  const dueAmount = Number(invoice.amountDue || 0);
-  // const dueAmount = Math.max(0, grandTotal - paidAmount);
-  const paymentStatus = invoice?.paymentStatus || 0;
 
-  const html =
-    printMode === 'thermal'
-      ? generateThermalInvoiceHTML({
-          createdInvoice: true,
-          invoiceData: invoice,
-          formValues: {
-            customerName: invoice.customerName,
-            contactNumber: invoice.customerMobile,
-            customerAddress: invoice.customerAddress || '',
-            customerGstNumber: invoice.customerGstNumber || '',
-          },
-          cartItems: enrichedItems,
-          invoiceCalculations: {
-            subtotal: subtotal,
-            totalTax: invoice.gstTotal,
-            discountTotal: invoice.discountTotal || 0,
-            grandTotal: grandTotalRaw,
-            netTotal,
-            grandTotalRaw,
-            gstBreakdown: isGstInvoice ? gstBreakdown : {},
-          },
-          invoiceNumber: invoice.invoiceNumber,
-          currentDate: new Date(invoice.invoiceDate).toLocaleDateString(
-            'en-IN',
-          ),
-          currentTime: new Date(invoice.invoiceDate).toLocaleTimeString(
-            'en-IN',
-            { hour12: false },
-          ),
-          invoiceDate: invoice.invoiceDate,
-          storedata: effectiveStoredata,
-          isGstInvoice,
-          isFreePlan,
-          payment: {
-            paid: paidAmount,
-            due: dueAmount,
-            status: invoice.paymentStatus || 'unpaid',
-          },
-        })
-      : printMode === 'a5'
-      ? generateA5InvoiceHTML({
-          createdInvoice: true,
-          invoiceData: invoice,
-          formValues: {
-            customerName: invoice.customerName,
-            contactNumber: invoice.customerMobile,
-            customerAddress: invoice.customerAddress || '',
-            customerGstNumber: invoice.customerGstNumber || '',
-          },
-          cartItems: enrichedItems,
-          invoiceCalculations: {
-            subtotal: subtotal,
-            totalTax: invoice.gstTotal,
-            discountTotal: invoice.discountTotal || 0,
-            grandTotal: grandTotalRaw,
-            netTotal,
-            grandTotalRaw,
-            gstBreakdown: isGstInvoice ? gstBreakdown : {},
-          },
-          invoiceNumber: invoice.invoiceNumber,
-          currentDate: new Date(invoice.invoiceDate).toLocaleDateString(
-            'en-IN',
-          ),
-          currentTime: new Date(invoice.invoiceDate).toLocaleTimeString(
-            'en-IN',
-            { hour12: false },
-          ),
-          invoiceDate: invoice.invoiceDate,
-          storedata: effectiveStoredata,
-          isGstInvoice,
-          isFreePlan,
-          payment: {
-            paid: paidAmount,
-            due: dueAmount,
-            status: invoice.paymentStatus || 'unpaid',
-          },
-        })
-      : generateInvoiceHTML({
-          createdInvoice: true,
-          invoiceData: invoice,
-          formValues: {
-            customerName: invoice.customerName,
-            contactNumber: invoice.customerMobile,
-            customerAddress: invoice.customerAddress || '',
-            customerGstNumber: invoice.customerGstNumber || '',
-          },
-          cartItems: enrichedItems, // ✅ fixed
-          invoiceCalculations: {
-            subtotal: subtotal,
-            totalTax: invoice.gstTotal,
-            discountTotal: invoice.discountTotal || 0,
-            grandTotal: grandTotalRaw,
-            netTotal,
-            grandTotalRaw,
-            totalQuantity: invoice.items.reduce(
-              (sum, i) => sum + i.quantity,
-              0,
-            ),
-            itemCount: invoice.items.length,
-            gstBreakdown: isGstInvoice ? gstBreakdown : {},
-          },
-          invoiceNumber: invoice.invoiceNumber,
-          currentDate: new Date(invoice.invoiceDate).toLocaleDateString(
-            'en-IN',
-          ),
-          currentTime: new Date(invoice.invoiceDate).toLocaleTimeString(
-            'en-IN',
-            { hour12: false },
-          ),
-          invoiceDate: invoice.invoiceDate,
-          storedata: effectiveStoredata,
-          isGstInvoice,
-          isFreePlan,
-          payment: {
-            paid: paidAmount,
-            due: dueAmount,
-            status: invoice.paymentStatus || 'unpaid',
-          },
-        });
+  // ── HTML not yet generated (printMode still loading from AsyncStorage) ──────
+  if (!html) {
+    return (
+      <SafeAreaView
+        style={[styles.container, { backgroundColor: theme.colors.background }]}
+      >
+        <Navbar title="Invoice Detail" />
+        <View
+          style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Button loading={true}>Preparing invoice...</Button>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
+  const {
+    enrichedItems,
+    gstBreakdown,
+    isGstInvoice,
+    paidAmount,
+    dueAmount,
+    paymentStatus,
+  } = invoiceComputed;
+
+  // ── Actions ─────────────────────────────────────────────────────────────────
   const cancelInvoice = async () => {
     try {
       const res = await api.put(`/invoice/status/${invoice._id}`, {
         status: 'cancelled',
       });
       if (res.success) {
-        setInvoice(res.data); // update invoice with cancelled status
+        setInvoice(res.data);
         Toast.show({ type: 'success', text1: res.message });
       } else {
         Toast.show({ type: 'error', text1: 'Failed to cancel invoice' });
@@ -445,17 +454,11 @@ export default function InvoiceDetail() {
     }
   };
 
-  //console.log('-->invoice ', invoice);
-
-  // ✅ Print function (can be manual or auto)
   const handlePrint = async () => {
     if (printMode === 'thermal') {
       try {
         setPrinting(true);
-
-        // ✅ Step 1: Verify printer truly connected
         const connected = await Printer.ensureConnected();
-
         if (!connected) {
           Toast.show({
             type: 'error',
@@ -469,8 +472,6 @@ export default function InvoiceDetail() {
           });
           return;
         }
-
-        // ✅ Step 2: Proceed to print only if verified
         await printThermalInvoice(
           invoice,
           paidAmount,
@@ -489,8 +490,6 @@ export default function InvoiceDetail() {
           text1: 'Print failed',
           text2: err.message || 'Unknown error',
         });
-
-        // Go to Print Preference if print failed
         navigation.navigate('PrintPreference', {
           invoice,
           store: effectiveStoredata,
@@ -507,13 +506,9 @@ export default function InvoiceDetail() {
     }
   };
 
-  // ✅ Print KOT — independent of printMode. Available whenever Thermal is
-  // the selected mode, since a KOT always goes to the same Bluetooth
-  // kitchen printer regardless of how the customer bill itself is printed.
   const handlePrintKOT = async () => {
     try {
       setPrintingKOT(true);
-
       const connected = await Printer.ensureConnected();
       if (!connected) {
         Toast.show({
@@ -528,7 +523,6 @@ export default function InvoiceDetail() {
         });
         return;
       }
-
       await printThermalKOT(invoice, invoice.items, effectiveStoredata);
       Toast.show({ type: 'success', text1: 'KOT printed' });
     } catch (err) {
@@ -543,15 +537,11 @@ export default function InvoiceDetail() {
     }
   };
 
-  // ✅ Share
   const handleShare = async () => {
     try {
-      const file = await RNHTMLtoPDF.convert({
-        html,
-        fileName: `invoice-${invoice.invoiceNumber}`,
-        base64: false,
-      });
-
+      const file = await RNHTMLtoPDF.convert(
+        getPdfOptions(`invoice-${invoice.invoiceNumber}`),
+      );
       await Share.open({
         url: `file://${file.filePath}`,
         type: 'application/pdf',
@@ -564,11 +554,9 @@ export default function InvoiceDetail() {
 
   const handleDownload = async () => {
     try {
-      const file = await RNHTMLtoPDF.convert({
-        html,
-        fileName: `invoice-${invoice.invoiceNumber}`,
-        base64: false,
-      });
+      const file = await RNHTMLtoPDF.convert(
+        getPdfOptions(`invoice-${invoice.invoiceNumber}`),
+      );
       Toast.show({
         type: 'success',
         text1: 'Invoice downloaded',
@@ -586,27 +574,20 @@ export default function InvoiceDetail() {
 
   const handleWhatsAppShare = async () => {
     try {
-      // 1. Generate the PDF invoice
-      const file = await RNHTMLtoPDF.convert({
-        html,
-        fileName: `invoice-${invoice.invoiceNumber}`,
-        base64: false,
-      });
+      const file = await RNHTMLtoPDF.convert(
+        getPdfOptions(`invoice-${invoice.invoiceNumber}`),
+      );
       const pdfPath = file.filePath;
 
-      // 2. Check if WhatsApp is installed
       let isInstalled = false;
       let wpBusiness = false;
 
       if (Platform.OS === 'android') {
-        // Check both WhatsApp and WhatsApp Business
         const wp = await Share.isPackageInstalled('com.whatsapp');
         const wpB = await Share.isPackageInstalled('com.whatsapp.w4b');
-
         isInstalled = wp.isInstalled || wpB.isInstalled;
         wpBusiness = wpB.isInstalled;
       } else if (Platform.OS === 'ios') {
-        // iOS bundle ID for WhatsApp
         const wpIOS = await Share.isPackageInstalled('whatsapp');
         isInstalled = wpIOS.isInstalled;
       }
@@ -617,27 +598,26 @@ export default function InvoiceDetail() {
           text1: 'WhatsApp not installed',
           text2: 'Please install WhatsApp to share the invoice.',
         });
-        return false;
+        return;
       }
 
-      // 3. Format the phone number properly (add country code if missing)
-      let phoneNumber = invoice?.customerMobile?.trim() || '';
+      const phoneNumber = invoice?.customerMobile?.trim() || '';
+      const message = `Hello ${
+        invoice.customerName || 'Customer'
+      }, \nHere is your invoice #${
+        invoice.invoiceNumber
+      }.\nThank you for your business!\nTotal Amount: ₹${
+        invoice?.grandTotal || '0'
+      }`;
 
-      // 4. Create a personalized message
-      const message = `Hello ${invoice.customerName || 'Customer'}, 
-        Here is your invoice #${invoice.invoiceNumber}.
-        Thank you for your business!
-        Total Amount: ₹${invoice?.grandTotal || '0'}`;
-
-      // 5. Send directly to customer number with message and PDF
       await Share.shareSingle({
         url: `file://${pdfPath}`,
         type: 'application/pdf',
         social: wpBusiness
           ? Share.Social.WHATSAPPBUSINESS
           : Share.Social.WHATSAPP,
-        whatsAppNumber: `91${phoneNumber}`, // must be in full international format (no +)
-        message, // text message
+        whatsAppNumber: `91${phoneNumber}`,
+        message,
       });
 
       Toast.show({
@@ -657,13 +637,13 @@ export default function InvoiceDetail() {
 
   const smoothZoom = newZoom => {
     webViewRef.current?.injectJavaScript(`
-    (function() {
-      document.body.style.transformOrigin = '0 0';
-      document.body.style.transition = 'transform 0.3s ease-out';
-      document.body.style.transform = 'scale(${newZoom})';
-    })();
-    true;
-  `);
+      (function() {
+        document.body.style.transformOrigin = '0 0';
+        document.body.style.transition = 'transform 0.3s ease-out';
+        document.body.style.transform = 'scale(${newZoom})';
+      })();
+      true;
+    `);
   };
 
   const handleZoomIn = () => {
@@ -687,12 +667,12 @@ export default function InvoiceDetail() {
         rightComponent={
           (invoice?.transactions?.length > 0 && (
             <IconButton
-              icon="receipt-text-check-outline" // or "receipt" or "file-document-outline"
+              icon="receipt-text-check-outline"
               size={24}
               onPress={() =>
                 navigation.navigate('InvoiceTransactions', {
                   invoice,
-                  onInvoiceUpdated: fetchInvoice, // pass the refresh callback
+                  onInvoiceUpdated: fetchInvoice,
                 })
               }
             />
@@ -718,9 +698,25 @@ export default function InvoiceDetail() {
           domStorageEnabled={true}
           mixedContentMode="compatibility"
           originWhitelist={['*']}
+          injectedJavaScript={
+            printMode === 'a5'
+              ? `
+                (function() {
+                  var screenW = window.innerWidth;
+                  var contentW = document.body.scrollWidth;
+                  if (contentW > screenW) {
+                    var scale = screenW / contentW;
+                    document.body.style.transformOrigin = '0 0';
+                    document.body.style.transform = 'scale(' + scale + ')';
+                    document.body.style.width = (100 / scale) + '%';
+                  }
+                })();
+                true;
+              `
+              : undefined
+          }
         />
 
-        {/* 🔍 Minimal Transparent Outline Zoom Buttons */}
         <View style={styles.zoomControls}>
           <TouchableOpacity
             onPress={handleZoomIn}
@@ -733,7 +729,6 @@ export default function InvoiceDetail() {
               color={theme.colors.primary}
             />
           </TouchableOpacity>
-
           <TouchableOpacity
             onPress={handleZoomOut}
             activeOpacity={0.8}
@@ -759,8 +754,6 @@ export default function InvoiceDetail() {
             navigation.push('PrintPreference', {
               invoice,
               onPrinterSelected: async payload => {
-                // payload can be: { mode: 'a4' } OR { mode: 'a5' } OR
-                // { mode: 'thermal' } OR { mode: 'thermal', selectedPrinter: {...} }
                 try {
                   if (payload?.mode === 'a4') {
                     setPrintMode('a4');
@@ -773,29 +766,24 @@ export default function InvoiceDetail() {
                   } else if (payload?.mode === 'thermal') {
                     setPrintMode('thermal');
                     await AsyncStorage.setItem('printMode', 'thermal');
-
                     if (payload?.selectedPrinter) {
                       await AsyncStorage.setItem(
                         'selectedPrinter',
                         JSON.stringify(payload.selectedPrinter),
                       );
-                    } else {
-                      // optional: clear saved printer if you want strictness when user saved without connecting
-                      // await AsyncStorage.removeItem('selectedPrinter');
                     }
                   }
                 } catch (e) {
-                  // optional toast
+                  console.error('Save print mode error:', e);
                 }
               },
             })
           }
           style={[styles.actionButton]}
         >
-          {invoice?.status === 'active' &&
-            invoice?.paymentStatus === 'partial' &&
-            'Print Preference'}
+          Print Preference
         </Button>
+
         {invoice?.status === 'active' &&
           hasPermission(permissions.CAN_EDIT_INVOICES) && (
             <Button
@@ -812,13 +800,14 @@ export default function InvoiceDetail() {
               Edit
             </Button>
           )}
+
         <Button
           elevation={4}
           mode="contained"
           icon={'printer'}
           loading={printing}
           disabled={printing}
-          onPress={() => handlePrint()}
+          onPress={handlePrint}
           style={[styles.actionButton]}
         >
           {printing ? 'Printing...' : 'Print'}
@@ -830,22 +819,14 @@ export default function InvoiceDetail() {
             icon={'printer'}
             loading={printingKOT}
             disabled={printingKOT}
-            onPress={() => handlePrintKOT()}
+            onPress={handlePrintKOT}
             style={[styles.actionButton]}
           >
             {printingKOT ? 'Printing...' : 'Print Order Copy'}
           </Button>
         )}
-
-        {/* <Button
-                    mode="contained"
-                    icon={'share'}
-                    onPress={handleShare}
-                    style={styles.actionButton}
-                >
-                    Share
-                </Button> */}
       </Surface>
+
       {invoice?.status === 'active' &&
         hasPermission(permissions.CAN_CANCEL_INVOICES) && (
           <FAB
@@ -859,48 +840,43 @@ export default function InvoiceDetail() {
             color="white"
           />
         )}
+
       {invoice?.customerMobile && (
         <FAB
           size="small"
           icon="whatsapp"
           style={[
             styles.fabWhatsApp,
-            {
-              backgroundColor: '#25D366',
-              bottom: whatsappFabBottom,
-            },
+            { backgroundColor: '#25D366', bottom: whatsappFabBottom },
           ]}
           onPress={handleWhatsAppShare}
           color="white"
         />
       )}
+
       <FAB
         size="small"
         icon="download"
         style={[
           styles.fab,
-          {
-            backgroundColor: theme.colors.surface,
-            bottom: downloadFabBottom,
-          },
+          { backgroundColor: theme.colors.surface, bottom: downloadFabBottom },
         ]}
         onPress={handleDownload}
         color={theme.colors.onSurface}
       />
+
       <FAB
         size="small"
         variant="primary"
         icon="share-variant"
         style={[
           styles.fab,
-          {
-            backgroundColor: theme.colors.surface,
-            bottom: shareFabBottom,
-          },
+          { backgroundColor: theme.colors.surface, bottom: shareFabBottom },
         ]}
         onPress={handleShare}
         color={theme.colors.onSurface}
       />
+
       <CustomAlert
         visible={cancelAlertVisible}
         onDismiss={() => setCancelAlertVisible(false)}
@@ -926,6 +902,7 @@ export default function InvoiceDetail() {
     </SafeAreaView>
   );
 }
+
 const styles = StyleSheet.create({
   container: { flex: 1 },
   previewContainer: {
@@ -938,27 +915,16 @@ const styles = StyleSheet.create({
   webview: { flex: 1, backgroundColor: 'white' },
   footer: {
     flexDirection: 'row',
-    flexWrap: 'wrap', // ← ADD THIS
+    flexWrap: 'wrap',
     justifyContent: 'space-between',
     padding: 12,
-    gap: 8, // ← ADD THIS
+    gap: 8,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
   },
-  actionButton: {
-    flexBasis: '47%', // ← REPLACE flex: 1
-    marginHorizontal: 0, // ← remove the old horizontal margin
-  },
-  fab: {
-    position: 'absolute',
-    marginHorizontal: 16,
-    right: 0,
-  },
-  fabWhatsApp: {
-    position: 'absolute',
-    marginHorizontal: 16,
-    right: 0,
-  },
+  actionButton: { flexBasis: '47%', marginHorizontal: 0 },
+  fab: { position: 'absolute', marginHorizontal: 16, right: 0 },
+  fabWhatsApp: { position: 'absolute', marginHorizontal: 16, right: 0 },
   zoomControls: {
     position: 'absolute',
     bottom: 25,

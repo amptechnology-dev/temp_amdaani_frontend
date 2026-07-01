@@ -1,5 +1,3 @@
-// AddPurchaseItem.jsx - Add + Update unified
-
 import React, {
   useState,
   useCallback,
@@ -87,7 +85,6 @@ const validationSchema = Yup.object().shape({
         schema.required('Tax rate is required when tax is applicable'),
       otherwise: schema => schema.nullable(),
     }),
-  // ✅ FIX: match DB schema fields — same as AddItem
   discountPrice: Yup.number()
     .nullable()
     .min(0, 'Discount price cannot be negative')
@@ -245,7 +242,6 @@ const AddPurchaseItem = () => {
   );
 
   // ─── Initial Form Values ──────────────────────────────────────────────────
-  // ✅ FIX: mirrors AddItem exactly — reads all discount fields from DB schema
   const initialValues = useMemo(() => {
     const unitMapped = mapUnitFromItem(itemToEdit?.unit);
     const categoryMapped = itemToEdit?.category
@@ -278,8 +274,7 @@ const AddPurchaseItem = () => {
           }
         : null;
 
-    // ✅ FIX: Selling discount — read discountType + discountPercentage + discountPrice
-    //         Same logic as AddItem
+    // Selling discount — mirrors AddItem exactly
     const savedDiscountType = itemToEdit?.discountType ?? 'amount';
     const savedDiscountPercentage = Number(itemToEdit?.discountPercentage ?? 0);
     const savedDiscountPrice = Number(itemToEdit?.discountPrice ?? 0);
@@ -300,8 +295,7 @@ const AddPurchaseItem = () => {
         ? percentageDiscountType
         : defaultDiscountType;
 
-    // ✅ FIX: Purchase discount — read purchaseDiscountType + purchaseDiscountPercentage
-    //         Same logic as AddItem
+    // Purchase discount — mirrors AddItem exactly
     const savedPurchaseDiscountType =
       itemToEdit?.purchaseDiscountType ?? 'amount';
     const savedPurchaseDiscountPercentage = Number(
@@ -345,13 +339,13 @@ const AddPurchaseItem = () => {
       selectedPurchaseTaxOption: purchaseTaxOption,
       selectedPurchaseTaxRate: purchaseTaxRate,
 
-      // ✅ FIX: Selling discount fields — all DB fields populated
+      // Selling discount fields
       discountPrice: discountPriceDisplay,
       selectedDiscountType,
       discountType: savedDiscountType,
       discountPercentage: savedDiscountPercentage,
 
-      // ✅ FIX: Purchase discount fields — all DB fields populated
+      // Purchase discount fields
       purchaseDiscount: purchaseDiscountDisplay,
       selectedPurchaseDiscountType,
       purchaseDiscountType: savedPurchaseDiscountType,
@@ -436,7 +430,6 @@ const AddPurchaseItem = () => {
   };
 
   // ─── Submit ───────────────────────────────────────────────────────────────
-  // ✅ FIX: mirrors AddItem's discount calculation exactly
   const handleSubmitForm = async (values, { resetForm, setSubmitting }) => {
     try {
       setIsTransitioning(true);
@@ -444,7 +437,7 @@ const AddPurchaseItem = () => {
       const salesPrice = Number(values.salesPrice) || 0;
       const purchasePrice = Number(values.purchasePrice) || 0;
 
-      // ── Selling discount ──────────────────────────────────────────────────
+      // ── Selling discount — mirrors AddItem exactly ─────────────────────────
       const inputDiscount = Number(values.discountPrice) || 0;
       const discountTypeId = values.selectedDiscountType?.id ?? 'amount';
 
@@ -487,8 +480,7 @@ const AddPurchaseItem = () => {
             : 0;
       }
 
-      // ── Payload ───────────────────────────────────────────────────────────
-      // ✅ FIX: all DB schema discount fields sent — matches AddItem exactly
+      // ── Payload — all DB fields, mirrors AddItem ──────────────────────────
       const payload = {
         name: values.itemName,
         unit: values.selectedUnit?.name || values.selectedUnit || '',
@@ -504,7 +496,7 @@ const AddPurchaseItem = () => {
         gstRate: Number(values.selectedTaxRate?.rate) || 0,
         isTaxInclusive: values.selectedTaxOption?.id === 'with_tax',
 
-        // ✅ Selling discount — all 3 DB fields
+        // Selling discount — all 3 DB fields (mirrors AddItem)
         discountPrice: discountValue,
         discountType: discountTypeId,
         discountPercentage: discountPercentage,
@@ -514,7 +506,7 @@ const AddPurchaseItem = () => {
         isPurchaseTaxInclusive:
           values.selectedPurchaseTaxOption?.id === 'with_tax',
 
-        // ✅ Purchase discount — all 3 DB fields
+        // Purchase discount — all 3 DB fields
         purchaseDiscount: purchaseDiscountValue,
         purchaseDiscountType: purchaseDiscountTypeId,
         purchaseDiscountPercentage: purchaseDiscountPercentage,
@@ -532,7 +524,7 @@ const AddPurchaseItem = () => {
           text2: 'Item updated successfully!',
         });
 
-        // ✅ FIX: resetForm includes all discount fields so isDirty resets correctly
+        // resetForm mirrors AddItem — all fields included so isDirty resets correctly
         resetForm({
           values: {
             itemName: payload.name,
@@ -550,13 +542,13 @@ const AddPurchaseItem = () => {
             selectedPurchaseTaxOption: values.selectedPurchaseTaxOption,
             selectedPurchaseTaxRate: values.selectedPurchaseTaxRate,
 
-            // ✅ Selling discount reset
+            // Selling discount reset — mirrors AddItem (discountPercentage included)
             discountPrice: inputDiscount > 0 ? String(inputDiscount) : '',
             selectedDiscountType: values.selectedDiscountType,
             discountType: discountTypeId,
             discountPercentage: discountPercentage,
 
-            // ✅ Purchase discount reset
+            // Purchase discount reset
             purchaseDiscount:
               inputPurchaseDiscount > 0 ? String(inputPurchaseDiscount) : '',
             selectedPurchaseDiscountType: values.selectedPurchaseDiscountType,
@@ -975,21 +967,13 @@ const AddPurchaseItem = () => {
                         </Text>
                       )}
 
-                      {/* ✅ FIX: Purchase Discount — mirrors AddItem discount section exactly */}
+                      {/* Purchase Discount — mirrors AddItem discount section exactly */}
                       <View style={styles.discountPriceInputContainer}>
                         <TextInput
                           label="Purchase Discount"
                           mode="outlined"
                           value={values.purchaseDiscount}
-                          onChangeText={text => {
-                            handleChange('purchaseDiscount')(text);
-                            // ✅ Keep purchaseDiscountType in sync
-                            setFieldValue(
-                              'purchaseDiscountType',
-                              values.selectedPurchaseDiscountType?.id ??
-                                'amount',
-                            );
-                          }}
+                          onChangeText={handleChange('purchaseDiscount')}
                           onBlur={() =>
                             setFieldTouched('purchaseDiscount', true)
                           }
@@ -1255,20 +1239,13 @@ const AddPurchaseItem = () => {
                         </Text>
                       )}
 
-                      {/* ✅ FIX: Selling Discount — mirrors AddItem discount section exactly */}
+                      {/* Selling Discount — mirrors AddItem discount section exactly */}
                       <View style={styles.discountPriceInputContainer}>
                         <TextInput
                           label="Discount on Sales"
                           mode="outlined"
                           value={values.discountPrice}
-                          onChangeText={text => {
-                            handleChange('discountPrice')(text);
-                            // ✅ Keep discountType in sync
-                            setFieldValue(
-                              'discountType',
-                              values.selectedDiscountType?.id ?? 'amount',
-                            );
-                          }}
+                          onChangeText={handleChange('discountPrice')}
                           onBlur={() => setFieldTouched('discountPrice', true)}
                           style={styles.input}
                           theme={{ roundness: 12 }}
@@ -1667,7 +1644,7 @@ const AddPurchaseItem = () => {
                   }
                 />
 
-                {/* ✅ FIX: Selling Discount Type Sheet — converts value on type change like AddItem */}
+                {/* Selling Discount Type Sheet — mirrors AddItem exactly */}
                 <DiscountTypeSelectorBottomSheet
                   ref={discountTypeSheet.bottomSheetRef}
                   selectedDiscountType={values.selectedDiscountType}
@@ -1696,7 +1673,7 @@ const AddPurchaseItem = () => {
                     }
 
                     setFieldValue('selectedDiscountType', type);
-                    setFieldValue('discountType', type.id); // ✅ sync DB field
+                    setFieldValue('discountType', type.id);
                     setFieldValue(
                       'discountPrice',
                       convertedInput > 0 ? String(convertedInput) : '',
@@ -1709,7 +1686,7 @@ const AddPurchaseItem = () => {
                   }}
                 />
 
-                {/* ✅ FIX: Purchase Discount Type Sheet — converts value on type change like AddItem */}
+                {/* Purchase Discount Type Sheet — mirrors AddItem exactly */}
                 <DiscountTypeSelectorBottomSheet
                   ref={purchaseDiscountTypeSheet.bottomSheetRef}
                   selectedDiscountType={values.selectedPurchaseDiscountType}
@@ -1738,7 +1715,7 @@ const AddPurchaseItem = () => {
                     }
 
                     setFieldValue('selectedPurchaseDiscountType', type);
-                    setFieldValue('purchaseDiscountType', type.id); // ✅ sync DB field
+                    setFieldValue('purchaseDiscountType', type.id);
                     setFieldValue(
                       'purchaseDiscount',
                       convertedInput > 0 ? String(convertedInput) : '',

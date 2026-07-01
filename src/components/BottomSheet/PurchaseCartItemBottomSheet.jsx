@@ -180,20 +180,16 @@ const PurchaseCartItemBottomSheet = forwardRef(
       // ── 6. Selling discount ───────────────────────────────────────────────────
       // Priority: discountType (DB field) > sellDiscountType (may be stale)
       const rawSellDiscType =
-        item.discountType || // ✅ check discountType FIRST (most reliable)
-        item.sellDiscountType ||
-        'amount';
+        item.discountType || item.sellDiscountType || 'amount';
 
       const normSellDiscType =
         rawSellDiscType === 'percentage' ? 'percent' : rawSellDiscType;
 
       let sdRaw = 0;
-      let resolvedSellDiscType = normSellDiscType;
 
       if (normSellDiscType === 'percent') {
-        // Read percentage value — check all possible field names
         sdRaw = Number(
-          item.discountPercentage > 0 // ✅ check this FIRST (your data has 50 here)
+          item.discountPercentage > 0
             ? item.discountPercentage
             : item.discountPercent > 0
             ? item.discountPercent
@@ -202,46 +198,23 @@ const PurchaseCartItemBottomSheet = forwardRef(
             : 0,
         );
       } else {
-        // Type says 'amount' — but verify a % field doesn't have the real value
-        const flatAmt = Number(
+        // FIX: Read ALL possible flat amount fields, pick first non-zero
+        // discountPrice from DB after refresh, sellDiscount from onUpdate after first add
+        sdRaw = Number(
           item.sellDiscount > 0
             ? item.sellDiscount
             : item.discountPrice > 0
             ? item.discountPrice
+            : item.purchaseDiscount > 0 && !purchase // fallback for sales-only mode
+            ? 0
             : 0,
         );
-
-        const pctFallback = Number(
-          item.discountPercentage > 0 // ✅ check discountPercentage first
-            ? item.discountPercentage
-            : item.discountPercent > 0
-            ? item.discountPercent
-            : item.sellDiscountPercent > 0
-            ? item.sellDiscountPercent
-            : 0,
-        );
-
-        if (flatAmt === 0 && pctFallback > 0) {
-          resolvedSellDiscType = 'percent';
-          sdRaw = pctFallback;
-        } else if (flatAmt > 0 && pctFallback > 0) {
-          // ✅ BOTH exist — trust discountType to decide which to show
-          if (normSellDiscType === 'amount') {
-            sdRaw = flatAmt;
-          } else {
-            resolvedSellDiscType = 'percent';
-            sdRaw = pctFallback;
-          }
-        } else {
-          sdRaw = flatAmt;
-        }
       }
 
-      setSellDiscountType(resolvedSellDiscType);
+      setSellDiscountType(normSellDiscType);
       setSellDiscountValue(toFixed2(sdRaw));
 
-      const sdAmt =
-        resolvedSellDiscType === 'percent' ? (sp * sdRaw) / 100 : sdRaw;
+      const sdAmt = normSellDiscType === 'percent' ? (sp * sdRaw) / 100 : sdRaw;
       setFinalSellingPrice(parseFloat(Math.max(0, sp - sdAmt).toFixed(2)));
 
       // ── 7. HSN / GST ──────────────────────────────────────────────────────

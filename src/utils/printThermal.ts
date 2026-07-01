@@ -344,11 +344,12 @@ export async function printThermalInvoice(
     // ✅ Paid and Due amounts (if applicable)
 
 
-    if (paidAmount > 0 || dueAmount > 0) {
+    if ((paymentStatus || '').toLowerCase() !== 'unpaid' &&
+  (paidAmount > 0 || dueAmount > 0)) {
       await Printer.printColumns(
         [20, 12],
         ['left', 'right'],
-        ['Paid Amount', paidAmount.toFixed(2)],
+        ['Paid Amount ', paidAmount.toFixed(2)],
         { font: 'a' }
       );
 
@@ -364,48 +365,49 @@ export async function printThermalInvoice(
     await Printer.feed(1);
     let statusText = '';
     switch ((paymentStatus || '').toLowerCase()) {
-      case 'paid':
-        statusText = 'Amount Fully Paid';
-        break;
-      case 'partial':
-        statusText = 'Amount Partially Paid';
-        break;
-      default:
-        statusText = 'Amount Unpaid';
-    }
+  case 'paid':
+    statusText = 'Amount Fully Paid';
+    break;
+  case 'partial':
+    statusText = 'Amount Partially Paid';
+    break;
+  case 'unpaid':
+    statusText = 'Amount is Unpaid';
+    break;
+  default:
+    statusText = '';
+}
 
-    await printWrappedText(statusText, {
-      align: 'center',
-      bold: true,
-      font: 'b',
-    });
+    if (statusText) {
+      await printWrappedText(statusText, {
+        align: 'center',
+        bold: true,
+        font: 'b',
+      });
+    }
 
     // ✅ Payment Details (Method & Note)
     await safePrint(async () => {
+      if (!paidAmount || paidAmount <= 0) return;
+
       const paymentMethod = invoice?.paymentMethod;
       const paymentNote = invoice?.paymentNote;
 
       if (!paymentMethod && !paymentNote) return;
 
-      if (paymentMethod) {
+
+    
+      if (paymentMethod && (paymentStatus?.toLowerCase() === 'paid' || paymentStatus?.toLowerCase() === 'partial') ) {
         await printWrappedText(`Payment: ${paymentMethod.toUpperCase()} ${paymentNote ? `(Ref:${paymentNote})` : ''}`, {
           align: 'center',
           bold: true,
           font: 'b',
         });
       }
-
-      // if (paymentNote) {
-      //   await printWrappedText(`Note: ${paymentNote}`, {
-      //     align: 'center',
-      //     bold: false,
-      //     font: 'b',
-      //   });
-      // }
     });
-
     await safePrint(async () => {
-      if (!invoice?.transactions || invoice.transactions.length === 0) return;
+      if ((paymentStatus || '').toLowerCase() === 'unpaid') return;
+if (!invoice?.transactions || invoice.transactions.length === 0) return;
 
       // 🖨️ Printer width auto-detect (58mm = 384px, 80mm = 576px)
       const printerWidthPx =

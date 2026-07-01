@@ -110,74 +110,74 @@ export async function printThermalKOT(invoice: any, items: any[], store: any) {
 
   try {
     // 1) Logo
-    await safePrint(async () => {
-      if (store?.logoUrl) {
-        const logoData = await urlToDataURL(store.logoUrl);
-        await Printer.printImageBase64(logoData, 200, 'threshold');
-      }
-    });
+    // await safePrint(async () => {
+    //   if (store?.logoUrl) {
+    //     const logoData = await urlToDataURL(store.logoUrl);
+    //     await Printer.printImageBase64(logoData, 200, 'threshold');
+    //   }
+    // });
 
-    // 2) Store header — identical to printThermalInvoice
-    await safePrint(async () => {
-      await printWrappedText(store?.name || 'STORE', {
-        align: 'center',
-        bold: true,
-        font: 'a',
-        sizeW: 1,
-        sizeH: 1,
-      });
-    });
+    // // 2) Store header — identical to printThermalInvoice
+    // await safePrint(async () => {
+    //   await printWrappedText(store?.name || 'STORE', {
+    //     align: 'center',
+    //     bold: true,
+    //     font: 'a',
+    //     sizeW: 1,
+    //     sizeH: 1,
+    //   });
+    // });
 
-    await safePrint(async () => {
-      if (store?.tagline) {
-        await printWrappedText(store.tagline, { align: 'center', font: 'b' });
-      }
-    });
+    // await safePrint(async () => {
+    //   if (store?.tagline) {
+    //     await printWrappedText(store.tagline, { align: 'center', font: 'b' });
+    //   }
+    // });
 
-    await printDivider('b', 1, 1);
+    // await printDivider('b', 1, 1);
 
-    await safePrint(async () => {
-      if (
-        store?.address?.street ||
-        store?.address?.city ||
-        store?.address?.state ||
-        store?.address?.postalCode
-      ) {
-        await printWrappedText(
-          `${store?.address?.street || ''}, ${store?.address?.city || ''}, ${store?.address?.state || ''} ${store?.address?.postalCode || ''} `,
-          { align: 'center', font: 'b' }
-        );
-      }
-    });
+    // await safePrint(async () => {
+    //   if (
+    //     store?.address?.street ||
+    //     store?.address?.city ||
+    //     store?.address?.state ||
+    //     store?.address?.postalCode
+    //   ) {
+    //     await printWrappedText(
+    //       `${store?.address?.street || ''}, ${store?.address?.city || ''}, ${store?.address?.state || ''} ${store?.address?.postalCode || ''} `,
+    //       { align: 'center', font: 'b' }
+    //     );
+    //   }
+    // });
 
-    await safePrint(async () => {
-      if (isGstInvoice && store?.gstNumber) {
-        await printWrappedText(`GSTIN: ${store?.gstNumber || ''}`, {
-          align: 'center',
-          font: 'b',
-        });
-      }
-    });
+    // await safePrint(async () => {
+    //   if (isGstInvoice && store?.gstNumber) {
+    //     await printWrappedText(`GSTIN: ${store?.gstNumber || ''}`, {
+    //       align: 'center',
+    //       font: 'b',
+    //     });
+    //   }
+    // });
 
-    await safePrint(async () => {
-      if (store?.contactNo) {
-        await printWrappedText(`Ph.No.: +91 - ${store.contactNo} `, {
-          align: 'center',
-          font: 'b',
-        });
-      }
-    });
+    // await safePrint(async () => {
+    //   if (store?.contactNo) {
+    //     await printWrappedText(`Ph.No.: +91 - ${store.contactNo} `, {
+    //       align: 'center',
+    //       font: 'b',
+    //     });
+    //   }
+    // });
 
-    await safePrint(async () => {
-      if (store?.email) {
-        await printWrappedText(`Email: ${store.email} `, {
-          align: 'center',
-          font: 'b',
-        });
-      }
-    });
+    // await safePrint(async () => {
+    //   if (store?.email) {
+    //     await printWrappedText(`Email: ${store.email} `, {
+    //       align: 'center',
+    //       font: 'b',
+    //     });
+    //   }
+    // });
 
-    await printDivider('b', 1, 1);
+    // await printDivider('b', 1, 1);
 
     // 3) "KOT" banner — large & bold so it reads instantly in the kitchen
     await Printer.printText('KOT', {

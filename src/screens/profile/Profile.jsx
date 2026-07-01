@@ -803,7 +803,7 @@ const Profile = ({ navigation }) => {
 
       {/* Phone Number */}
       <TextInput
-        label="Phone Number"
+        label="Phone Number *"
         value={values.phoneNumber}
         onChangeText={handleChange('phoneNumber')}
         onBlur={handleBlur('phoneNumber')}

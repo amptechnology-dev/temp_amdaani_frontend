@@ -102,8 +102,13 @@ const VendorList = ({ isNavbar = true }) => {
     id: v._id || v.id,
     name: v.name || '',
     mobile: v.mobile || '',
+    address: v.address || '', // ✅ add
+    city: v.city || '', // ✅ add
     state: v.state || '',
     country: v.country || '',
+    postalCode: v.postalCode || '', // ✅ add
+    gstNumber: v.gstNumber || '', // ✅ add
+    panNumber: v.panNumber || '', // ✅ add
     isActive: !!v.isActive,
     createdAt: v.createdAt,
     updatedAt: v.updatedAt,
@@ -130,6 +135,8 @@ const VendorList = ({ isNavbar = true }) => {
 
       // Use smaller limit by default (pagination-friendly)
       const res = await api.get(`/vendor?page=${page}&limit=${LIMIT}`);
+
+      console.log('vendord dta a', res);
       if (!res || !res.success)
         throw new Error(res?.message || 'Failed to fetch vendors');
 

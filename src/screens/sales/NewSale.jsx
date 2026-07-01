@@ -755,7 +755,8 @@ export default function NewSale() {
   useEffect(() => {
     if (route?.params?.existingCart) {
       setCartItems(route.params.existingCart);
-      // // console.log("Cart data",route.params.existingCart);
+      // Reset so paidAmount always tracks new total after items change
+      hasUserEditedPaid.current = false;
     }
   }, [route?.params?.existingCart]);
   // // console.log("Cart data",cartItems);
@@ -1337,6 +1338,8 @@ export default function NewSale() {
       onItemsSelected: newCart => {
         setCartItems(newCart);
         setShowPreview(true);
+        // Allow paidAmount to re-sync with updated total
+        hasUserEditedPaid.current = false;
       },
     });
   };

@@ -431,11 +431,14 @@ const AddPurchaseItems = () => {
       const currentQty = dropdownQuantities[product._id] || 0;
       const finalQty = currentQty > 0 ? currentQty : 1;
 
+      console.log('--product', product);
+
       const rawPrice = getPurchaseRate(product);
       const { subtotal } = calculateItemTotals(product, finalQty, rawPrice);
       const lineId = `${product._id}-${Date.now()}`;
       const newItem = {
         ...product,
+
         sellingPrice: Number(product.sellingPrice ?? 0), // for sales mode, this is the main price field
         qty: finalQty,
         price: rawPrice,
@@ -1201,9 +1204,17 @@ const AddPurchaseItems = () => {
                         costPrice: rawPrice,
                         subtotal,
                         ...(isPurchase && {
-                          discountPrice: 0,
-                          discountPercent: 0,
-                          discountType: 'amount',
+                          purchaseDiscount: 0,
+                          purchaseDiscountType: 'amount',
+                          purchaseDiscountPercentage: 0,
+                          discountType: newItem.discountType ?? 'amount',
+                          discountPrice: Number(newItem.discountPrice ?? 0), // ✅ keep from API
+                          discountPercent: Number(newItem.discountPercent ?? 0), // ✅ keep from API
+                          discountPercentage: Number(
+                            newItem.discountPercentage ?? 0,
+                          ),
+                          sellDiscount: Number(newItem.discountPrice ?? 0), // ✅ alias too
+                          sellDiscountType: newItem.discountType ?? 'amount',
                           _manualDiscountApplied: false,
                         }),
                       };

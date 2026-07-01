@@ -164,6 +164,11 @@ const AddItem = () => {
   const [hsnCodeRefreshKey, setHsnCodeRefreshKey] = useState(0);
   const [alertVisible, setAlertVisible] = useState(false);
   const [isFetchingProduct, setIsFetchingProduct] = useState(false);
+  const [openingStockErrors, setOpeningStockErrors] = useState({});
+  const [openingStockTouched, setOpeningStockTouched] = useState({
+    openingStock: false,
+    value: false,
+  });
 
   const { units } = unitsData;
 
@@ -225,6 +230,51 @@ const AddItem = () => {
     },
     [defaultTaxOption],
   );
+
+  const validateOpeningStockValues = (stockStr, valueStr, isEdit = false) => {
+    const errors = {};
+
+    const hasStock =
+      stockStr !== '' && stockStr !== undefined && stockStr !== null;
+    const hasValue =
+      valueStr !== '' && valueStr !== undefined && valueStr !== null;
+
+    // Asymmetric rule:
+    // - Quantity alone is fine (value is optional in that case).
+    // - Value alone is NOT fine — quantity becomes required.
+    if (hasValue && !hasStock) {
+      errors.openingStock =
+        'Opening stock quantity is required when value is entered';
+    }
+
+    if (hasStock) {
+      const num = Number(stockStr);
+      if (isNaN(num)) {
+        errors.openingStock = 'Opening stock must be a number';
+      } else if (isEdit) {
+        // Edit mode: 0 is allowed (e.g. correcting stock down to zero)
+        if (num < 0) {
+          errors.openingStock = 'Opening stock cannot be negative';
+        }
+      } else {
+        // Add mode: 0 doesn't make sense, must be a positive quantity
+        if (num <= 0) {
+          errors.openingStock = 'Opening stock must be greater than 0';
+        }
+      }
+    }
+
+    if (hasValue) {
+      const num = Number(valueStr);
+      if (isNaN(num)) {
+        errors.value = 'Value must be a number';
+      } else if (num <= 0) {
+        errors.value = 'Value must be greater than 0';
+      }
+    }
+
+    return errors;
+  };
 
   // Initial Form Values (Add vs Edit)
   const initialValues = useMemo(() => {
@@ -426,12 +476,65 @@ const AddItem = () => {
         gstRate: Number(values.selectedTaxRate?.rate) || 0,
         isTaxInclusive: values.selectedTaxOption?.id === 'with_tax',
       };
+      const stockErrors = validateOpeningStockValues(
+        openingStockValues.openingStock,
+        openingStockValues.value,
+      );
 
-      if (openingStockValues.openingStock) {
-        payload.openingStock = Number(openingStockValues.openingStock);
+      if (Object.keys(stockErrors).length > 0) {
+        setOpeningStockErrors(stockErrors);
+        setOpeningStockTouched({ openingStock: true, value: true });
+        setIsTransitioning(false);
+        setSubmitting(false);
+        Toast.show({
+          type: 'error',
+          text1: 'Fix opening stock',
+          text2: 'Opening stock quantity and value must be entered together.',
+        });
+        return; // stop submission, don't call the API
       }
-      if (openingStockValues.value) {
-        payload.value = Number(openingStockValues.value);
+
+      const hasOpeningStock =
+        openingStockValues.openingStock !== '' &&
+        openingStockValues.openingStock !== undefined &&
+        openingStockValues.openingStock !== null;
+
+      const hasOpeningValue =
+        openingStockValues.value !== '' &&
+        openingStockValues.value !== undefined &&
+        openingStockValues.value !== null;
+
+      if (hasOpeningStock || hasOpeningValue) {
+        payload.openingStock = hasOpeningStock
+          ? Number(openingStockValues.openingStock)
+          : 0;
+        payload.value = hasOpeningValue ? Number(openingStockValues.value) : 0;
+      }
+
+      console.log('hasOpeningStock:', hasOpeningStock);
+      console.log('hasOpeningValue:', hasOpeningValue);
+
+      console.log('openingStockValues:', openingStockValues);
+      console.log('opeing stock :', openingStockValues);
+
+      // If the user touched either field, send both together so the
+      // backend always receives a consistent pair (never a partial update).
+      if (hasOpeningStock) {
+        payload.openingStock = hasOpeningStock
+          ? Number(openingStockValues.openingStock)
+          : 0;
+        payload.value = hasOpeningValue ? Number(openingStockValues.value) : 0;
+      } else {
+        payload.openingStock = 0;
+      }
+
+      if (hasOpeningValue) {
+        payload.openingStock = hasOpeningStock
+          ? Number(openingStockValues.openingStock)
+          : 0;
+        payload.value = hasOpeningValue ? Number(openingStockValues.value) : 0;
+      } else {
+        payload.value = 0;
       }
 
       if (isEditMode) {
@@ -486,7 +589,10 @@ const AddItem = () => {
       }
     } catch (error) {
       const message =
-        error?.message || 'An error occurred while saving the item.';
+        error?.response?.data?.message ||
+        error?.response?.data?.error ||
+        error?.message ||
+        'An error occurred while saving the item.';
       const isDuplicate =
         message.toLowerCase().includes('already exists') ||
         message.toLowerCase().includes('duplicate') ||
@@ -1200,34 +1306,123 @@ const AddItem = () => {
                         <TextInput
                           label="Opening Stock (optional)"
                           mode="outlined"
-                          value={String(openingStockValues.openingStock)}
-                          onChangeText={text =>
-                            setOpeningStockValues(prev => ({
+                          value={String(openingStockValues.openingStock).trim()}
+                          onChangeText={text => {
+                            setOpeningStockValues(prev => {
+                              const next = { ...prev, openingStock: text };
+                              setOpeningStockErrors(
+                                validateOpeningStockValues(
+                                  next.openingStock,
+                                  next.value,
+                                  isEditMode,
+                                ),
+                              );
+                              return next;
+                            });
+                          }}
+                          onBlur={() =>
+                            setOpeningStockTouched(prev => ({
                               ...prev,
-                              openingStock: text,
+                              openingStock: true,
                             }))
                           }
                           style={styles.input}
                           placeholder="Enter opening stock quantity (optional)"
                           keyboardType="numeric"
                           theme={{ roundness: 12 }}
+                          error={
+                            openingStockTouched.openingStock &&
+                            !!openingStockErrors.openingStock
+                          }
                         />
+                        {openingStockTouched.openingStock &&
+                          openingStockErrors.openingStock && (
+                            <Text
+                              style={{
+                                color: theme.colors.error,
+                                fontSize: 12,
+                                marginTop: -4,
+                                marginBottom: 8,
+                              }}
+                            >
+                              {openingStockErrors.openingStock}
+                            </Text>
+                          )}
 
                         <TextInput
                           label="Opening Stock Value (optional)"
                           mode="outlined"
-                          value={String(openingStockValues.value)}
-                          onChangeText={text =>
-                            setOpeningStockValues(prev => ({
+                          value={String(openingStockValues.value).trim()}
+                          onChangeText={text => {
+                            setOpeningStockValues(prev => {
+                              const next = { ...prev, value: text };
+                              setOpeningStockErrors(
+                                validateOpeningStockValues(
+                                  next.openingStock,
+                                  next.value,
+                                ),
+                              );
+                              return next;
+                            });
+                          }}
+                          onBlur={() =>
+                            setOpeningStockTouched(prev => ({
                               ...prev,
-                              value: text,
+                              value: true,
                             }))
                           }
                           style={styles.input}
                           placeholder="Enter total opening stock value (in Total)"
                           keyboardType="numeric"
                           theme={{ roundness: 12 }}
+                          error={
+                            openingStockTouched.value &&
+                            !!openingStockErrors.value
+                          }
                         />
+                        {openingStockTouched.value &&
+                          openingStockErrors.value && (
+                            <Text
+                              style={{
+                                color: theme.colors.error,
+                                fontSize: 12,
+                                marginTop: -4,
+                                marginBottom: 8,
+                              }}
+                            >
+                              {openingStockErrors.value}
+                            </Text>
+                          )}
+
+                        <View
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            backgroundColor: theme.colors.primary + '10',
+                            borderRadius: 8,
+                            paddingVertical: 6,
+                            paddingHorizontal: 10,
+                            marginTop: 4,
+                            marginBottom: 8,
+                          }}
+                        >
+                          <Icon
+                            source="information-outline"
+                            size={14}
+                            color={theme.colors.primary}
+                          />
+                          <Text
+                            style={{
+                              fontSize: 12,
+                              color: theme.colors.primary,
+                              marginLeft: 6,
+                              fontStyle: 'italic',
+                            }}
+                          >
+                            Opening stock value = Opening stock qty × Purchase
+                            rate
+                          </Text>
+                        </View>
 
                         <View style={{ flexDirection: 'row', marginTop: 8 }}>
                           <Button
